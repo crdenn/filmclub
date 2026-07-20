@@ -1,0 +1,86 @@
+-- Film Club Tracker schema. SQLite.
+-- Kept deliberately small: six users, a few hundred rows. A file copy is a backup.
+
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS members (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    plex_id      TEXT UNIQUE NOT NULL,
+    plex_account_id TEXT,            -- numeric Plex account id used by webhooks
+    plex_token_encrypted TEXT,       -- per-user token; Fernet-encrypted at rest
+    plex_rating_sync_enabled INTEGER NOT NULL DEFAULT 1, -- member opt-out
+    username     TEXT NOT NULL,      -- the Plex username, refreshed on each login
+    display_name TEXT,               -- user-chosen name shown in place of username
+    email        TEXT,
+    thumb        TEXT,               -- Plex avatar URL
+    color        TEXT NOT NULL,      -- deterministic hex, derived from plex_id
+    is_admin     INTEGER NOT NULL DEFAULT 0,  -- can access the admin panel
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS movies (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    tmdb_id       INTEGER,
+    title         TEXT NOT NULL,
+    year          INTEGER,
+    poster_url    TEXT,
+    backdrop_url  TEXT,
+    runtime       INTEGER,          -- minutes
+    director      TEXT,
+    language      TEXT,             -- human-readable original language from TMDB
+    overview      TEXT,
+    genres        TEXT,             -- JSON array of strings
+    suggested_by  INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    suggested_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    status        TEXT NOT NULL DEFAULT 'suggested',  -- 'suggested' | 'scheduled' | 'watched'
+    watched_at    TEXT,
+    imdb_id       TEXT,             -- external id for Plex in-library matching
+    -- Frozen at the watch transition: JSON map of member_id -> bool of each
+    -- member's prior_views.seen at that moment. Seeds ratings.seen_before so the
+    -- historical fact can't be mutated by later prior_views edits.
+    seen_before_snapshot TEXT,
+    -- Outcome of the Seerr auto-request at add time, if that feature is enabled.
+    -- One of: 'in_library' | 'available' | 'requested' | 'failed'. NULL = the
+    -- feature was off (or the film predates it).
+    seerr_status  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ratings (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    movie_id     INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+    member_id    INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    score        REAL NOT NULL,     -- 0.5 .. 5.0 in 0.5 steps
+    seen_before  INTEGER NOT NULL DEFAULT 0,  -- historical fact at club-watch time
+    note         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (movie_id, member_id)
+);
+
+-- "Seconding" a backlog suggestion: a lightweight +1 that a member also wants to
+-- watch a film. The suggester is implied and cannot vote for their own film
+-- (enforced in the service layer). Absence of a row = not seconded by that member.
+CREATE TABLE IF NOT EXISTS votes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    movie_id     INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+    member_id    INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (movie_id, member_id)
+);
+
+-- Pick-eligibility state, editable before a film is watched. Distinct from
+-- ratings.seen_before on purpose: this answer can change over time as a member
+-- watches things independently; seen_before is frozen at watch time.
+CREATE TABLE IF NOT EXISTS prior_views (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    movie_id     INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+    member_id    INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    seen         INTEGER NOT NULL,  -- 1 seen, 0 not seen. Absence of row = unknown.
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (movie_id, member_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_movies_status ON movies(status);
+CREATE INDEX IF NOT EXISTS idx_ratings_movie ON ratings(movie_id);
+CREATE INDEX IF NOT EXISTS idx_prior_movie ON prior_views(movie_id);
+CREATE INDEX IF NOT EXISTS idx_votes_movie ON votes(movie_id);

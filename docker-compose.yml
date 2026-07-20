@@ -1,0 +1,31 @@
+services:
+  filmclub:
+    build: .
+    image: filmclub:latest
+    container_name: filmclub
+    restart: unless-stopped
+    ports:
+      # host:container — change the host port if 8000 is taken on your Unraid box
+      - "8000:8000"
+    volumes:
+      # Bind-mount the data directory. On Unraid, point this at /mnt/user/appdata/filmclub
+      - ./data:/data
+    environment:
+      # --- Required ---
+      TMDB_API_KEY: "${TMDB_API_KEY}"
+      PLEX_URL: "${PLEX_URL}"
+      PLEX_TOKEN: "${PLEX_TOKEN}"
+      PLEX_MACHINE_ID: "${PLEX_MACHINE_ID}"
+      PLEX_CLIENT_ID: "${PLEX_CLIENT_ID}"
+      APP_URL: "${APP_URL}"
+      SESSION_SECRET: "${SESSION_SECRET}"
+      # --- Optional ---
+      # Required only for inbound Plex -> Film Club rating webhooks:
+      PLEX_WEBHOOK_SECRET: "${PLEX_WEBHOOK_SECRET:-}"
+      # DEV_BYPASS_USER: "Alice"          # skip Plex OAuth in development only
+      # PLEX_REFRESH_INTERVAL: "3600"     # seconds between library refreshes
+      # PLEX_PRODUCT: "Film Club Tracker"
+      # Seerr auto-request (safe to leave unset — feature stays off if blank):
+      SEERR_URL: "${SEERR_URL:-}"
+      SEERR_API_KEY: "${SEERR_API_KEY:-}"
+      # SEERR_TIMEOUT: "10"
