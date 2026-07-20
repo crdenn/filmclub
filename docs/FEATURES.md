@@ -65,11 +65,12 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 ### TMDB search
 
-- **Purpose:** Find movies by title with poster, year, overview, director, and original language.
-- **Main files:** `app/tmdb.py`, `/api/tmdb/search`, `openSearchModal()`.
+- **Purpose:** Find movies by title, review full metadata in an expandable result, and explicitly confirm before adding one.
+- **Main files:** `app/tmdb.py`, `/api/tmdb/search`, `/api/tmdb/movies/{tmdb_id}`, `openSearchModal()`.
 - **Status:** Implemented.
 - **Dependencies:** `TMDB_API_KEY` and TMDB availability.
-- **Limitations:** Director lookup adds parallel requests; search returns at most six results and fails as a whole when the main TMDB request fails.
+- **Behavior:** Selecting a result fetches its full TMDB details without mutating the backlog. The result expands in place with facts, genres, synopsis, and an **Add to backlog** button; only that button creates the suggestion and closes the dialog.
+- **Limitations:** Director lookup adds parallel requests; search returns at most six results and fails as a whole when the main TMDB request fails. Previewing makes one additional TMDB details request, and adding re-fetches the metadata before snapshotting it.
 - **Follow-up:** Add caching or rate-limit handling only if operational evidence warrants it.
 
 ### Add suggestion and metadata snapshot

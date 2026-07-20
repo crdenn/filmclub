@@ -490,13 +490,30 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .modal-body { padding: 1.1rem; }
 .search-input { width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: .7rem .8rem; font-size: 1rem; }
 .search-input:focus { outline: none; border-color: var(--accent); }
-.search-results { margin-top: .8rem; display: flex; flex-direction: column; gap: .3rem; max-height: 52vh; overflow-y: auto; }
-.sr-item { display: flex; gap: .7rem; padding: .5rem; border-radius: 10px; cursor: pointer; align-items: center; }
-.sr-item:hover { background: var(--bg-raise-2); }
+.search-modal { width: min(680px, 100%); }
+.search-results { margin-top: .8rem; display: flex; flex-direction: column; gap: .35rem; max-height: 62vh; overflow-y: auto; }
+.sr-item { border-radius: 10px; border: 1px solid transparent; overflow: hidden; }
+.sr-item:hover, .sr-item.expanded { background: var(--bg-raise-2); }
+.sr-item.expanded { border-color: var(--line); }
+.sr-summary { display: flex; gap: .7rem; align-items: center; width: 100%; border: 0; padding: .5rem; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.sr-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sr-poster { width: 44px; height: 66px; border-radius: 6px; object-fit: cover; background: #23232c; flex: 0 0 auto; }
-.sr-info { min-width: 0; }
+.sr-info { display: block; min-width: 0; flex: 1; }
+.sr-title, .sr-sub { display: block; }
 .sr-title { font-weight: 600; font-size: .95rem; }
+.sr-year { color: var(--text-faint); }
 .sr-sub { color: var(--text-dim); font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-chevron { color: var(--text-faint); font-size: 1.2rem; transition: transform .15s ease; }
+.sr-item.expanded .sr-chevron { transform: rotate(180deg); }
+.sr-preview { border-top: 1px solid var(--line); padding: .9rem 1rem 1rem; }
+.sr-preview-status { color: var(--text-dim); font-size: .85rem; padding: .35rem 0; }
+.sr-preview-status.error { color: var(--bad); }
+.sr-preview-facts { color: var(--text-dim); font-size: .85rem; }
+.sr-preview .genre-chips { margin: .65rem 0; }
+.sr-overview { margin: .65rem 0 0; color: var(--text); font-size: .9rem; line-height: 1.45; }
+.sr-overview.muted { color: var(--text-faint); }
+.sr-preview-actions { display: flex; justify-content: flex-end; margin-top: .9rem; }
+.sr-add:disabled { opacity: .65; cursor: wait; }
 
 /* ---------- movie detail ---------- */
 .detail-hero { position: relative; border-radius: 16px; overflow: hidden; margin-bottom: 1.4rem; min-height: 260px; background: var(--bg-raise); }

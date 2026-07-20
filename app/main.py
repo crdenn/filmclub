@@ -1085,6 +1085,19 @@ async def api_tmdb_search(q: str, member=Depends(auth.current_member)):
         raise HTTPException(status_code=502, detail="TMDB search failed")
 
 
+@app.get("/api/tmdb/movies/{tmdb_id}")
+async def api_tmdb_movie_preview(
+    tmdb_id: int,
+    member=Depends(auth.current_member),
+):
+    """Return full TMDB metadata for an add-suggestion preview."""
+    try:
+        return await tmdb.details(tmdb_id)
+    except Exception as e:  # noqa: BLE001
+        log.error("TMDB preview failed for %s: %s", tmdb_id, e)
+        raise HTTPException(status_code=502, detail="Could not fetch film details from TMDB")
+
+
 @app.get("/api/stats")
 async def api_stats(member=Depends(auth.current_member)):
     conn = db.connect()

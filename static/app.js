@@ -1632,7 +1632,7 @@
   function openSearchModal() {
     const root = $("#modal-root");
     root.innerHTML = `<div class="modal-backdrop" id="mb">
-      <div class="modal">
+      <div class="modal search-modal">
         <div class="modal-head"><h2>Add a suggestion</h2><button class="modal-close" id="mc">×</button></div>
         <div class="modal-body">
           <input class="search-input" id="tmdb-q" placeholder="Search TMDB by title…" autocomplete="off" autofocus>
@@ -1645,25 +1645,92 @@
 
     const input = $("#tmdb-q");
     input.focus();
-    let timer = null, seq = 0;
+    let timer = null, seq = 0, results = [], expandedId = null;
+    const previews = new Map();
+
+    const renderPreview = (movie) => {
+      if (!movie) return `<div class="sr-preview-status">Loading film details…</div>`;
+      if (movie.error) return `<div class="sr-preview-status error">${esc(movie.error)}</div>`;
+      const facts = [
+        movie.year || "",
+        movie.content_rating ? `Rated ${esc(movie.content_rating)}` : "",
+        movie.director ? esc(movie.director) : "",
+        movie.language ? esc(movie.language) : "",
+        fmtRuntime(movie.runtime),
+      ].filter(Boolean).join(" · ");
+      return `<div class="sr-preview-inner">
+        ${facts ? `<div class="sr-preview-facts">${facts}</div>` : ""}
+        ${(movie.genres || []).length ? `<div class="genre-chips">${movie.genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
+        ${movie.overview ? `<p class="sr-overview">${esc(movie.overview)}</p>` : `<p class="sr-overview muted">No synopsis available.</p>`}
+        <div class="sr-preview-actions"><button type="button" class="btn btn-primary sr-add" data-add-tmdb="${movie.tmdb_id}">Add to backlog</button></div>
+      </div>`;
+    };
+
+    const renderResults = () => {
+      const container = $("#tmdb-results");
+      if (!results.length) {
+        container.innerHTML = `<div class="empty" style="padding:2rem">No matches.</div>`;
+        return;
+      }
+      container.innerHTML = results.map(r => {
+        const expanded = String(r.tmdb_id) === String(expandedId);
+        const subtitle = r.director
+          ? esc(r.director) + (r.language ? ` · ${esc(r.language)}` : "")
+          : esc(r.overview || "");
+        return `<div class="sr-item ${expanded ? "expanded" : ""}">
+          <button type="button" class="sr-summary" data-tmdb="${r.tmdb_id}" aria-expanded="${expanded}">
+            ${r.poster_url ? `<img class="sr-poster" src="${esc(r.poster_url)}" alt="">` : `<span class="sr-poster"></span>`}
+            <span class="sr-info"><span class="sr-title">${esc(r.title)} <span class="sr-year">${r.year || ""}</span></span>
+            <span class="sr-sub">${subtitle}</span></span>
+            <span class="sr-chevron" aria-hidden="true">⌄</span>
+          </button>
+          ${expanded ? `<div class="sr-preview">${renderPreview(previews.get(r.tmdb_id))}</div>` : ""}
+        </div>`;
+      }).join("");
+
+      container.querySelectorAll("[data-tmdb]").forEach(el => {
+        el.onclick = async () => {
+          const tmdbId = parseInt(el.dataset.tmdb, 10);
+          if (expandedId === tmdbId) {
+            expandedId = null;
+            renderResults();
+            return;
+          }
+          expandedId = tmdbId;
+          renderResults();
+          if (previews.has(tmdbId)) return;
+          try {
+            const preview = await api(`/api/tmdb/movies/${tmdbId}`);
+            previews.set(tmdbId, preview);
+          } catch (e) {
+            previews.set(tmdbId, { error: e.message });
+          }
+          if (expandedId === tmdbId) renderResults();
+        };
+      });
+      container.querySelectorAll("[data-add-tmdb]").forEach(button => {
+        button.onclick = () => addSuggestion(button.dataset.addTmdb, close, button);
+      });
+    };
+
     input.oninput = () => {
       clearTimeout(timer);
+      const mine = ++seq;
       const q = input.value.trim();
-      if (!q) { $("#tmdb-results").innerHTML = `<div class="empty" style="padding:2rem">Type to search.</div>`; return; }
+      results = [];
+      expandedId = null;
+      if (!q) {
+        $("#tmdb-results").innerHTML = `<div class="empty" style="padding:2rem">Type to search.</div>`;
+        return;
+      }
       timer = setTimeout(async () => {
-        const mine = ++seq;
         try {
-          const { results } = await api(`/api/tmdb/search?q=${encodeURIComponent(q)}`);
+          const response = await api(`/api/tmdb/search?q=${encodeURIComponent(q)}`);
           if (mine !== seq) return; // stale
-          $("#tmdb-results").innerHTML = results.length
-            ? results.map(r => `<div class="sr-item" data-tmdb="${r.tmdb_id}">
-                ${r.poster_url ? `<img class="sr-poster" src="${esc(r.poster_url)}" alt="">` : `<div class="sr-poster"></div>`}
-                <div class="sr-info"><div class="sr-title">${esc(r.title)} <span style="color:var(--text-faint)">${r.year || ""}</span></div>
-                <div class="sr-sub">${r.director ? esc(r.director) + (r.language ? ` · ${esc(r.language)}` : "") : esc(r.overview || "")}</div></div></div>`).join("")
-            : `<div class="empty" style="padding:2rem">No matches.</div>`;
-          $("#tmdb-results").querySelectorAll("[data-tmdb]").forEach(el =>
-            el.onclick = () => addSuggestion(el.dataset.tmdb, close));
+          results = response.results || [];
+          renderResults();
         } catch (e) {
+          if (mine !== seq) return;
           $("#tmdb-results").innerHTML = `<div class="empty" style="padding:2rem;color:var(--bad)">${esc(e.message)}</div>`;
         }
       }, 280);
@@ -1679,7 +1746,11 @@
     failed: "Added — Seerr request failed (added anyway)",
   };
 
-  async function addSuggestion(tmdbId, close) {
+  async function addSuggestion(tmdbId, close, button = null) {
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Adding…";
+    }
     try {
       const res = await api("/api/movies", { method: "POST", body: { tmdb_id: parseInt(tmdbId, 10) } });
       const status = res && res.seerr && res.seerr.status;
@@ -1687,7 +1758,13 @@
       close();
       refreshTodo();
       renderBacklog(true);
-    } catch (e) { toast(e.message, true); }
+    } catch (e) {
+      toast(e.message, true);
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Add to backlog";
+      }
+    }
   }
 
   // ================= STATS =================
