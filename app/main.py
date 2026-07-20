@@ -8,7 +8,8 @@ import re
 from datetime import date
 
 import httpx
-from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi import (Cookie, Depends, FastAPI, File, Form, HTTPException, Query,
+                     Request, UploadFile)
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                RedirectResponse, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
@@ -17,8 +18,8 @@ from itsdangerous.url_safe import URLSafeTimedSerializer
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from . import (accounts, auth, config, db, events, logsafe, migrations, plex,
-               plex_ratings, seerr, service, stats, tmdb)
+from . import (accounts, auth, backups, config, db, events, logsafe, migrations,
+               plex, plex_ratings, seerr, service, stats, tmdb)
 from . import settings as app_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -1027,6 +1028,56 @@ async def api_admin_update_settings(body: SettingsIn,
     app_settings.save(values)
     await plex.refresh_library()
     return {"ok": True, "settings": app_settings.public_values()}
+
+
+@app.get("/api/admin/backup")
+async def api_admin_backup(admin=Depends(auth.require_admin)):
+    """Download one portable archive containing all persistent application data."""
+    try:
+        payload, filename = backups.create_archive()
+    except backups.BackupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    log.info("Admin %s created a portable backup", admin["id"])
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.post("/api/admin/backup/restore")
+async def api_admin_restore_backup(
+    backup_file: UploadFile = File(...),
+    confirmation: str = Form(...),
+    admin=Depends(auth.require_admin),
+):
+    """Replace live data with a verified backup and force every user to re-login."""
+    if confirmation.strip() != backups.RESTORE_CONFIRMATION:
+        raise HTTPException(status_code=400, detail='Type "RESTORE" to confirm')
+    payload = await backup_file.read(backups.MAX_ARCHIVE_BYTES + 1)
+    await backup_file.close()
+    if len(payload) > backups.MAX_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail="The backup file is too large")
+    try:
+        result = backups.restore_archive(payload)
+        app_settings.load_into_config()
+    except backups.BackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("Backup restore failed after validation")
+        raise HTTPException(status_code=500, detail="Restore failed; existing data was kept") from exc
+    log.warning(
+        "Admin %s restored a backup; all sessions were revoked; safety copy: %s",
+        admin["id"], result["safety_backup"],
+    )
+    # Refresh optional enrichment against the restored settings without delaying
+    # the restore response or making core recovery depend on Plex availability.
+    asyncio.create_task(plex.refresh_library())
+    return {"ok": True, **result}
 
 @app.post("/api/admin/security/logout-all")
 async def api_admin_logout_all(admin=Depends(auth.require_admin)):

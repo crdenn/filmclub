@@ -242,17 +242,30 @@ ignored, and clearing a Plex rating is not treated as a deletion.
 
 The database is `filmclub.db` in the `/data` volume. The same volume contains
 `master.key`, which is required to decrypt saved integration secrets and member
-Plex tokens. Back up the complete data directory, not only the database. On
-startup the app applies
+Plex tokens. On startup the app applies
 ordered, transactional migrations recorded in a `schema_migrations` table. Before
 any migration it writes a **timestamped backup** under `/data/backups/` (never
 overwriting an existing one).
 
+- **Admin backup:** open **Admin → Backup & restore** and select **Download
+  backup**. The resulting `.filmclub-backup` file contains a consistent online
+  database snapshot and its data-encryption key, so it can be restored on a new
+  installation. Treat the file as sensitive: it contains account data, password
+  hashes, the effective application settings (including environment-backed
+  settings), and the key protecting saved service credentials. Environment
+  values configured on the destination still take precedence after restore.
+- **Admin restore:** choose **Restore from file**, select a Film Club backup, and
+  type `RESTORE`. The app checks the archive checksum, database integrity,
+  foreign keys, and schema compatibility before changing anything. It saves the
+  current database under `/data/backups/`, restores the uploaded data, re-encrypts
+  secrets for this installation, and signs everyone out.
 - **Rollback:** stop the container, restore the matching `/data/backups/…` file
   over `filmclub.db` (remove any stale `-wal`/`-shm` sidecars), and start the
-  previous image/tag. There are no down-migrations by design.
-- **Manual backup:** copy `filmclub.db` (with its `-wal`/`-shm`, or stop the
-  container first for a clean single-file copy).
+  previous image/tag. These server-side safety copies contain only the database
+  and are intended for same-install rollback. There are no down-migrations.
+- **Filesystem backup:** if backing up outside the Admin panel, copy the complete
+  `/data` directory. Stop the container first, or capture `filmclub.db` together
+  with its `-wal`/`-shm` files.
 - **Health:** `/healthz` is a liveness check; `/readyz` reports readiness
   (database reachable, schema current, durable secret) without exposing secrets.
 

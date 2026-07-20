@@ -1913,6 +1913,15 @@
         </form>
         ${inviteTable}
       </section>
+      <section class="stat-card wide admin-backups">
+        <h3>Backup & restore</h3>
+        <div class="sub">Download one portable file containing the database and the key required to recover encrypted settings. Store it securely: it contains account data and credentials.</div>
+        <div class="backup-actions">
+          <button class="btn btn-primary" id="download-backup" type="button">Download backup</button>
+          <button class="btn" id="restore-backup" type="button">Restore from file…</button>
+        </div>
+        <div class="backup-note">Restore verifies the file first, saves a pre-restore safety copy on the server, replaces all current data, and signs everyone out.</div>
+      </section>
       <form class="stat-card wide admin-settings" id="admin-settings">
         <h3>Application settings</h3>
         <div class="sub">Update integrations without editing files. Saved secrets are never displayed; leave a saved secret blank to keep it.</div>
@@ -1944,6 +1953,8 @@
       createPasswordReset(parseInt(btn.dataset.id, 10), members.find(m => m.id === parseInt(btn.dataset.id, 10))?.username));
     app.querySelectorAll(".copy-invite").forEach(btn => btn.onclick = () =>
       copyText(state.inviteUrls[parseInt(btn.dataset.id, 10)], "Invite link copied"));
+    $("#download-backup").onclick = (event) => downloadBackup(event.currentTarget);
+    $("#restore-backup").onclick = showRestoreBackup;
     const inviteForm = $("#invite-create-form");
     inviteForm.onsubmit = async (event) => {
       event.preventDefault();
@@ -1974,6 +1985,88 @@
         showSettingsErrors(settingsForm, (e.data && e.data.errors) || {});
         $("#settings-message").textContent = e.message;
         button.disabled = false; button.textContent = "Validate and save";
+      }
+    };
+  }
+
+  async function downloadBackup(button) {
+    button.disabled = true;
+    button.textContent = "Preparing…";
+    try {
+      const response = await fetch("/api/admin/backup", {
+        headers: { "X-Client-Id": CLIENT_ID },
+      });
+      if (response.status === 401) {
+        state.me = null; disconnectEvents(); render();
+        throw new Error("unauth");
+      }
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try { detail = (await response.json()).detail || detail; } catch { /* no JSON */ }
+        throw new Error(detail);
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const link = document.createElement("a");
+      const objectUrl = URL.createObjectURL(blob);
+      link.href = objectUrl;
+      link.download = match ? match[1] : "filmclub-backup.filmclub-backup";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      toast("Backup downloaded");
+    } catch (error) {
+      if (error.message !== "unauth") toast("Backup failed: " + error.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Download backup";
+    }
+  }
+
+  function showRestoreBackup() {
+    const root = $("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="restore-backdrop"><div class="modal">
+      <div class="modal-head"><h2>Restore Film Club data</h2><button class="modal-close" id="restore-close" type="button">×</button></div>
+      <form class="modal-body restore-form" id="restore-form">
+        <p>This replaces every current member, film, vote, rating, setting, and invite with the contents of the backup. A safety copy of the current database is created first.</p>
+        <label><span>Backup file</span><input class="search-input" name="backup_file" type="file" accept=".filmclub-backup,.zip,application/zip" required></label>
+        <label><span>Type <strong>RESTORE</strong> to confirm</span><input class="search-input" name="confirmation" autocomplete="off" required></label>
+        <div class="restore-warning">After a successful restore, everyone—including you—must sign in again.</div>
+        <div class="setup-actions"><span id="restore-message"></span><button class="btn btn-danger" type="submit">Restore all data</button></div>
+      </form>
+    </div></div>`;
+    const close = () => { root.innerHTML = ""; };
+    $("#restore-close").onclick = close;
+    $("#restore-backdrop").onclick = (event) => {
+      if (event.target.id === "restore-backdrop") close();
+    };
+    const form = $("#restore-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button[type=submit]");
+      const message = $("#restore-message");
+      const data = new FormData(form);
+      button.disabled = true; button.textContent = "Verifying and restoring…";
+      message.textContent = "";
+      try {
+        const response = await fetch("/api/admin/backup/restore", {
+          method: "POST", headers: { "X-Client-Id": CLIENT_ID }, body: data,
+        });
+        let result = null;
+        try { result = await response.json(); } catch { /* no JSON */ }
+        if (!response.ok) throw new Error((result && result.detail) || `HTTP ${response.status}`);
+        root.innerHTML = `<div class="modal-backdrop"><div class="modal"><div class="modal-body restore-complete">
+          <h2>Restore complete</h2>
+          <p>All data was restored and a safety copy named <strong>${esc(result.safety_backup)}</strong> was kept on the server.</p>
+          <p>You have been signed out so the restored account state can take effect.</p>
+          <button class="btn btn-primary" id="restore-sign-in" type="button">Continue to sign in</button>
+        </div></div></div>`;
+        $("#restore-sign-in").onclick = () => window.location.assign("/");
+      } catch (error) {
+        message.textContent = error.message;
+        button.disabled = false; button.textContent = "Restore all data";
       }
     };
   }

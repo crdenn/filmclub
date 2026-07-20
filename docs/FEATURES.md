@@ -320,6 +320,15 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Limitations:** Failure is logged and cache marked unavailable, but endpoint still returns success because refresh never raises.
 - **Follow-up:** Return refresh status/details without exposing secrets.
 
+### Portable backup and restore
+
+- **Purpose:** Let an admin download all durable application data as one file and recover it on the same or a fresh installation.
+- **Main files:** `app/backups.py`, `/api/admin/backup`, `/api/admin/backup/restore`, and the Backup & restore section in `static/app.js`.
+- **Status:** Implemented with automated round-trip and corruption tests.
+- **Dependencies:** Effective admin access and writable persistent `/data` storage.
+- **Safety behavior:** Uses an online SQLite snapshot; bundles the data key; validates checksums, archive shape, size, database integrity, foreign keys, and schema compatibility; creates a pre-restore server-side safety copy; atomically replaces the database; re-keys encrypted values; revokes all sessions.
+- **Limitations:** The portable archive contains sensitive key material and must be stored securely. It is not password-encrypted. Server-side pre-restore and migration copies remain database-only, same-install rollback files.
+
 ## Operations
 
 ### Browser setup and admin-managed integrations

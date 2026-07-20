@@ -70,6 +70,18 @@ The startup handler initializes/migrates the database, warns about missing confi
 
 **Rollback** is deliberately simple: stop the container, restore the pre-migration backup that matches the failed upgrade from `<data dir>/backups/` over `filmclub.db` (removing any stale `-wal`/`-shm` sidecars), and start the previous image or source tag. There are no down-migrations by design.
 
+`app/backups.py` provides the separate, portable Admin backup format. A download
+contains an online SQLite snapshot, a checksummed JSON manifest, and the data key
+needed to recover encrypted settings and member Plex tokens. Effective runtime
+settings are written into the snapshot so legacy environment-backed installs are
+portable; destination environment overrides still take precedence. Restore reads only
+the three expected archive members (it never extracts paths), enforces size and
+format limits, verifies SQLite integrity, foreign keys, checksums, and supported
+schema version, and re-encrypts protected values with the destination install's
+active data key. Immediately before the atomic database replacement it writes a
+same-install safety copy under `<data dir>/backups/`; restored sessions are
+deleted so all users must authenticate against the restored account state.
+
 `/healthz` is an unauthenticated liveness check (the process can answer HTTP). `/readyz` is a readiness check that reports the app version, whether the database is reachable and migrated to the latest schema, and whether the signing secret is durable — returning 503 until the app can serve its purpose, and never returning secret values. `/api/admin/diagnostics` (admin only) surfaces the app/schema version, database integrity and row counts, backup status, and which integrations are enabled.
 
 ## Major modules and entry points
@@ -79,6 +91,7 @@ The startup handler initializes/migrates the database, warns about missing confi
 | `app.main:app` | Uvicorn/FastAPI entry point and route boundary |
 | `app.config` | Environment loading, data paths, client-ID persistence |
 | `app.auth` | Session serialization, current-member resolution, admin enforcement |
+| `app.backups` | Portable archive creation, validation, re-keying, and atomic restore |
 | `app.service` | Core domain behavior and API read models |
 | `app.stats` | Aggregate and statistical read model |
 | `app.plex` | OAuth, server authorization, library cache, deep links |
@@ -222,7 +235,7 @@ The client renders rather than recalculates these statistics.
 
 Authenticated read APIs expose the current member, reminders, members, member profiles, backlog, current selection, watched archive, movie details, TMDB search, and statistics. Authenticated mutation APIs update profiles, suggestions, scheduling state, dates, prior views, seconds, and ratings.
 
-Admin-only APIs list enriched member records, merge members, grant/revoke database admin status, delete any movie, and force a Plex library refresh.
+Admin-only APIs list enriched member records, merge members, grant/revoke database admin status, delete any movie, force a Plex library refresh, and download or restore portable backups.
 
 There is no separately versioned public API and no generated client. Pydantic validates request bodies, while response structures are ordinary dictionaries rather than declared response models.
 

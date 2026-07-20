@@ -1,6 +1,6 @@
 # Project state
 
-Generated: 2026-07-19
+Generated: 2026-07-20
 
 Git branch: unavailable; this workspace has no `.git` metadata.
 
@@ -34,6 +34,7 @@ The scheduling workflow in the code and README is authoritative.
 - Reminder badges for unanswered backlog items and unrated archived films.
 - Server-side statistics with explicit small-sample disclosure/suppression.
 - Admin member list, placeholder merging, admin grants, movie deletion, and manual Plex refresh.
+- Admin-downloadable portable backups and validated restore with automatic pre-restore safety copies and session revocation.
 - Plex library badges, deep links, and available Rotten Tomatoes critic/audience scores backed by a periodic in-memory cache.
 - Optional Seerr request flow with Plex cache/live checks and failure-tolerant behavior.
 - Future-only, two-way Plex rating sync with encrypted per-member tokens and local-first failure handling.
@@ -57,7 +58,7 @@ These are implemented code paths, not claims that each works in the current prod
 - The schema comment lists `scheduled`, and the implementation uses it, but there is no database CHECK constraint for status values.
 - `MEMBER_COUNT_HINT` exists in configuration but is not an enforced club size.
 - The current code permits multiple scheduled films. It is unclear whether this is intentional flexibility or an unenforced invariant.
-- The generated `/data/master.key` has no automated rotation or recovery flow and must be included in backups.
+- The generated `/data/master.key` has no automated rotation flow. Admin-created portable backups bundle the active data key and re-key encrypted values on restore; raw filesystem backups must still include the key.
 
 ## Suspicious behavior and likely bugs
 
