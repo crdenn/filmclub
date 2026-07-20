@@ -62,7 +62,7 @@ Keep route-specific HTTP validation and authorization in `main.py`; keep reusabl
 - Use `db.connect()` so rows are `sqlite3.Row` and foreign keys are enabled.
 - Use parameterized SQL. Never interpolate user-controlled values into SQL.
 - Existing helpers commit each mutation immediately. Preserve their transaction behavior unless a requested change explicitly redesigns it.
-- Keep `schema.sql` correct for fresh databases and add idempotent compatibility steps to `db._migrate()` for existing databases.
+- Keep `schema.sql` correct for fresh databases. Schema changes for existing databases go in `app/migrations.py` as a new ordered `(version, name, up)` migration — appended with the next integer, never renumbered. `db.init_db()` runs `schema.sql` (fresh tables) then `migrations.run()`, which applies pending migrations transactionally, records them in `schema_migrations`, and writes a timestamped backup under `<data dir>/backups/` before any migration.
 - Schema changes must be additive and safe for an existing bind-mounted `filmclub.db`; there is no downgrade framework.
 - Preserve foreign-key deletion semantics and unique constraints.
 - `prior_views.seen` is mutable eligibility input. `ratings.seen_before` is a historical fact supplied at rating time.

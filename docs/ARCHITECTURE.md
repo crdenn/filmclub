@@ -66,7 +66,7 @@ The startup handler initializes/migrates the database, warns about missing confi
 
 `app/db.py` exposes a small connection factory and thin query/mutation helpers. Each route generally opens one connection and closes it in `finally`. Rows use `sqlite3.Row`; API-facing shapes are produced by `member_public()` and `movie_base()`.
 
-`app/schema.sql` initializes new databases and enables WAL and foreign keys. `db._migrate()` performs guarded column additions for older databases. There is no migration table or version number.
+`app/schema.sql` initializes new databases and enables WAL and foreign keys. `app/migrations.py` then applies ordered, transactional migrations recorded in a `schema_migrations` table, writing a timestamped backup under `<data dir>/backups/` before any pending migration. Migration `1` is the baseline (the additive column set from the former `db._migrate()`), so both fresh and existing databases converge on the same recorded version.
 
 ## Major modules and entry points
 

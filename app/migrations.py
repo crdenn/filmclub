@@ -1,0 +1,162 @@
+"""Ordered, transactional schema migrations with a pre-migration backup.
+
+Each migration is a ``(version, name, up)`` triple. Pending migrations are
+applied in version order; every migration runs inside its own explicit
+transaction *together with* the row that records it in ``schema_migrations``,
+so a failure rolls the whole step back and leaves the version unrecorded.
+
+Before any pending migration runs, a timestamped online backup of the database
+is written under ``<data dir>/backups`` (never overwriting an existing file), so
+the documented rollback is simply: restore that copy and run the previous image.
+
+This is intentionally tiny (one small club, a few hundred rows) and has no
+down-migrations: the backup is the rollback path. New migrations are appended
+with the next integer version and must never be renumbered or reordered.
+"""
+import logging
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+log = logging.getLogger("filmclub.migrations")
+
+
+# --------------------------------------------------------------------------
+# Migration steps. Each `up(conn)` receives a connection in autocommit mode;
+# the runner wraps the call in an explicit BEGIN/COMMIT.
+# --------------------------------------------------------------------------
+
+def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
+def _m1_baseline(conn: sqlite3.Connection) -> None:
+    """Baseline = the schema as of the pre-framework release.
+
+    Idempotent: brings an older existing database up to the current column set,
+    and is a no-op on a fresh database created from ``schema.sql`` (which already
+    declares every column). This preserves the exact additive steps that the old
+    ``db._migrate()`` performed, so upgrading an in-place production database is a
+    behavioural no-op beyond recording the baseline version.
+    """
+    _add_column_if_missing(conn, "members", "is_admin",
+                           "is_admin INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "members", "display_name", "display_name TEXT")
+    _add_column_if_missing(conn, "members", "plex_account_id", "plex_account_id TEXT")
+    _add_column_if_missing(conn, "members", "plex_token_encrypted", "plex_token_encrypted TEXT")
+    _add_column_if_missing(conn, "members", "plex_rating_sync_enabled",
+                           "plex_rating_sync_enabled INTEGER NOT NULL DEFAULT 1")
+    _add_column_if_missing(conn, "movies", "language", "language TEXT")
+    _add_column_if_missing(conn, "movies", "seerr_status", "seerr_status TEXT")
+
+
+# Ordered list of migrations. Append new ones with the next integer version.
+MIGRATIONS: list[tuple[int, str, "callable"]] = [
+    (1, "baseline", _m1_baseline),
+]
+
+
+# --------------------------------------------------------------------------
+# Runner
+# --------------------------------------------------------------------------
+
+def _ensure_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS schema_migrations (
+               version    INTEGER PRIMARY KEY,
+               name       TEXT NOT NULL,
+               applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+           )"""
+    )
+
+
+def _applied_versions(conn: sqlite3.Connection) -> set[int]:
+    _ensure_table(conn)
+    return {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
+
+
+def _backup(db_path: Path, target_version: int) -> Path | None:
+    """Write a timestamped online backup next to the database, under ``backups/``.
+
+    Returns the backup path, or None when there is no database file yet (a fresh
+    install has nothing worth preserving). Never overwrites an existing file.
+    """
+    if not db_path.exists():
+        return None
+    backups = db_path.parent / "backups"
+    backups.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dest = backups / f"filmclub-{ts}-pre-v{target_version}.db"
+    n = 1
+    while dest.exists():
+        dest = backups / f"filmclub-{ts}-pre-v{target_version}-{n}.db"
+        n += 1
+
+    src = sqlite3.connect(db_path, timeout=30)
+    bck = sqlite3.connect(dest)
+    try:
+        try:
+            src.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.OperationalError:
+            pass  # best effort; the online backup still captures committed state
+        src.backup(bck)
+    finally:
+        bck.close()
+        src.close()
+    log.info("Wrote pre-migration backup: %s", dest)
+    return dest
+
+
+def run(db_path: Path) -> None:
+    """Apply pending migrations to the database at ``db_path``.
+
+    Safe to call on every startup; does nothing when the database is current
+    (so a normal restart takes no backup and no schema work).
+    """
+    db_path = Path(db_path)
+    conn = sqlite3.connect(db_path, isolation_level=None)  # explicit txn control
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        applied = _applied_versions(conn)
+        pending = sorted(m for m in MIGRATIONS if m[0] not in applied)
+        if not pending:
+            return
+        target = pending[-1][0]
+        _backup(db_path, target)
+        for version, name, up in pending:
+            log.info("Applying migration v%d (%s)", version, name)
+            conn.execute("BEGIN")
+            try:
+                up(conn)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
+                    (version, name),
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                log.exception("Migration v%d (%s) failed; rolled back", version, name)
+                raise
+    finally:
+        conn.close()
+
+
+def current_version(db_path: Path) -> int:
+    """Highest applied migration version, or 0 if none / no database yet."""
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return 0
+    conn = sqlite3.connect(db_path)
+    try:
+        _ensure_table(conn)
+        row = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
+        return row[0] or 0
+    finally:
+        conn.close()
+
+
+def latest_version() -> int:
+    """Highest version this codebase knows how to migrate to."""
+    return max((m[0] for m in MIGRATIONS), default=0)

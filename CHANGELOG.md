@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - AGPL-3.0 `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md`.
 - This changelog.
+- Versioned, transactional schema migrations (`app/migrations.py`,
+  `schema_migrations` table). Pending migrations apply in order, each in its own
+  transaction recorded atomically with its version; a timestamped online backup
+  is written under `<data dir>/backups/` before any migration. Migration `1` is
+  the baseline (the former `db._migrate()` additive columns), so existing
+  databases upgrade with data preserved and no behaviour change. Covered by
+  `tests/test_migrations.py`.
 
 ### Changed
 - Hardened `.gitignore` to exclude all credential-bearing and local-only

@@ -9,7 +9,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import config
+from . import config, migrations
 
 _SCHEMA = Path(__file__).with_name("schema.sql").read_text()
 
@@ -22,46 +22,21 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create tables if they do not exist, then run migrations. Idempotent."""
+    """Ensure the base tables exist, then apply ordered, backed-up migrations.
+
+    ``schema.sql`` (CREATE ... IF NOT EXISTS) seeds a fresh database; the
+    versioned migration runner then brings any existing database forward and
+    records its state in ``schema_migrations``. Idempotent and safe on every
+    startup — a database that is already current does no schema work and takes
+    no backup.
+    """
     conn = connect()
     try:
         conn.executescript(_SCHEMA)
         conn.commit()
-        _migrate(conn)
     finally:
         conn.close()
-
-
-def _migrate(conn: sqlite3.Connection) -> None:
-    """Additive schema migrations for existing databases. Each step is guarded
-    so re-running is safe."""
-    cols = {r["name"] for r in conn.execute("PRAGMA table_info(members)")}
-    if "is_admin" not in cols:
-        conn.execute("ALTER TABLE members ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
-        conn.commit()
-    if "display_name" not in cols:
-        conn.execute("ALTER TABLE members ADD COLUMN display_name TEXT")
-        conn.commit()
-    if "plex_account_id" not in cols:
-        conn.execute("ALTER TABLE members ADD COLUMN plex_account_id TEXT")
-        conn.commit()
-    if "plex_token_encrypted" not in cols:
-        conn.execute("ALTER TABLE members ADD COLUMN plex_token_encrypted TEXT")
-        conn.commit()
-    if "plex_rating_sync_enabled" not in cols:
-        conn.execute(
-            "ALTER TABLE members ADD COLUMN plex_rating_sync_enabled "
-            "INTEGER NOT NULL DEFAULT 1"
-        )
-        conn.commit()
-
-    movie_cols = {r["name"] for r in conn.execute("PRAGMA table_info(movies)")}
-    if "language" not in movie_cols:
-        conn.execute("ALTER TABLE movies ADD COLUMN language TEXT")
-        conn.commit()
-    if "seerr_status" not in movie_cols:
-        conn.execute("ALTER TABLE movies ADD COLUMN seerr_status TEXT")
-        conn.commit()
+    migrations.run(config.DB_PATH)
 
 
 # --- small convenience wrappers -------------------------------------------
