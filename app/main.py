@@ -152,7 +152,13 @@ async def _startup() -> None:
         finally:
             conn.close()
     if not app_settings.is_setup_complete():
-        log.warning("FIRST-RUN SETUP REQUIRED — setup code: %s", app_settings.setup_code())
+        code, _ = app_settings.ensure_setup_code()
+        if code:
+            log.warning("FIRST-RUN SETUP REQUIRED — setup code: %s (valid ~%d min)",
+                        code, app_settings.SETUP_CODE_TTL // 60)
+        else:
+            log.warning("FIRST-RUN SETUP REQUIRED — a setup code is already active; "
+                        "restart after it expires to issue a new one")
     missing = config.missing_required()
     if missing:
         log.warning("Missing required env vars: %s", ", ".join(missing))
@@ -294,8 +300,12 @@ async def api_setup_status():
 async def api_setup(body: SettingsIn):
     if app_settings.is_setup_complete():
         raise HTTPException(status_code=409, detail="Setup is already complete")
-    if not app_settings.verify_setup_code(body.setup_code or ""):
-        raise HTTPException(status_code=403, detail="Invalid setup code")
+    result = app_settings.verify_setup_code(body.setup_code or "")
+    if result == "locked":
+        raise HTTPException(status_code=429,
+                            detail="Too many attempts — wait a minute and try again")
+    if result != "ok":
+        raise HTTPException(status_code=403, detail="Invalid or expired setup code")
     values = _settings_values(body)
     errors = await _validate_settings(values, require_all=True)
     if errors:

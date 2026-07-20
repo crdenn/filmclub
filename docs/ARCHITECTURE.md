@@ -240,7 +240,7 @@ The public installation path is the portable `docker-compose.yml`: clone, build,
 
 `docker-compose.yml` mounts `./data`; operators may replace it with an absolute persistent host path. The volume contains SQLite, migration backups, the generated Plex client ID, and the master encryption key.
 
-On an unconfigured database the app writes a one-time setup code to the container log. The wizard validates required Plex/TMDB credentials, stores sensitive values encrypted in `app_settings`, and marks setup complete. The first authorized Plex login atomically claims the durable owner role. Admin settings reuse the same validation/storage layer. Explicit environment values take precedence and are shown read-only.
+On an unconfigured database the app logs a one-time setup code and stores only a salted SHA-256 hash of it in `/data/setup_code` (the code expires after 30 minutes and wrong guesses are rate-limited to a rolling window; restart to reissue). The wizard validates required Plex/TMDB credentials, stores sensitive values encrypted in `app_settings`, and marks setup complete. The first authorized Plex login atomically claims the durable owner role. Admin settings reuse the same validation/storage layer. Explicit environment values take precedence and are shown read-only.
 
 ## Visible architectural decisions
 

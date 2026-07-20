@@ -2,9 +2,11 @@
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import os
 import secrets
+import time
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -123,21 +125,77 @@ def public_values(*, reveal_nonsecrets: bool = True) -> dict:
     return result
 
 
-def setup_code() -> str:
-    path = config.DATA_DIR / "setup_code"
-    if path.exists():
-        return path.read_text().strip()
-    code = "-".join(secrets.token_hex(2).upper() for _ in range(3))
-    path.write_text(code)
+SETUP_CODE_TTL = 1800          # a setup code is valid for 30 minutes
+SETUP_ATTEMPT_WINDOW = 300     # failed-attempt counter resets every 5 minutes
+SETUP_MAX_ATTEMPTS = 5         # allowed failed attempts per window
+
+
+def _setup_path():
+    return config.DATA_DIR / "setup_code"
+
+
+def _hash_code(code: str, salt: str) -> str:
+    return hashlib.sha256(f"{salt}:{code}".encode()).hexdigest()
+
+
+def _read_setup_state() -> dict | None:
+    path = _setup_path()
+    if not path.exists():
+        return None
+    try:
+        state = json.loads(path.read_text())
+        return state if isinstance(state, dict) and "hash" in state else None
+    except (ValueError, OSError):
+        return None
+
+
+def _write_setup_state(state: dict) -> None:
+    path = _setup_path()
+    path.write_text(json.dumps(state))
     path.chmod(0o600)
-    return code
 
 
-def verify_setup_code(candidate: str) -> bool:
-    return hmac.compare_digest(setup_code(), (candidate or "").strip().upper())
+def ensure_setup_code() -> tuple[str | None, float]:
+    """Ensure a valid setup code exists.
+
+    Returns ``(code, expires_at)``. The plaintext ``code`` is only returned when
+    a fresh one is generated (nothing valid existed); if a code is already active
+    it returns ``(None, expires_at)`` since only its hash is stored at rest.
+    """
+    now = time.time()
+    state = _read_setup_state()
+    if state and now < state.get("expires", 0):
+        return None, state["expires"]
+    code = "-".join(secrets.token_hex(2).upper() for _ in range(3))
+    salt = secrets.token_hex(8)
+    expires = now + SETUP_CODE_TTL
+    _write_setup_state({"hash": _hash_code(code, salt), "salt": salt,
+                        "expires": expires, "attempts": 0,
+                        "window_reset": now + SETUP_ATTEMPT_WINDOW})
+    return code, expires
+
+
+def verify_setup_code(candidate: str) -> str:
+    """Check a candidate code. Returns ``"ok"``, ``"locked"``, or ``"invalid"``."""
+    now = time.time()
+    state = _read_setup_state()
+    if not state or now >= state.get("expires", 0):
+        return "invalid"
+    if now >= state.get("window_reset", 0):
+        state["attempts"] = 0
+        state["window_reset"] = now + SETUP_ATTEMPT_WINDOW
+    if state.get("attempts", 0) >= SETUP_MAX_ATTEMPTS:
+        _write_setup_state(state)
+        return "locked"
+    candidate = (candidate or "").strip().upper()
+    ok = hmac.compare_digest(state["hash"], _hash_code(candidate, state["salt"]))
+    if not ok:
+        state["attempts"] = state.get("attempts", 0) + 1
+    _write_setup_state(state)
+    return "ok" if ok else "invalid"
 
 
 def remove_setup_code() -> None:
-    path = config.DATA_DIR / "setup_code"
+    path = _setup_path()
     if path.exists():
         path.unlink()

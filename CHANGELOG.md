@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   webhook path from all log output via a root logging filter. Closes a leak
   where a failed TMDB request logged the real API key in its URL. Covered by
   `tests/test_log_redaction.py`.
+- Hardened the first-run setup code: it is now printed once and stored only as a
+  salted SHA-256 hash at rest (never in plaintext), expires 30 minutes after
+  issuance, and is rate-limited (5 failed attempts per rolling 5-minute window,
+  answered with HTTP 429). A code that is missing or expired is reissued on the
+  next startup. Covered by `tests/test_settings.py`.
 
 ## [0.9.0] - 2026-07-19
 

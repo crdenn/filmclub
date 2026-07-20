@@ -134,8 +134,10 @@ FILMCLUB_HTTP_PORT=8001 docker compose up -d --build
 Use that same port in the browser and in the setup wizard's Film Club URL.
 
 No configuration file is required. On first startup, the app generates a
-durable master key and a one-time setup code in the persistent `/data` volume.
-Read the code from the container log:
+durable master key and a one-time setup code. The code is printed once to the
+container log; only a salted hash of it is stored in `/data`, it expires after
+30 minutes, and repeated wrong guesses are rate-limited. If it expires before
+you use it, restart the container to issue a fresh one. Read it from the log:
 
 ```bash
 docker compose logs filmclub
