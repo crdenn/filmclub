@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   migrations/backups/`/readyz`) and genericized deployment references (no
   site-specific hosts or IPs).
 
+### Security
+- Redact query-string secrets (TMDB `api_key`, Plex/access tokens) and the Plex
+  webhook path from all log output via a root logging filter. Closes a leak
+  where a failed TMDB request logged the real API key in its URL. Covered by
+  `tests/test_log_redaction.py`.
+
 ## [0.9.0] - 2026-07-19
 
 Baseline snapshot of the known-good private Unraid deployment, captured as the

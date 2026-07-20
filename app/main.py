@@ -14,8 +14,8 @@ from itsdangerous.url_safe import URLSafeTimedSerializer
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from . import (auth, config, db, events, migrations, plex, plex_ratings, seerr,
-               service, stats, tmdb)
+from . import (auth, config, db, events, logsafe, migrations, plex,
+               plex_ratings, seerr, service, stats, tmdb)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 # httpx logs full request URLs at INFO, including TMDB's query-string API key.
@@ -23,6 +23,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 # copying credentials into routine container logs.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+# Belt-and-braces: scrub query-string secrets / webhook paths from ALL log
+# output, so an error that carries a URL (e.g. TMDB's ?api_key=) can't leak it.
+logsafe.install()
 log = logging.getLogger("filmclub")
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
