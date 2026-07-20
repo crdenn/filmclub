@@ -21,18 +21,36 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "filmclub.db"
 
 
-def _durable_secret() -> str:
-    """Return the operator secret or create a durable one in the data volume."""
+def _durable_file_secret(filename: str) -> str:
+    """Read (or create once) a durable random secret in the data volume."""
+    path = DATA_DIR / filename
+    if path.exists():
+        existing = path.read_text().strip()
+        if existing:
+            return existing
+    value = secrets.token_urlsafe(48)
+    path.write_text(value)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return value
+
+
+def _data_key() -> str:
+    """Key protecting data at rest: app_settings secrets and per-member Plex
+    tokens.
+
+    Sourced from the legacy ``SESSION_SECRET`` env var, else the generated
+    ``master.key``, so values encrypted by earlier versions stay readable. Kept
+    deliberately separate from the cookie-signing secret below: rotating the
+    signing secret must never risk the encrypted data, and rotating this key
+    requires re-encrypting what it protects.
+    """
     supplied = os.environ.get("SESSION_SECRET", "").strip()
     if supplied:
         return supplied
-    path = DATA_DIR / "master.key"
-    if path.exists():
-        return path.read_text().strip()
-    value = secrets.token_urlsafe(48)
-    path.write_text(value)
-    path.chmod(0o600)
-    return value
+    return _durable_file_secret("master.key")
 
 # --- Metadata / enrichment -------------------------------------------------
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
@@ -59,7 +77,14 @@ SEERR_TIMEOUT = float(os.environ.get("SEERR_TIMEOUT", "10"))
 
 # --- Auth ------------------------------------------------------------------
 APP_URL = os.environ.get("APP_URL", "http://localhost:8000").rstrip("/")
-SESSION_SECRET = _durable_secret()
+
+# Data-at-rest encryption key (app_settings secrets + Plex tokens). See _data_key.
+DATA_KEY = _data_key()
+
+# Cookie/session signing secret, independent of DATA_KEY so it can be rotated
+# freely: replacing it only forces a re-login and never touches encrypted data.
+# Self-provisions to <data>/session.key; delete that file and restart to rotate.
+SESSION_SECRET = _durable_file_secret("session.key")
 SESSION_COOKIE = "filmclub_session"
 SESSION_MAX_AGE = int(os.environ.get("SESSION_MAX_AGE", str(60 * 60 * 24 * 90)))  # 90 days
 PLEX_PRODUCT = os.environ.get("PLEX_PRODUCT", "Film Club Tracker")
@@ -114,8 +139,8 @@ def missing_required() -> list[str]:
     return [k for k, v in required.items() if not v]
 
 
-# SESSION_SECRET is always durable: supplied by the operator or generated once
-# in the bind-mounted data directory.
+# Both DATA_KEY and SESSION_SECRET are always durable: generated once in (and
+# read back from) the bind-mounted data directory, or pinned via env.
 EFFECTIVE_SESSION_SECRET = SESSION_SECRET
 
 MEMBER_COUNT_HINT = 6  # club size; only used for friendly copy, not enforced

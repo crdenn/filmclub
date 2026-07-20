@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **owner** (`is_owner`, DB-enforced unique), so upgrades don't require the wizard.
 
 ### Changed
+- Split the single durable secret into two independent keys: a data-at-rest
+  encryption key (`config.DATA_KEY` — the `SESSION_SECRET` env value if set,
+  otherwise the generated `/data/master.key`, used for app-settings secrets and
+  per-member Plex tokens) and a separate cookie-signing secret self-provisioned
+  to `/data/session.key`. Rotating the signing secret now only forces a re-login
+  and never risks encrypted data; existing installs keep all encrypted data
+  readable (the data key still resolves to the same value) and members re-login
+  once as signing moves to the new key. Foundation for safe credential rotation.
 - Hardened `.gitignore` to exclude all credential-bearing and local-only
   artifacts (`.env`, `.claude/`, deployment bundles, databases, logs,
   generated IDs, caches) ahead of publishing source history.

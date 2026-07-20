@@ -31,7 +31,7 @@ SETUP_COMPLETE = "_setup_complete"
 
 def _fernet() -> Fernet:
     digest = hashlib.sha256(
-        f"filmclub-app-settings:{config.SESSION_SECRET}".encode()
+        f"filmclub-app-settings:{config.DATA_KEY}".encode()
     ).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
 

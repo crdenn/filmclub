@@ -210,9 +210,12 @@ membership. Access to *your* server is the real signal: on login the app confirm
 your `PLEX_MACHINE_ID` appears in that account's Plex resources and rejects anyone
 else. The signed, HttpOnly session cookie holds only the local member id and Plex
 UUID. To write a member's own rating back to Plex, their token is **encrypted at
-rest** with a key derived from `SESSION_SECRET`; it is never returned by an API or
-placed in a cookie. Rotating `SESSION_SECRET` invalidates stored tokens and
-requires members to sign in again.
+rest** with a key derived from the durable data key (`SESSION_SECRET` if set,
+otherwise the generated `/data/master.key`); it is never returned by an API or
+placed in a cookie. Cookie/session signing uses a *separate*, self-provisioned
+`/data/session.key`, so rotating the signing secret only forces a re-login and
+never touches encrypted data. Rotating the data key does invalidate stored tokens
+and requires members to sign in again.
 
 ### Plex rating sync (optional)
 

@@ -55,7 +55,7 @@ This file records decisions visible in the current repository. “Confirmed” m
 - **Decision:** Persist each OAuth token encrypted in SQLite while keeping the signed cookie limited to member identity.
 - **Evidence:** `members.plex_token_encrypted`, `app/token_crypto.py`, and the callback's member upsert.
 - **Likely reasoning:** Plex rating writes must be performed as the member, while raw tokens should not be exposed to the browser or stored as plaintext.
-- **Consequences:** `SESSION_SECRET` is also the encryption-key source; rotating it makes existing ciphertext unreadable and members must sign in again. The database still contains sensitive encrypted material and requires normal backup/access protection.
+- **Consequences:** Ciphertext is keyed on the durable data key (`config.DATA_KEY` — the `SESSION_SECRET` env value if set, otherwise the generated `/data/master.key`), which is deliberately separate from the cookie-signing secret (`/data/session.key`). Rotating the signing secret only forces a re-login; rotating the data key makes existing ciphertext unreadable and members must sign in again. The database still contains sensitive encrypted material and requires normal backup/access protection.
 - **Status:** Confirmed by owner direction and implementation.
 
 ## Make rating synchronization future-only and local-first

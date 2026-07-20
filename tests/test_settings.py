@@ -42,6 +42,23 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(config.PLEX_URL, "http://plex.local:32400")
         self.assertEqual(config.PLEX_REFRESH_INTERVAL, 900)
 
+    def test_encryption_follows_data_key_not_signing_secret(self):
+        old_data_key, old_signing = config.DATA_KEY, config.SESSION_SECRET
+        try:
+            config.DATA_KEY = "data-key-A"
+            settings.save({"TMDB_API_KEY": "s3cr3t-value"})
+            self.assertEqual(config.TMDB_API_KEY, "s3cr3t-value")
+            # Rotating the cookie-signing secret must not affect decryption.
+            config.SESSION_SECRET = "rotated-signing-secret"
+            settings.load_into_config()
+            self.assertEqual(config.TMDB_API_KEY, "s3cr3t-value")
+            # Changing the data key does make the stored secret unreadable.
+            config.DATA_KEY = "data-key-B"
+            with self.assertRaises(RuntimeError):
+                settings.load_into_config()
+        finally:
+            config.DATA_KEY, config.SESSION_SECRET = old_data_key, old_signing
+
 
 class SetupCodeTests(unittest.TestCase):
     def setUp(self):
