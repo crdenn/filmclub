@@ -83,11 +83,49 @@ def _m3_sessions(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_member ON sessions(member_id)")
 
 
+def _m4_identities(conn: sqlite3.Connection) -> None:
+    # Login methods mapped to member rows. One member may have both a 'plex' and
+    # a 'local' identity (account linking). provider_uid is the Plex uuid or the
+    # lowercased local username; password_hash is set for local identities only.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS identities (
+               id            INTEGER PRIMARY KEY AUTOINCREMENT,
+               member_id     INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+               provider      TEXT NOT NULL,
+               provider_uid  TEXT NOT NULL,
+               password_hash TEXT,
+               created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+               UNIQUE (provider, provider_uid)
+           )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_identities_member ON identities(member_id)")
+    # Grandfather every existing member as an approved Plex identity, preserving
+    # their member id and all related data.
+    conn.execute(
+        """INSERT OR IGNORE INTO identities (member_id, provider, provider_uid)
+           SELECT id, 'plex', plex_id FROM members WHERE plex_id IS NOT NULL"""
+    )
+    # Single-use, expiring invitations. Only the SHA-256 hash of the code is kept.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS invites (
+               id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+               code_hash          TEXT NOT NULL UNIQUE,
+               created_by         INTEGER REFERENCES members(id) ON DELETE SET NULL,
+               email              TEXT,
+               expires_at         TEXT NOT NULL,
+               redeemed_at        TEXT,
+               redeemed_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+               created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+           )"""
+    )
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
     (2, "app-settings", _m2_app_settings),
     (3, "sessions", _m3_sessions),
+    (4, "identities", _m4_identities),
 ]
 
 

@@ -108,3 +108,29 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_member ON sessions(member_id);
+
+-- Login methods mapped to member rows. A member may have both a 'plex' and a
+-- 'local' identity (account linking). provider_uid is the Plex uuid or the
+-- lowercased local username; password_hash is set for local identities only.
+CREATE TABLE IF NOT EXISTS identities (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id     INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    provider      TEXT NOT NULL,          -- 'plex' | 'local'
+    provider_uid  TEXT NOT NULL,          -- plex uuid, or lowercased username
+    password_hash TEXT,                   -- local identities only (scrypt)
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (provider, provider_uid)
+);
+CREATE INDEX IF NOT EXISTS idx_identities_member ON identities(member_id);
+
+-- Single-use, expiring invitations. Only the SHA-256 hash of the code is stored.
+CREATE TABLE IF NOT EXISTS invites (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    code_hash          TEXT NOT NULL UNIQUE,
+    created_by         INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    email              TEXT,
+    expires_at         TEXT NOT NULL,
+    redeemed_at        TEXT,              -- NULL = unused (single-use)
+    redeemed_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);

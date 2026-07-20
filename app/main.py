@@ -17,7 +17,7 @@ from itsdangerous.url_safe import URLSafeTimedSerializer
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from . import (auth, config, db, events, logsafe, migrations, plex,
+from . import (accounts, auth, config, db, events, logsafe, migrations, plex,
                plex_ratings, seerr, service, stats, tmdb)
 from . import settings as app_settings
 
@@ -370,15 +370,20 @@ async def auth_callback(request: Request):
 
     resp = RedirectResponse("/")
     resp.delete_cookie(PIN_COOKIE)
+    _issue_session(resp, member["id"])
+    return resp
+
+
+def _issue_session(resp, member_id: int) -> None:
+    """Attach a fresh server-side session cookie to a response."""
     resp.set_cookie(
         config.SESSION_COOKIE,
-        auth.create_session(member["id"]),
+        auth.create_session(member_id),
         max_age=config.SESSION_MAX_AGE,
         httponly=True,
         samesite="lax",
         secure=config.APP_URL.startswith("https"),
     )
-    return resp
 
 
 @app.post("/auth/logout")
@@ -386,6 +391,65 @@ async def auth_logout(filmclub_session: str | None = Cookie(default=None)):
     auth.revoke_session(filmclub_session)
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(config.SESSION_COOKIE)
+    return resp
+
+
+# --- local invite-only accounts --------------------------------------------
+
+class InviteCreate(BaseModel):
+    email: str | None = None
+    ttl_hours: int = Field(default=accounts.DEFAULT_INVITE_TTL_HOURS, ge=1, le=720)
+
+
+class LocalCredentials(BaseModel):
+    code: str | None = None
+    username: str
+    password: str
+
+
+class LoginCredentials(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/admin/invites")
+async def api_create_invite(body: InviteCreate, admin=Depends(auth.require_admin)):
+    invite = accounts.create_invite(admin["id"], ttl_hours=body.ttl_hours, email=body.email)
+    return {
+        "code": invite["code"],
+        "expires_at": invite["expires_at"],
+        "invite_url": f"{config.APP_URL}/#/invite/{invite['code']}",
+    }
+
+
+@app.get("/api/admin/invites")
+async def api_list_invites(admin=Depends(auth.require_admin)):
+    return {"invites": accounts.list_invites()}
+
+
+@app.get("/auth/local/invite/{code}")
+async def api_invite_status(code: str):
+    return accounts.invite_status(code)
+
+
+@app.post("/auth/local/register")
+async def api_local_register(body: LocalCredentials):
+    try:
+        member_id = accounts.redeem_invite(body.code or "", body.username, body.password)
+    except accounts.AccountError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    resp = JSONResponse({"ok": True, "next": "/"})
+    _issue_session(resp, member_id)
+    return resp
+
+
+@app.post("/auth/local/login")
+async def api_local_login(body: LoginCredentials):
+    member_id = accounts.authenticate_local(body.username, body.password)
+    if not member_id:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    resp = JSONResponse({"ok": True, "next": "/"})
+    _issue_session(resp, member_id)
     return resp
 
 

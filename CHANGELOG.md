@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - AGPL-3.0 `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md`.
 - This changelog.
+- Invite-only local accounts (backend): an `identities` table maps login methods
+  (`plex` / `local`) to member rows — existing members are grandfathered as `plex`
+  identities on upgrade, preserving every member id — and an `invites` table holds
+  single-use, expiring invitations (only the SHA-256 hash of each code is stored).
+  Admins mint invites (`POST`/`GET /api/admin/invites`); an invitee redeems one to
+  create a local account (`POST /auth/local/register`) and can then sign in
+  (`POST /auth/local/login`). Passwords are hashed with stdlib scrypt
+  (`app/passwords.py`) — never reversible — and local sessions need no Plex token.
+  Migration `4`. Covered by `tests/test_accounts.py`. (UI and Plex-account linking
+  land in a following change.)
 - Versioned, transactional schema migrations (`app/migrations.py`,
   `schema_migrations` table). Pending migrations apply in order, each in its own
   transaction recorded atomically with its version; a timestamped online backup

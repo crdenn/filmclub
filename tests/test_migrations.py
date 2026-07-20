@@ -73,9 +73,11 @@ class MigrationRunnerTests(unittest.TestCase):
         c = sqlite3.connect(self.db_path)
         rows = c.execute("SELECT version, name FROM schema_migrations ORDER BY version").fetchall()
         c.close()
-        self.assertEqual(rows, [(1, "baseline"), (2, "app-settings"), (3, "sessions")])
+        self.assertEqual(rows, [(1, "baseline"), (2, "app-settings"),
+                                (3, "sessions"), (4, "identities")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
+        self.assertIn("provider_uid", _columns(self.db_path, "identities"))
 
     def test_upgrades_old_shaped_db_and_preserves_data(self):
         self._make_old_shaped_db()

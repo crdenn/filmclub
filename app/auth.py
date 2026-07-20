@@ -174,13 +174,19 @@ def current_member(filmclub_session: str | None = Cookie(default=None)) -> dict:
     row = resolve_session(filmclub_session)
     if not row:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    # Sessions created before per-member Plex rating sync was introduced carry
-    # identity only, so there is no user credential we can recover from them.
-    # Require the normal Plex login once; its callback retains the token while
-    # upserting this same member row, preserving all Film Club data.
-    if not decrypt_plex_token(row["plex_token_encrypted"]):
+    # A Plex-origin member with no decryptable token is a legacy identity-only
+    # session; require the normal Plex login once to (re)populate their rating
+    # credential (which preserves all Film Club data). Local accounts have no
+    # Plex token and are exempt.
+    if _is_plex_member(row["plex_id"]) and not decrypt_plex_token(row["plex_token_encrypted"]):
         raise HTTPException(status_code=401, detail="Plex reauthentication required")
     return _with_effective_admin(db.member_public(row))
+
+
+def _is_plex_member(plex_id: str) -> bool:
+    """True for a real Plex identity, False for a local account ('local:...') or
+    the development bypass ('dev:...')."""
+    return not (plex_id.startswith("local:") or plex_id.startswith("dev:"))
 
 
 def _with_effective_admin(member: dict) -> dict:

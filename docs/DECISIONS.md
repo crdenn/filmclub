@@ -10,6 +10,14 @@ This file records decisions visible in the current repository. “Confirmed” m
 - **Consequences:** Very low operational overhead and no separate database service. Write scalability, horizontal replicas, online schema management, and shared background state are limited.
 - **Status:** Confirmed.
 
+## Invite-only local accounts with an identity model
+
+- **Decision:** Decouple accounts from Plex with an `identities` table mapping `plex`/`local` login methods to member rows. Local accounts are gated by single-use, expiring, admin-issued invites (no open registration, no SMTP). Passwords use stdlib `hashlib.scrypt`, not Argon2id.
+- **Evidence:** `app/accounts.py`, `app/passwords.py`, migration `4` (`identities`, `invites`), and the `/auth/local/*` + `/api/admin/invites` endpoints. A local account is a member row with a synthetic `local:<random>` plex_id plus a `local` identity holding the scrypt hash.
+- **Likely reasoning:** The roadmap specified Argon2id, but the owner chose scrypt to keep the deliberately minimal dependency set and the no-build, multi-arch Docker image (scrypt is stdlib and memory-hard, sufficient for a small private club). The synthetic plex_id avoids rebuilding the live `members` table while satisfying its `NOT NULL UNIQUE` constraint.
+- **Consequences:** Members can log in without Plex; existing Plex members are grandfathered (their ids and data preserved). Only an invite code's SHA-256 hash is stored. Plex-account linking, password reset, and the account UI are follow-up work.
+- **Status:** Confirmed by the owner (scrypt over Argon2id).
+
 ## Include a weekly scheduling lifecycle
 
 - **Decision:** Movies move from backlog to a current scheduled selection and then to the watched archive.
