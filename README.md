@@ -1,221 +1,222 @@
 # Film Club Tracker
 
-A small self-hosted tracker for a weekly film club. Keep a running list of
-suggestions, mark what you've watched, rate and discuss, and see who suggested
-what. Built to run as a single Docker container on Unraid with a SQLite file on
-a bind-mounted volume — backups are a file copy.
+A small, self-hosted app for a weekly film club. Suggest films, record what
+everyone has seen, second the ones you want to watch, pick a movie for the week,
+rate and discuss it, and browse group stats — with an optional Plex integration
+for library availability, deep links, and rating sync.
 
-Picks are made ad hoc by group consensus. The app supports a lightweight
-suggested → scheduled → watched workflow without enforcing a rotation.
+Runs as a single Docker container with a SQLite database on a bind-mounted
+`/data` volume. Dark, poster-forward, no-build vanilla-JS frontend.
+
+> **Status:** pre-1.0, self-hosted. Licensed under **AGPL-3.0-or-later**. Plex is
+> currently required; making it optional (with invite-only local accounts) and
+> shipping a prebuilt image are in progress — see `CHANGELOG.md`.
 
 ## The one rule
 
-> A film is only eligible to be picked if at least one member has **not** seen it.
+> A film is only eligible to be picked if at least one member has **explicitly
+> recorded that they have not seen it.**
 
-The app enforces nothing, but it keeps the information visible:
+The app never blocks a pick, but it keeps the signal honest:
 
-- Every backlog card shows a simple seen tally — e.g. **"3/6 seen."**
-- The movie detail page shows the full member breakdown and eligibility state.
-- Members with no answer remain **unknown** (distinct from unseen) — an unanswered
-  member is not evidence of eligibility.
-- One-tap seen/unseen toggle on each card. It cycles: *unknown → seen → not
-  seen → unknown*.
-- Sort by unseen count; filter to eligible only.
+- A member with **no answer** is **unknown**, not unseen — an unanswered member is
+  never treated as evidence a film is pickable.
+- "Everyone's seen it" is shown plainly and the card is dimmed.
+- Each backlog card carries a two-button **Seen it / Not seen** control for the
+  current user and a condensed summary of who still hasn't seen it; the full
+  per-member breakdown lives on the movie page.
 
 ## Features
 
-- **Backlog** — poster grid of suggestions with a simple seen tally, suggester,
-  one-tap seen toggle, and "mark watched."
-- **Watched** — most-recent-first grid with average rating and rating coverage.
-- **Movie detail** — full metadata including language and available Rotten
-  Tomatoes critic/audience scores, a private rating input during the scheduled
-  week, then all ratings grouped by first-watch vs rewatch after archival.
-- **Stats** — watched-over-time, per-member rater profiles, a pairwise taste
-  agreement matrix, divisiveness, first-watch-vs-rewatch deltas, suggester
-  scorecards, genre/decade distribution, total runtime. All computed
-  server-side with **small-n suppression** so thin data doesn't masquerade as
-  signal.
-- **TMDB** metadata, including original language, snapshotted locally on
-  selection (no re-fetch per load).
-- **Plex** Rotten Tomatoes critic and audience scores for matched library films.
-- **Plex "In Library"** badges with a deep link, refreshed periodically.
-- **Two-way Plex ratings** for future rating changes: Film Club's 0.5–5 score
-  maps to Plex's 1–10 scale, and Plex rating webhooks update Film Club.
-- **Seerr auto-request** (optional) — adding a film that isn't already on Plex
-  submits a request to your Seerr (Overseerr/Jellyseerr) instance so it gets
-  fetched automatically. Degrades safely: if Seerr is off or unreachable the
-  film is still added.
-- **Plex OAuth**, restricted to accounts with access to your Plex server.
+**This week**
+- A full-bleed hero for the current pick: backdrop, poster, synopsis, discussion
+  date (editable), who's watched it, and your own seen control.
+
+**Backlog**
+- Poster grid or list of suggestions with condensed coverage, eligibility state,
+  suggester, and your seen control.
+- Search by title, filter by suggester (or "your suggestions"), and sort by
+  most-seconded, unseen count, date, title, year, or runtime.
+- **Second** (`+1`) films you'd also like to watch (you can't second your own).
+- Live updates: another member's change appears without a manual refresh.
+
+**Watched**
+- Most-recent-first grid showing the club average, **your** rating, and a calm
+  "Rate" prompt for anything you haven't scored yet.
+
+**Movie detail**
+- Metadata header (poster/backdrop, director, runtime, discussion date, genres,
+  synopsis, suggester, Plex "Watch" link when available).
+- A rating input during the scheduled week (0.5–5 in half-steps, an optional
+  note, and a "had you seen this before?" toggle), then all ratings grouped by
+  **first watch vs rewatch** with per-group averages.
+- Coverage/eligibility presented alongside ratings; lifecycle actions
+  (pick / archive / send back) with destructive actions kept in an overflow menu.
+
+**Profiles & reminders**
+- A personal profile hub (display name, Plex rating-sync status, activity summary)
+  and public per-member profiles linked throughout the app.
+- Amber reminder badges count films you still need to mark seen/unseen or rate.
+
+**Statistics** (all server-side, with small-sample suppression so thin data never
+masquerades as signal): group totals and runtime, rater profiles, a pairwise
+taste-agreement matrix, divisiveness, first-watch-vs-rewatch deltas, suggester
+scorecards, and genre/decade distributions.
+
+**Integrations**
+- **TMDB** — search and a local metadata snapshot on selection (no re-fetch per
+  load); original language captured.
+- **Plex** — OAuth login restricted to accounts with access to *your* server;
+  "In Library" badges with deep links; Rotten Tomatoes critic/audience scores for
+  matched films; and optional **two-way rating sync** (future changes only).
+- **Seerr** *(optional)* — adding a film that isn't already on Plex submits a
+  request to Overseerr/Jellyseerr. Degrades safely when off or unreachable.
+
+**Admin** — member list, placeholder-member merge, admin grants, movie deletion,
+manual Plex refresh, and a diagnostics endpoint (version, schema, DB health,
+backups, integration status).
 
 ## Stack
 
-FastAPI + SQLite, a no-build vanilla-JS single-page frontend served by FastAPI,
-hand-rolled SVG charts. No external database, no Node build step.
+FastAPI + SQLite (standard-library `sqlite3`, WAL mode), a no-build vanilla-JS
+single-page frontend served by FastAPI, hand-rolled inline-SVG charts. `httpx`
+for outbound calls, `itsdangerous` for signed cookies, `cryptography` for
+encrypted per-member Plex tokens. No external database and no Node build step.
 
-## Configuration
-
-All configuration is via environment variables. See [`.env.example`](.env.example)
-for the annotated list. Summary:
-
-| Variable | Required | Purpose |
-|---|:---:|---|
-| `TMDB_API_KEY` | ✓ | Film metadata and search |
-| `PLEX_URL` | ✓ | Library enrichment |
-| `PLEX_TOKEN` | ✓ | Library enrichment |
-| `PLEX_MACHINE_ID` | ✓ | Auth: the server-access check |
-| `PLEX_CLIENT_ID` | ✓ | Stable UUID for the OAuth flow (auto-generated if blank) |
-| `APP_URL` | ✓ | OAuth callback target; must match how you open the app |
-| `SESSION_SECRET` | ✓ | Cookie signing |
-| `PLEX_WEBHOOK_SECRET` | — | Secret URL component for inbound Plex rating webhooks |
-| `DEV_BYPASS_USER` | — | Skip Plex OAuth during development |
-| `PLEX_REFRESH_INTERVAL` | — | Seconds between library refreshes (default 3600) |
-| `SEERR_URL` | — | Seerr base URL; enables auto-request when set with the key |
-| `SEERR_API_KEY` | — | Seerr API key (Settings → General). Feature off if blank |
-| `SEERR_TIMEOUT` | — | Per-request timeout in seconds (default 10) |
-
-### Seerr auto-request
-
-If `SEERR_URL` and `SEERR_API_KEY` are set, adding a suggestion that isn't
-already on Plex will submit a movie request to Seerr (using the TMDB id the app
-already has). Existence is checked cache-first against the periodically-refreshed
-Plex library set; on a miss the app does one targeted **live** Plex lookup to
-catch very recent additions before requesting. The request is fire-after-insert
-and never blocks the add — if Seerr is unreachable the film is still added and
-the card shows a "Request failed" badge. Seerr's own de-dup (already
-requested/available) is respected, and the outcome is surfaced as a toast and a
-badge (`Requested` / `On Seerr` / `Request failed`). Leave the vars unset to
-disable entirely — behaviour is then identical to before.
-
-### Authorization model
-
-A valid Plex account is **not** the same as club membership — any Plex account
-in the world authenticates. Access to *your* server is the real signal. On
-login the app confirms your server's `PLEX_MACHINE_ID` appears in the user's
-Plex resource list and rejects anyone else. The signed, HttpOnly session cookie
-holds only the local member id and durable Plex uuid. To write a member's own
-rating back to Plex, the OAuth token is encrypted at rest in SQLite using a key
-derived from `SESSION_SECRET`; it is never returned by an API or placed in the
-cookie. Rotating `SESSION_SECRET` requires members to sign in again.
-
-### Plex rating sync
-
-Rating sync applies only to changes made after this feature is enabled; it does
-not reconcile old ratings. Film Club saves locally first, then attempts to rate
-the same library item in Plex using the signed-in member's token. A Plex failure
-does not discard the Film Club rating. Ordinary Plex logins now retain this token
-automatically. Sessions created before rating sync was added are invalidated so
-those members return through the normal Plex login once; their existing Film
-Club profile, suggestions, and ratings stay attached to the same member row.
-Each member can pause or resume future synchronization from the compact toggle
-on their profile; pausing affects both Film Club → Plex and Plex → Film Club.
-
-For Plex → Film Club updates, set `PLEX_WEBHOOK_SECRET` to a long random value
-and add this URL under Plex Webhooks:
-
-```text
-https://your-filmclub.example.com/api/plex/webhook/<PLEX_WEBHOOK_SECRET>
-```
-
-Webhook updates are accepted only for this configured Plex server, a known
-member, a TMDB/IMDb-matched movie, and a movie currently scheduled or watched.
-Plex 1–10 ratings are divided by two. Echoes of an unchanged score are ignored.
-Clearing a Plex rating is not currently treated as deleting a Film Club rating.
-The server owner needs Plex Pass for webhooks, and each member should enable
-Plex's “Sync My Watch State and Ratings” account setting.
-
-## Running with Docker (recommended)
+## Quick start (Docker)
 
 ```bash
 cp .env.example .env
-# edit .env — fill in the required values
+# edit .env — at minimum set the required values below
 docker compose up -d --build
 ```
 
-Then open `APP_URL` in a browser. First login auto-provisions your member row
-from your Plex account (avatar included).
+Open `APP_URL` in a browser. The first Plex login auto-provisions your member
+row. (An admin is anyone whose Plex UUID is listed in `ADMIN_PLEX_IDS`.)
 
-### On Unraid
+### Configuration
 
-- Point the `/data` volume at `/mnt/user/appdata/filmclub`.
-- Map a host port to container port `8000`.
-- Set `APP_URL` to the address you actually browse to (host IP + mapped port,
-  or your reverse-proxy hostname). OAuth will redirect back there.
-- Set the required environment variables in the template.
+All configuration is via environment variables; see [`.env.example`](.env.example)
+for the annotated list.
 
-The SQLite database is `filmclub.db` inside the data volume. Back it up by
-copying that file (WAL mode is enabled; copy the `.db`, `.db-wal`, `.db-shm`
-together, or stop the container first for a clean single-file copy).
+| Variable | Required | Purpose |
+|---|:---:|---|
+| `TMDB_API_KEY` | ✓ | Film search and metadata |
+| `PLEX_URL` | ✓ | Plex server base URL for enrichment |
+| `PLEX_TOKEN` | ✓ | Plex server token for enrichment |
+| `PLEX_MACHINE_ID` | ✓ | Authorization: the server-access check |
+| `APP_URL` | ✓ | OAuth callback target; must match how you open the app |
+| `SESSION_SECRET` | ✓ | Cookie signing + per-member token encryption key |
+| `PLEX_CLIENT_ID` | — | Stable OAuth client UUID (auto-generated into `/data` if unset) |
+| `ADMIN_PLEX_IDS` | — | Comma-separated Plex UUIDs granted owner/admin |
+| `PLEX_WEBHOOK_SECRET` | — | Enables inbound Plex→Film Club rating webhooks |
+| `PLEX_REFRESH_INTERVAL` | — | Seconds between library refreshes (default 3600) |
+| `SEERR_URL`, `SEERR_API_KEY` | — | Enable Seerr auto-request when both are set |
+| `SEERR_TIMEOUT` | — | Per-request Seerr timeout (default 10s) |
+| `FILMCLUB_VERSION` | — | Version string shown in `/readyz`, diagnostics, labels |
+| `DEV_BYPASS_USER` | — | **Development only** — skips Plex auth for everyone |
 
-### One-command deployment from the Mac
+`DATA_DIR` (default `/data`) and `PORT` (default `8000`) are operational. Never
+enable `DEV_BYPASS_USER` in a deployment.
 
-`deploy-from-mac.sh` automates the existing LAN deployment pattern: it runs
-the focused checks, rebuilds the sensitive source bundle, serves it from the
-Mac, connects to Unraid over SSH, has Unraid pull the bundle, runs `deploy.sh`,
-and waits for `/healthz`.
+### Authorization model
 
-One-time setup: enable SSH on the Unraid LAN interface and authorize the Mac's
-existing key. Once SSH is listening, run this once and enter the Unraid root
-password when prompted:
+Any Plex account in the world can authenticate — that alone is **not** club
+membership. Access to *your* server is the real signal: on login the app confirms
+your `PLEX_MACHINE_ID` appears in that account's Plex resources and rejects anyone
+else. The signed, HttpOnly session cookie holds only the local member id and Plex
+UUID. To write a member's own rating back to Plex, their token is **encrypted at
+rest** with a key derived from `SESSION_SECRET`; it is never returned by an API or
+placed in a cookie. Rotating `SESSION_SECRET` invalidates stored tokens and
+requires members to sign in again.
 
-```bash
-./deploy-from-mac.sh --install-key
+### Plex rating sync (optional)
+
+Sync applies only to changes made after it's enabled; it never reconciles old
+ratings. Film Club saves locally first, then best-effort writes to Plex; a Plex
+failure never discards the Film Club rating. Each member can pause/resume sync
+from their profile. For Plex → Film Club updates, set `PLEX_WEBHOOK_SECRET` and
+add this URL under Plex Webhooks (owner needs Plex Pass):
+
+```text
+https://your-app.example.com/api/plex/webhook/<PLEX_WEBHOOK_SECRET>
 ```
 
-After that, deploy any future change from the project directory with:
+Webhook updates are accepted only for the configured server, a known member, a
+TMDB/IMDb-matched movie, and a scheduled/watched film; unchanged echoes are
+ignored, and clearing a Plex rating is not treated as a deletion.
 
-```bash
-./deploy-from-mac.sh
-```
+## Data, migrations & backups
 
-To verify SSH and local prerequisites without deploying or restarting the app:
+The database is `filmclub.db` in the `/data` volume. On startup the app applies
+ordered, transactional migrations recorded in a `schema_migrations` table. Before
+any migration it writes a **timestamped backup** under `/data/backups/` (never
+overwriting an existing one).
 
-```bash
-./deploy-from-mac.sh --check
-```
-
-Defaults are the current installation (`root@your-unraid-host.local:22`, remote
-directory `/mnt/user/appdata/filmclub`, Mac port `8888`). They can be overridden
-with `UNRAID_HOST`, `UNRAID_USER`, `UNRAID_SSH_PORT`, `FILMCLUB_REMOTE_DIR`,
-`FILMCLUB_HTTP_PORT`, or `FILMCLUB_MAC_IP`. SSH should remain LAN-only; do not
-forward its port publicly.
+- **Rollback:** stop the container, restore the matching `/data/backups/…` file
+  over `filmclub.db` (remove any stale `-wal`/`-shm` sidecars), and start the
+  previous image/tag. There are no down-migrations by design.
+- **Manual backup:** copy `filmclub.db` (with its `-wal`/`-shm`, or stop the
+  container first for a clean single-file copy).
+- **Health:** `/healthz` is a liveness check; `/readyz` reports readiness
+  (database reachable, schema current, durable secret) without exposing secrets.
 
 ## Running locally (without Docker)
 
 ```bash
 python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
-# Dev mode skips Plex OAuth. DATA_DIR keeps the db out of /data.
+# Dev mode skips Plex OAuth; keep the db out of /data.
 export DATA_DIR=./devdata SESSION_SECRET=dev DEV_BYPASS_USER=Alice TMDB_API_KEY=yourkey
 ./.venv/bin/python -m app.seed --force        # optional: load demo data
 ./.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-Open http://localhost:8000.
+Open <http://localhost:8000>. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for tests
+and conventions, and [`AGENTS.md`](AGENTS.md) for the authoritative architecture.
 
-## Seed data
+### Seed data
 
-The seed script fabricates six members, ~20 films, randomized ratings, and a
-realistic mix of prior-view / seen-before states — including the edge cases the
-stats views need in order to be trustworthy:
-
-- a film everyone has seen (ineligible),
-- a film with unknowns (not just yes/no),
-- a watched film everyone had seen before, and one nobody had (first/rewatch
-  delta must suppress, not divide by zero),
-- a film with only one or two ratings (small-n suppression must fire).
+The seeder fabricates six members, ~20 films, randomized ratings, and the edge
+cases the stats views need to be trustworthy (a film everyone has seen; films
+with unknowns; watched films everyone/nobody had seen before; a small-sample
+film). Seeded members use `dev:<Name>` ids, so `DEV_BYPASS_USER=Alice` logs you
+in *as* seeded member Alice.
 
 ```bash
 python -m app.seed          # refuses if data already exists
 python -m app.seed --force  # wipe and reseed
 ```
 
-The seeded members use `dev:<Name>` ids, so running with `DEV_BYPASS_USER=Alice`
-logs you in *as* seeded member Alice rather than creating a stray seventh person.
+## Deployment notes
+
+- **Unraid / Compose:** point a `/data` volume at persistent storage (e.g.
+  `/mnt/user/appdata/film-club-tracker:/data`), map a host port to container port
+  `8000`, and set `APP_URL` to the address you actually browse to (OAuth redirects
+  back there). Serve over HTTPS behind a reverse proxy or tunnel; don't expose a
+  plain-HTTP instance publicly.
+- **Maintainer workflow:** `deploy-from-mac.sh` packages the source and deploys it
+  to an Unraid host over SSH, then health-checks. Its host/port/paths default to
+  the maintainer's setup and are overridable via `UNRAID_HOST`, `UNRAID_USER`,
+  `UNRAID_SSH_PORT`, `FILMCLUB_REMOTE_DIR`, `FILMCLUB_HTTP_PORT`, and
+  `FILMCLUB_MAC_IP`. Run `./deploy-from-mac.sh --check` to validate prerequisites
+  without deploying. Keep SSH LAN-only.
 
 ## Data model notes
 
-`prior_views` (editable, pre-watch eligibility) and `ratings.seen_before`
-(frozen at watch time) are deliberately separate. When a film is marked watched,
-each member's current `prior_views` state is snapshotted onto the movie; that
-snapshot seeds the "had you seen this before?" default when they rate, so the
-historical fact can't be rewritten by later prior-view edits.
+`prior_views` (editable pre-watch eligibility) and `ratings.seen_before` (frozen
+at watch time) are deliberately separate. When a film is scheduled, each member's
+current `prior_views` state is snapshotted onto the movie; that snapshot seeds the
+"had you seen this before?" default at rating time, so the historical fact can't
+be rewritten by later prior-view edits.
+
+## Contributing & security
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup, tests, and conventions.
+- [`SECURITY.md`](SECURITY.md) — how to report a vulnerability privately.
+- [`CHANGELOG.md`](CHANGELOG.md) — notable changes.
+
+## License
+
+[GNU AGPL-3.0-or-later](LICENSE). If you run a modified version as a network
+service, you must offer your users the corresponding source.

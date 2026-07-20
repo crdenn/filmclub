@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generated IDs, caches) ahead of publishing source history.
 - Documented the rollback model: restore the matching `<data dir>/backups/`
   snapshot and run the previous image/source tag.
+- Rewrote `README.md` for the current feature set (This Week, seconding,
+  profiles, reminder badges, live updates, redesigned backlog/watched/detail,
+  migrations/backups/`/readyz`) and genericized deployment references (no
+  site-specific hosts or IPs).
 
 ## [0.9.0] - 2026-07-19
 
