@@ -95,3 +95,16 @@ CREATE TABLE IF NOT EXISTS app_settings (
     encrypted    INTEGER NOT NULL DEFAULT 0,
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Revocable server-side sessions. The cookie carries an opaque random token; we
+-- store only its SHA-256 hash, so a database read never yields a usable session.
+-- Deleting a row revokes it immediately (logout, admin-wide invalidation).
+CREATE TABLE IF NOT EXISTS sessions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash   TEXT NOT NULL UNIQUE,
+    member_id    INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_member ON sessions(member_id);

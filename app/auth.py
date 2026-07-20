@@ -1,14 +1,17 @@
 """Session handling and the current-user dependency.
 
-Sessions are a signed cookie (itsdangerous). The cookie stores only the local
-member id and durable Plex uuid. A separately encrypted copy of the Plex token
+Sessions are revocable and server-side. The cookie carries only an opaque random
+token; the database stores only its SHA-256 hash and an expiry, so a database
+read never yields a usable session and deleting the row revokes it immediately
+(logout, admin-wide invalidation). A separately encrypted copy of the Plex token
 is retained server-side for per-user rating synchronization.
 """
+import hashlib
 import logging
+import secrets
+import sqlite3
 
 from fastapi import Cookie, Depends, HTTPException
-from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
-from itsdangerous.url_safe import URLSafeTimedSerializer
 
 from . import config, db, settings
 from .colors import color_for
@@ -16,20 +19,82 @@ from .token_crypto import decrypt_plex_token, encrypt_plex_token
 
 log = logging.getLogger("filmclub.auth")
 
-_serializer = URLSafeTimedSerializer(config.EFFECTIVE_SESSION_SECRET, salt="filmclub-session")
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def make_session_cookie(member_id: int, plex_uuid: str) -> str:
-    return _serializer.dumps({"mid": member_id, "uuid": plex_uuid})
-
-
-def read_session_cookie(raw: str | None) -> dict | None:
-    if not raw:
-        return None
+def create_session(member_id: int) -> str:
+    """Create a server-side session and return its opaque cookie token."""
+    token = secrets.token_urlsafe(32)
+    conn = db.connect()
     try:
-        return _serializer.loads(raw, max_age=config.SESSION_MAX_AGE)
-    except (BadSignature, SignatureExpired):
+        conn.execute(
+            "INSERT INTO sessions (token_hash, member_id, expires_at) "
+            "VALUES (?, ?, datetime('now', ?))",
+            (_hash_token(token), member_id, f"+{int(config.SESSION_MAX_AGE)} seconds"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return token
+
+
+def resolve_session(token: str | None) -> sqlite3.Row | None:
+    """Return the joined member row for a live session token, or None.
+
+    Refreshes ``last_seen_at`` on a hit; expired tokens resolve to None.
+    """
+    if not token:
         return None
+    conn = db.connect()
+    try:
+        row = db.query_one(
+            conn,
+            "SELECT s.id AS session_id, m.* FROM sessions s "
+            "JOIN members m ON m.id = s.member_id "
+            "WHERE s.token_hash = ? AND s.expires_at > datetime('now')",
+            (_hash_token(token),),
+        )
+        if row is not None:
+            db.execute(conn, "UPDATE sessions SET last_seen_at = datetime('now') "
+                             "WHERE id = ?", (row["session_id"],))
+        return row
+    finally:
+        conn.close()
+
+
+def revoke_session(token: str | None) -> None:
+    """Revoke a single session (logout)."""
+    if not token:
+        return
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash_token(token),))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def revoke_all_sessions() -> int:
+    """Revoke every session (admin-wide invalidation). Returns the count removed."""
+    conn = db.connect()
+    try:
+        cur = conn.execute("DELETE FROM sessions")
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def purge_expired_sessions() -> None:
+    """Housekeeping: drop expired session rows. Safe to call on startup."""
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def upsert_member(plex_id: str, username: str, email: str | None, thumb: str | None,
@@ -106,17 +171,9 @@ def current_member(filmclub_session: str | None = Cookie(default=None)) -> dict:
         if m:
             return _with_effective_admin(m)
 
-    payload = read_session_cookie(filmclub_session)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    conn = db.connect()
-    try:
-        row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (payload.get("mid"),))
-    finally:
-        conn.close()
+    row = resolve_session(filmclub_session)
     if not row:
-        raise HTTPException(status_code=401, detail="Session member not found")
+        raise HTTPException(status_code=401, detail="Not authenticated")
     # Sessions created before per-member Plex rating sync was introduced carry
     # identity only, so there is no user credential we can recover from them.
     # Require the normal Plex login once; its callback retains the token while

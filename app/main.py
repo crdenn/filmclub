@@ -8,7 +8,7 @@ import re
 from datetime import date
 
 import httpx
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                RedirectResponse, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
@@ -134,6 +134,7 @@ async def _backfill_movie_languages() -> None:
 async def _startup() -> None:
     db.init_db()
     app_settings.load_into_config()
+    auth.purge_expired_sessions()
     if not app_settings.is_setup_complete() and not config.missing_required():
         app_settings.save({}, complete=True)
     if app_settings.is_setup_complete():
@@ -371,7 +372,7 @@ async def auth_callback(request: Request):
     resp.delete_cookie(PIN_COOKIE)
     resp.set_cookie(
         config.SESSION_COOKIE,
-        auth.make_session_cookie(member["id"], identity["uuid"]),
+        auth.create_session(member["id"]),
         max_age=config.SESSION_MAX_AGE,
         httponly=True,
         samesite="lax",
@@ -381,7 +382,8 @@ async def auth_callback(request: Request):
 
 
 @app.post("/auth/logout")
-async def auth_logout():
+async def auth_logout(filmclub_session: str | None = Cookie(default=None)):
+    auth.revoke_session(filmclub_session)
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(config.SESSION_COOKIE)
     return resp
@@ -833,6 +835,15 @@ async def api_admin_update_settings(body: SettingsIn,
     app_settings.save(values)
     await plex.refresh_library()
     return {"ok": True, "settings": app_settings.public_values()}
+
+@app.post("/api/admin/security/logout-all")
+async def api_admin_logout_all(admin=Depends(auth.require_admin)):
+    """Revoke every server-side session, forcing all members (including the
+    caller) to sign in again. Useful after rotating a credential."""
+    revoked = auth.revoke_all_sessions()
+    log.warning("Admin %s revoked all sessions (%d removed)", admin["id"], revoked)
+    return {"ok": True, "revoked": revoked}
+
 
 @app.get("/api/admin/members")
 async def api_admin_members(admin=Depends(auth.require_admin)):

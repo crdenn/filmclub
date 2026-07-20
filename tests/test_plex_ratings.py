@@ -111,7 +111,7 @@ class PlexRatingTests(unittest.TestCase):
 
     def test_connected_member_session_remains_authenticated(self):
         member_id = self.add_member(plex_id="uuid-connected", token="member-token")
-        cookie = auth.make_session_cookie(member_id, "uuid-connected")
+        cookie = auth.create_session(member_id)
 
         member = auth.current_member(cookie)
 
@@ -119,7 +119,7 @@ class PlexRatingTests(unittest.TestCase):
 
     def test_legacy_identity_only_session_requires_normal_plex_login(self):
         member_id = self.add_member(plex_id="uuid-legacy", token=None)
-        cookie = auth.make_session_cookie(member_id, "uuid-legacy")
+        cookie = auth.create_session(member_id)
 
         with self.assertRaises(HTTPException) as raised:
             auth.current_member(cookie)

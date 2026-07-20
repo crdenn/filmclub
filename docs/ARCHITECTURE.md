@@ -170,10 +170,10 @@ sequenceDiagram
     App->>Plex: Confirm configured server access
     App->>Plex: Load account identity
     App->>DB: Upsert member
-    App-->>Browser: Signed HttpOnly session cookie
+    App-->>Browser: HttpOnly cookie with an opaque server-side session token
 ```
 
-The Plex token is encrypted before it is stored in the member row so the app can write that member's future ratings to Plex. The session itself contains only the local member ID and Plex UUID. On each protected request, `current_member()` resolves the database member and requires a decryptable user token; legacy identity-only sessions are rejected so the normal Plex login can populate it. `members.plex_rating_sync_enabled` lets each member pause both outbound writes and inbound webhook application without deleting that connection. Token encryption derives from the durable data key (`config.DATA_KEY` — `SESSION_SECRET` if set, else the generated `master.key`), which is separate from the cookie-signing secret (`session.key`); rotating the data key requires members to sign in again, whereas rotating the signing secret only forces a re-login. `DEV_BYPASS_USER` short-circuits this flow and is development-only.
+The Plex token is encrypted before it is stored in the member row so the app can write that member's future ratings to Plex. Sessions are revocable and server-side: the cookie carries an opaque random token and the `sessions` table stores only its SHA-256 hash plus an expiry, so logout deletes the row and an admin can invalidate every session at once (`POST /api/admin/security/logout-all`). On each protected request, `current_member()` resolves the session to its member and requires a decryptable user token; legacy identity-only sessions are rejected so the normal Plex login can populate it. `members.plex_rating_sync_enabled` lets each member pause both outbound writes and inbound webhook application without deleting that connection. Token encryption derives from the durable data key (`config.DATA_KEY` — `SESSION_SECRET` if set, else the generated `master.key`), which is separate from the cookie-signing secret (`session.key`); rotating the data key requires members to sign in again, whereas rotating the signing secret only forces a re-login. `DEV_BYPASS_USER` short-circuits this flow and is development-only.
 
 ### Suggesting a film
 

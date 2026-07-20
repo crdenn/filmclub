@@ -208,8 +208,10 @@ locked. Never enable `DEV_BYPASS_USER` in production.
 Any Plex account in the world can authenticate — that alone is **not** club
 membership. Access to *your* server is the real signal: on login the app confirms
 your `PLEX_MACHINE_ID` appears in that account's Plex resources and rejects anyone
-else. The signed, HttpOnly session cookie holds only the local member id and Plex
-UUID. To write a member's own rating back to Plex, their token is **encrypted at
+else. Sessions are **revocable and server-side**: the HttpOnly cookie carries an
+opaque random token, and the database stores only its SHA-256 hash and an expiry,
+so logout and admin-wide invalidation kill a session immediately (a stolen cookie
+can be revoked). To write a member's own rating back to Plex, their token is **encrypted at
 rest** with a key derived from the durable data key (`SESSION_SECRET` if set,
 otherwise the generated `/data/master.key`); it is never returned by an API or
 placed in a cookie. Cookie/session signing uses a *separate*, self-provisioned

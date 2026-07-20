@@ -69,10 +69,25 @@ def _m2_app_settings(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m3_sessions(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS sessions (
+               id           INTEGER PRIMARY KEY AUTOINCREMENT,
+               token_hash   TEXT NOT NULL UNIQUE,
+               member_id    INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+               created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+               last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+               expires_at   TEXT NOT NULL
+           )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_member ON sessions(member_id)")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
     (2, "app-settings", _m2_app_settings),
+    (3, "sessions", _m3_sessions),
 ]
 
 

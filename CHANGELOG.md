@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **owner** (`is_owner`, DB-enforced unique), so upgrades don't require the wizard.
 
 ### Changed
+- Moved to revocable, server-side sessions (`sessions` table via migration `3`).
+  The session cookie now carries an opaque random token; the database stores only
+  its SHA-256 hash plus an expiry, so a database read never yields a usable
+  session. Logout revokes the session server-side (not just clears the cookie),
+  expired sessions are purged on startup, deleting a member cascades their
+  sessions, and a new admin endpoint `POST /api/admin/security/logout-all`
+  invalidates every session at once (useful after rotating a credential).
+  Existing signed-cookie sessions stop resolving, so members sign in once after
+  the upgrade. Covered by `tests/test_sessions.py`.
 - Split the single durable secret into two independent keys: a data-at-rest
   encryption key (`config.DATA_KEY` — the `SESSION_SECRET` env value if set,
   otherwise the generated `/data/master.key`, used for app-settings secrets and
