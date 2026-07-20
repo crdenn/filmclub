@@ -670,6 +670,13 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
         watched_sug = count(
             "SELECT COUNT(*) c FROM movies WHERE suggested_by = ? AND status='watched'", (m["id"],))
         ratings = count("SELECT COUNT(*) c FROM ratings WHERE member_id = ?", (m["id"],))
+        providers = [
+            r["provider"] for r in db.query_all(
+                conn,
+                "SELECT provider FROM identities WHERE member_id = ? ORDER BY provider",
+                (m["id"],),
+            )
+        ]
         match = None
         if placeholder:
             cand = real_by_name.get(m["username"].lower())
@@ -685,6 +692,7 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
             "is_admin": bool(m.get("is_admin")) or owner,
             "is_owner": owner,
             "is_placeholder": placeholder,
+            "identity_providers": providers,
             "created_at": m.get("created_at"),
             "counts": {"suggested": suggested, "suggested_watched": watched_sug, "ratings": ratings},
             "suggested_merge": match,

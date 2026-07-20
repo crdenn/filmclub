@@ -131,12 +131,14 @@ def missing_required() -> list[str]:
     required = {
         "TMDB_API_KEY": TMDB_API_KEY,
         "SESSION_SECRET": SESSION_SECRET,
-        "PLEX_URL": PLEX_URL,
-        "PLEX_TOKEN": PLEX_TOKEN,
-        "PLEX_MACHINE_ID": PLEX_MACHINE_ID,
         "APP_URL": APP_URL,
     }
     return [k for k, v in required.items() if not v]
+
+
+def plex_configured() -> bool:
+    """Whether the complete optional Plex integration trio is present."""
+    return bool(PLEX_URL and PLEX_TOKEN and PLEX_MACHINE_ID)
 
 
 # Both DATA_KEY and SESSION_SECRET are always durable: generated once in (and

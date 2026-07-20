@@ -117,6 +117,95 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(row["provider"], "plex")
         self.assertEqual(row["provider_uid"], "uuid-admin")
 
+    def test_first_local_owner_is_admin_owner_and_single(self):
+        self.conn.execute("DELETE FROM members")
+        self.conn.commit()
+        owner_id = accounts.create_first_owner("ClubOwner", "owner-password")
+        owner = db.query_one(
+            self.conn, "SELECT plex_id, is_admin, is_owner FROM members WHERE id = ?", (owner_id,)
+        )
+        self.assertTrue(owner["plex_id"].startswith("local:"))
+        self.assertEqual((owner["is_admin"], owner["is_owner"]), (1, 1))
+        self.assertEqual(accounts.authenticate_local("clubowner", "owner-password"), owner_id)
+        with self.assertRaises(accounts.AccountError):
+            accounts.create_first_owner("OtherOwner", "another-password")
+
+    def test_linked_plex_login_resolves_to_existing_local_member(self):
+        invite = accounts.create_invite(self.admin_id)
+        member_id = accounts.redeem_invite(invite["code"], "LocalName", "password123")
+        accounts.link_plex_identity(
+            member_id,
+            plex_id="uuid-linked",
+            username="PlexName",
+            email="member@example.test",
+            thumb=None,
+            plex_account_id="42",
+            plex_token="plex-member-token",
+        )
+        providers = accounts.identity_providers(member_id)
+        self.assertEqual(providers, ["local", "plex"])
+
+        logged_in = auth.upsert_member(
+            "uuid-linked", "PlexName2", "new@example.test", None,
+            plex_account_id="42", plex_token="refreshed-token",
+        )
+        self.assertEqual(logged_in["id"], member_id)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM members").fetchone()[0], 2
+        )
+
+    def test_link_rejects_plex_identity_owned_by_another_member(self):
+        invite = accounts.create_invite(self.admin_id)
+        local_id = accounts.redeem_invite(invite["code"], "LocalName", "password123")
+        with self.assertRaises(accounts.AccountError):
+            accounts.link_plex_identity(
+                local_id,
+                plex_id="uuid-admin",
+                username="Admin",
+                email=None,
+                thumb=None,
+                plex_account_id="1",
+                plex_token="token",
+            )
+
+    def test_password_reset_is_hashed_single_use_and_revokes_sessions(self):
+        invite = accounts.create_invite(self.admin_id)
+        member_id = accounts.redeem_invite(invite["code"], "ResetMe", "old-password")
+        old_session = auth.create_session(member_id)
+        reset = accounts.create_password_reset(self.admin_id, member_id)
+        stored = db.query_one(
+            self.conn, "SELECT token_hash FROM password_resets WHERE member_id = ?", (member_id,)
+        )
+        self.assertNotEqual(stored["token_hash"], reset["token"])
+        self.assertNotIn(reset["token"], stored["token_hash"])
+        self.assertTrue(accounts.password_reset_status(reset["token"])["valid"])
+
+        self.assertEqual(
+            accounts.redeem_password_reset(reset["token"], "new-password"), member_id
+        )
+        self.assertIsNone(auth.resolve_session(old_session))
+        self.assertIsNone(accounts.authenticate_local("ResetMe", "old-password"))
+        self.assertEqual(accounts.authenticate_local("ResetMe", "new-password"), member_id)
+        self.assertFalse(accounts.password_reset_status(reset["token"])["valid"])
+        with self.assertRaises(accounts.AccountError):
+            accounts.redeem_password_reset(reset["token"], "third-password")
+
+    def test_password_reset_requires_local_identity_and_honors_expiry(self):
+        with self.assertRaises(accounts.AccountError):
+            accounts.create_password_reset(self.admin_id, self.admin_id)
+        invite = accounts.create_invite(self.admin_id)
+        member_id = accounts.redeem_invite(invite["code"], "ExpireMe", "old-password")
+        reset = accounts.create_password_reset(self.admin_id, member_id)
+        self.conn.execute(
+            "UPDATE password_resets SET expires_at = datetime('now', '-1 hour') "
+            "WHERE member_id = ?",
+            (member_id,),
+        )
+        self.conn.commit()
+        self.assertFalse(accounts.password_reset_status(reset["token"])["valid"])
+        with self.assertRaises(accounts.AccountError):
+            accounts.redeem_password_reset(reset["token"], "new-password")
+
 
 if __name__ == "__main__":
     unittest.main()

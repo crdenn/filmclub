@@ -85,7 +85,9 @@ CREATE INDEX IF NOT EXISTS idx_movies_status ON movies(status);
 CREATE INDEX IF NOT EXISTS idx_ratings_movie ON ratings(movie_id);
 CREATE INDEX IF NOT EXISTS idx_prior_movie ON prior_views(movie_id);
 CREATE INDEX IF NOT EXISTS idx_votes_movie ON votes(movie_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_members_single_owner ON members(is_owner) WHERE is_owner = 1;
+-- idx_members_single_owner is created by migration 2 after older members
+-- tables have received the is_owner column. Creating it here would make
+-- db.init_db() fail before migrations can upgrade a pre-v2 database.
 
 -- Runtime configuration entered through first-run setup or Admin settings.
 -- Sensitive values are Fernet-encrypted with the durable key in /data.
@@ -134,3 +136,16 @@ CREATE TABLE IF NOT EXISTS invites (
     redeemed_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
     created_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Admin-issued, single-use password reset links for local identities. The raw
+-- token is shown once; only its SHA-256 hash is retained here.
+CREATE TABLE IF NOT EXISTS password_resets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL UNIQUE,
+    member_id  INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    created_by INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    expires_at TEXT NOT NULL,
+    used_at    TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_member ON password_resets(member_id);

@@ -120,12 +120,33 @@ def _m4_identities(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m5_password_resets(conn: sqlite3.Connection) -> None:
+    # Admin-issued, expiring, single-use reset links. As with invites and
+    # sessions, only a SHA-256 digest is persisted; plaintext is returned once.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS password_resets (
+               id         INTEGER PRIMARY KEY AUTOINCREMENT,
+               token_hash TEXT NOT NULL UNIQUE,
+               member_id  INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+               created_by INTEGER REFERENCES members(id) ON DELETE SET NULL,
+               expires_at TEXT NOT NULL,
+               used_at    TEXT,
+               created_at TEXT NOT NULL DEFAULT (datetime('now'))
+           )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_password_resets_member "
+        "ON password_resets(member_id)"
+    )
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
     (2, "app-settings", _m2_app_settings),
     (3, "sessions", _m3_sessions),
     (4, "identities", _m4_identities),
+    (5, "password-resets", _m5_password_resets),
 ]
 
 

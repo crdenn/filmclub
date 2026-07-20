@@ -16,9 +16,9 @@ log = logging.getLogger("filmclub.settings")
 
 FIELDS = {
     "TMDB_API_KEY": {"secret": True, "required": True},
-    "PLEX_URL": {"secret": False, "required": True},
-    "PLEX_TOKEN": {"secret": True, "required": True},
-    "PLEX_MACHINE_ID": {"secret": False, "required": True},
+    "PLEX_URL": {"secret": False, "required": False},
+    "PLEX_TOKEN": {"secret": True, "required": False},
+    "PLEX_MACHINE_ID": {"secret": False, "required": False},
     "APP_URL": {"secret": False, "required": True},
     "PLEX_WEBHOOK_SECRET": {"secret": True, "required": False},
     "PLEX_REFRESH_INTERVAL": {"secret": False, "required": False},

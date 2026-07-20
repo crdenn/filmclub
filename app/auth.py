@@ -111,34 +111,40 @@ def upsert_member(plex_id: str, username: str, email: str | None, thumb: str | N
     encrypted_token = encrypt_plex_token(plex_token)
     conn = db.connect()
     try:
-        existing = db.query_one(conn, "SELECT * FROM members WHERE plex_id = ?", (plex_id,))
+        conn.execute("BEGIN IMMEDIATE")
+        # Identities are the login boundary. The members.plex_id fallback keeps
+        # a partially-upgraded legacy database recoverable and is immediately
+        # repaired by inserting the missing identity row below.
+        existing = db.query_one(
+            conn,
+            """SELECT m.* FROM identities i
+               JOIN members m ON m.id = i.member_id
+               WHERE i.provider = 'plex' AND i.provider_uid = ?""",
+            (plex_id,),
+        )
+        if not existing:
+            existing = db.query_one(conn, "SELECT * FROM members WHERE plex_id = ?", (plex_id,))
         if existing:
-            if force_admin:
-                db.execute(
-                    conn,
-                    """UPDATE members SET username = ?, email = ?, thumb = ?,
-                       plex_account_id = COALESCE(?, plex_account_id),
-                       plex_token_encrypted = COALESCE(?, plex_token_encrypted),
-                       is_admin = 1 WHERE plex_id = ?""",
-                    (username, email, thumb, plex_account_id, encrypted_token, plex_id),
-                )
-            else:
-                db.execute(
-                    conn,
-                    """UPDATE members SET username = ?, email = ?, thumb = ?,
-                       plex_account_id = COALESCE(?, plex_account_id),
-                       plex_token_encrypted = COALESCE(?, plex_token_encrypted)
-                       WHERE plex_id = ?""",
-                    (username, email, thumb, plex_account_id, encrypted_token, plex_id),
-                )
-            row = db.query_one(conn, "SELECT * FROM members WHERE plex_id = ?", (plex_id,))
+            conn.execute(
+                """INSERT OR IGNORE INTO identities (member_id, provider, provider_uid)
+                   VALUES (?, 'plex', ?)""",
+                (existing["id"], plex_id),
+            )
+            conn.execute(
+                """UPDATE members SET username = ?, email = ?, thumb = ?,
+                   plex_account_id = COALESCE(?, plex_account_id),
+                   plex_token_encrypted = COALESCE(?, plex_token_encrypted),
+                   is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END
+                   WHERE id = ?""",
+                (username, email, thumb, plex_account_id, encrypted_token,
+                 force_admin or 0, existing["id"]),
+            )
+            member_id = existing["id"]
         else:
-            conn.execute("BEGIN IMMEDIATE")
             owner = settings.is_setup_complete() and not bool(db.query_one(
                 conn, "SELECT id FROM members WHERE is_owner = 1 LIMIT 1"
             ))
-            db.execute(
-                conn,
+            cur = conn.execute(
                 """INSERT INTO members
                    (plex_id, plex_account_id, plex_token_encrypted, username,
                     email, thumb, color, is_admin, is_owner)
@@ -147,8 +153,18 @@ def upsert_member(plex_id: str, username: str, email: str | None, thumb: str | N
                  thumb, color_for(plex_id), 1 if owner else force_admin or 0,
                  1 if owner else 0),
             )
-            row = db.query_one(conn, "SELECT * FROM members WHERE plex_id = ?", (plex_id,))
+            member_id = cur.lastrowid
+            conn.execute(
+                "INSERT INTO identities (member_id, provider, provider_uid) "
+                "VALUES (?, 'plex', ?)",
+                (member_id, plex_id),
+            )
+        row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member_id,))
+        conn.commit()
         return db.member_public(row)
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -213,6 +229,11 @@ def with_connection_status(member: dict) -> dict:
             "FROM members WHERE id = ?",
             (member["id"],),
         )
+        providers = {
+            r["provider"] for r in db.query_all(
+                conn, "SELECT provider FROM identities WHERE member_id = ?", (member["id"],)
+            )
+        }
     finally:
         conn.close()
     result["plex_rating_sync_connected"] = bool(
@@ -220,6 +241,10 @@ def with_connection_status(member: dict) -> dict:
     )
     result["plex_rating_sync_enabled"] = bool(
         row and row["plex_rating_sync_enabled"]
+    )
+    result["identity_providers"] = sorted(providers)
+    result["plex_available"] = bool(
+        config.PLEX_URL and config.PLEX_TOKEN and config.PLEX_MACHINE_ID
     )
     return result
 

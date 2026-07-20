@@ -135,7 +135,10 @@ async def _startup() -> None:
     db.init_db()
     app_settings.load_into_config()
     auth.purge_expired_sessions()
-    if not app_settings.is_setup_complete() and not config.missing_required():
+    # Preserve the zero-touch upgrade path for already Plex-configured installs.
+    # A fresh local-only install stays in the wizard so it can create its owner.
+    if (not app_settings.is_setup_complete() and not config.missing_required()
+            and config.plex_configured()):
         app_settings.save({}, complete=True)
     if app_settings.is_setup_complete():
         # Upgrade compatibility: preserve an existing installation's admin as
@@ -231,6 +234,12 @@ class SettingsIn(BaseModel):
     SEERR_TIMEOUT: float | None = Field(default=None, ge=1, le=120)
 
 
+class SetupOwnerIn(BaseModel):
+    setup_code: str
+    username: str
+    password: str
+
+
 def _settings_values(body: SettingsIn) -> dict:
     return body.model_dump(exclude={"setup_code", "clear_secrets"}, exclude_none=True)
 
@@ -249,20 +258,27 @@ async def _validate_settings(values: dict, *, require_all: bool) -> dict[str, st
             errors[key] = "Enter a complete http:// or https:// URL"
     if errors:
         return errors
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.get(
-                f"{str(merged['PLEX_URL']).rstrip('/')}/identity",
-                headers={"X-Plex-Token": merged["PLEX_TOKEN"],
-                         "Accept": "application/json"},
-            )
-            response.raise_for_status()
-            actual = str(response.json().get("MediaContainer", {}).get(
-                "machineIdentifier") or "")
-            if actual != str(merged["PLEX_MACHINE_ID"]):
-                errors["PLEX_MACHINE_ID"] = "Does not match this Plex server"
-    except Exception:
-        errors["PLEX_URL"] = "Could not authenticate to this Plex server"
+    plex_values = {key: str(merged.get(key) or "").strip()
+                   for key in ("PLEX_URL", "PLEX_TOKEN", "PLEX_MACHINE_ID")}
+    if any(plex_values.values()) and not all(plex_values.values()):
+        for key, value in plex_values.items():
+            if not value:
+                errors[key] = "Required when Plex is enabled"
+    if all(plex_values.values()) and not errors:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f"{plex_values['PLEX_URL'].rstrip('/')}/identity",
+                    headers={"X-Plex-Token": plex_values["PLEX_TOKEN"],
+                             "Accept": "application/json"},
+                )
+                response.raise_for_status()
+                actual = str(response.json().get("MediaContainer", {}).get(
+                    "machineIdentifier") or "")
+                if actual != plex_values["PLEX_MACHINE_ID"]:
+                    errors["PLEX_MACHINE_ID"] = "Does not match this Plex server"
+        except Exception:
+            errors["PLEX_URL"] = "Could not authenticate to this Plex server"
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             response = await client.get(
@@ -291,10 +307,38 @@ def _validate_score(score: float) -> float:
 @app.get("/api/setup/status")
 async def api_setup_status():
     complete = app_settings.is_setup_complete()
+    conn = db.connect()
+    try:
+        has_owner = db.query_one(conn, "SELECT id FROM members WHERE is_owner = 1 LIMIT 1")
+        has_members = db.query_one(conn, "SELECT id FROM members LIMIT 1")
+    finally:
+        conn.close()
     return {
         "required": not complete,
+        "owner_required": not complete and not bool(has_members),
+        "owner_exists": bool(has_owner),
+        "plex_enabled": config.plex_configured(),
         "settings": app_settings.public_values(reveal_nonsecrets=False) if not complete else None,
     }
+
+
+@app.post("/api/setup/owner")
+async def api_setup_owner(body: SetupOwnerIn):
+    if app_settings.is_setup_complete():
+        raise HTTPException(status_code=409, detail="Setup is already complete")
+    result = app_settings.verify_setup_code(body.setup_code)
+    if result == "locked":
+        raise HTTPException(status_code=429,
+                            detail="Too many attempts — wait a minute and try again")
+    if result != "ok":
+        raise HTTPException(status_code=403, detail="Invalid or expired setup code")
+    try:
+        member_id = accounts.create_first_owner(body.username, body.password)
+    except accounts.AccountError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    resp = JSONResponse({"ok": True, "next": "#/setup"})
+    _issue_session(resp, member_id)
+    return resp
 
 
 @app.post("/api/setup")
@@ -307,6 +351,12 @@ async def api_setup(body: SettingsIn):
                             detail="Too many attempts — wait a minute and try again")
     if result != "ok":
         raise HTTPException(status_code=403, detail="Invalid or expired setup code")
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM members WHERE is_owner = 1 LIMIT 1"):
+            raise HTTPException(status_code=409, detail="Create the owner account first")
+    finally:
+        conn.close()
     values = _settings_values(body)
     errors = await _validate_settings(values, require_all=True)
     if errors:
@@ -314,8 +364,9 @@ async def api_setup(body: SettingsIn):
                              "errors": errors}, status_code=422)
     app_settings.save(values, complete=True)
     app_settings.remove_setup_code()
-    await plex.refresh_library()
-    return {"ok": True, "next": "/auth/login"}
+    if config.plex_configured():
+        await plex.refresh_library()
+    return {"ok": True, "next": "/"}
 
 
 @app.get("/auth/login")
@@ -324,13 +375,28 @@ async def auth_login():
         return RedirectResponse("/#/setup")
     if config.DEV_BYPASS_USER:
         return RedirectResponse("/")
+    if not config.plex_configured():
+        raise HTTPException(status_code=503, detail="Plex login is not configured")
+    return await _start_plex_auth()
+
+
+@app.get("/auth/plex/link")
+async def auth_plex_link(member=Depends(auth.current_member)):
+    if not config.plex_configured():
+        raise HTTPException(status_code=503, detail="Plex is not configured")
+    return await _start_plex_auth(link_member_id=member["id"])
+
+
+async def _start_plex_auth(link_member_id: int | None = None):
     try:
         pin = await plex.create_pin()
     except Exception as e:  # noqa: BLE001
         log.error("Failed to create Plex pin: %s", e)
         raise HTTPException(status_code=502, detail="Could not reach Plex to start login")
     resp = RedirectResponse(plex.auth_url(pin["code"]))
-    token = _pin_signer.dumps({"id": pin["id"], "code": pin["code"]})
+    token = _pin_signer.dumps({
+        "id": pin["id"], "code": pin["code"], "link_member_id": link_member_id,
+    })
     resp.set_cookie(PIN_COOKIE, token, max_age=600, httponly=True, samesite="lax")
     return resp
 
@@ -357,6 +423,27 @@ async def auth_callback(request: Request):
             "Plex server, so you can't use the film club tracker.")
 
     identity = await plex.get_user(token)
+    link_member_id = pin.get("link_member_id")
+    if link_member_id is not None:
+        session = auth.resolve_session(request.cookies.get(config.SESSION_COOKIE))
+        if not session or session["id"] != link_member_id:
+            return _login_error("Your Film Club session expired. Sign in and try linking again.")
+        try:
+            accounts.link_plex_identity(
+                link_member_id,
+                plex_id=identity["uuid"],
+                username=identity["username"],
+                email=identity.get("email"),
+                thumb=identity.get("thumb"),
+                plex_account_id=identity.get("account_id"),
+                plex_token=token,
+            )
+        except accounts.AccountError as exc:
+            return _login_error(str(exc))
+        resp = RedirectResponse("/#/profile")
+        resp.delete_cookie(PIN_COOKIE)
+        return resp
+
     # Retain an encrypted server-side copy for this member's future Plex rating
     # writes. The raw token never enters the signed browser session.
     member = auth.upsert_member(
@@ -412,10 +499,20 @@ class LoginCredentials(BaseModel):
     password: str
 
 
+class PasswordResetIn(BaseModel):
+    token: str
+    password: str
+
+
+class PasswordResetCreate(BaseModel):
+    ttl_hours: int = Field(default=accounts.DEFAULT_RESET_TTL_HOURS, ge=1, le=168)
+
+
 @app.post("/api/admin/invites")
 async def api_create_invite(body: InviteCreate, admin=Depends(auth.require_admin)):
     invite = accounts.create_invite(admin["id"], ttl_hours=body.ttl_hours, email=body.email)
     return {
+        "id": invite["id"],
         "code": invite["code"],
         "expires_at": invite["expires_at"],
         "invite_url": f"{config.APP_URL}/#/invite/{invite['code']}",
@@ -425,6 +522,21 @@ async def api_create_invite(body: InviteCreate, admin=Depends(auth.require_admin
 @app.get("/api/admin/invites")
 async def api_list_invites(admin=Depends(auth.require_admin)):
     return {"invites": accounts.list_invites()}
+
+
+@app.post("/api/admin/members/{member_id}/password-reset")
+async def api_create_password_reset(member_id: int, body: PasswordResetCreate,
+                                    admin=Depends(auth.require_admin)):
+    try:
+        reset = accounts.create_password_reset(
+            admin["id"], member_id, ttl_hours=body.ttl_hours
+        )
+    except accounts.AccountError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "expires_at": reset["expires_at"],
+        "reset_url": f"{config.APP_URL}/#/reset/{reset['token']}",
+    }
 
 
 @app.get("/auth/local/invite/{code}")
@@ -448,6 +560,22 @@ async def api_local_login(body: LoginCredentials):
     member_id = accounts.authenticate_local(body.username, body.password)
     if not member_id:
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    resp = JSONResponse({"ok": True, "next": "/"})
+    _issue_session(resp, member_id)
+    return resp
+
+
+@app.get("/auth/local/reset/{token}")
+async def api_password_reset_status(token: str):
+    return accounts.password_reset_status(token)
+
+
+@app.post("/auth/local/reset")
+async def api_password_reset(body: PasswordResetIn):
+    try:
+        member_id = accounts.redeem_password_reset(body.token, body.password)
+    except accounts.AccountError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     resp = JSONResponse({"ok": True, "next": "/"})
     _issue_session(resp, member_id)
     return resp

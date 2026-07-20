@@ -13,9 +13,9 @@ This file records decisions visible in the current repository. “Confirmed” m
 ## Invite-only local accounts with an identity model
 
 - **Decision:** Decouple accounts from Plex with an `identities` table mapping `plex`/`local` login methods to member rows. Local accounts are gated by single-use, expiring, admin-issued invites (no open registration, no SMTP). Passwords use stdlib `hashlib.scrypt`, not Argon2id.
-- **Evidence:** `app/accounts.py`, `app/passwords.py`, migration `4` (`identities`, `invites`), and the `/auth/local/*` + `/api/admin/invites` endpoints. A local account is a member row with a synthetic `local:<random>` plex_id plus a `local` identity holding the scrypt hash.
+- **Evidence:** `app/accounts.py`, `app/passwords.py`, migrations `4` (`identities`, `invites`) and `5` (`password_resets`), the `/auth/local/*` routes, and the account UI. A local account is a member row with a synthetic `local:<random>` plex_id plus a `local` identity holding the scrypt hash.
 - **Likely reasoning:** The roadmap specified Argon2id, but the owner chose scrypt to keep the deliberately minimal dependency set and the no-build, multi-arch Docker image (scrypt is stdlib and memory-hard, sufficient for a small private club). The synthetic plex_id avoids rebuilding the live `members` table while satisfying its `NOT NULL UNIQUE` constraint.
-- **Consequences:** Members can log in without Plex; existing Plex members are grandfathered (their ids and data preserved). Only an invite code's SHA-256 hash is stored. Plex-account linking, password reset, and the account UI are follow-up work.
+- **Consequences:** Members can log in without Plex; existing Plex members are grandfathered (their ids and data preserved). A local member may link Plex to the same member row, and subsequent Plex login resolves through that identity instead of creating a duplicate. Invite and reset plaintext is returned once; only SHA-256 hashes are stored. Reset redemption revokes existing sessions.
 - **Status:** Confirmed by the owner (scrypt over Argon2id).
 
 ## Include a weekly scheduling lifecycle
@@ -55,7 +55,7 @@ This file records decisions visible in the current repository. “Confirmed” m
 - **Decision:** Successful Plex authentication is insufficient; the account must have access to the configured server.
 - **Evidence:** `plex.has_server_access()` and the mandatory check in `auth_callback()`.
 - **Likely reasoning:** Plex server sharing is the existing membership boundary.
-- **Consequences:** No separate invite/club-membership system is needed. Plex configuration or resource API failure blocks production login.
+- **Consequences:** Plex login remains restricted to server members when enabled, but local invite-only membership and first-owner setup work without Plex.
 - **Status:** Confirmed.
 
 ## Encrypt Plex user tokens for per-member rating writes
@@ -159,5 +159,5 @@ This file records decisions visible in the current repository. “Confirmed” m
 - **Decision:** Fresh installations use a setup-code-protected browser wizard; admins subsequently manage integrations in the Admin screen. Sensitive values are encrypted in SQLite using a durable key generated under `/data`. Explicit environment variables remain higher-precedence automation overrides.
 - **Evidence:** `app/settings.py`, migration v2, setup/admin routes in `app/main.py`, and the setup/admin forms in `static/app.js`.
 - **Likely reasoning:** Operators should be able to install and configure the product without editing files while existing automated deployments remain compatible.
-- **Consequences:** The complete `/data` directory, including `master.key`, must be backed up. The first authorized Plex login after setup becomes the non-demotable owner. Environment-overridden fields are read-only in the UI.
+- **Consequences:** The complete `/data` directory, including `master.key`, must be backed up. The wizard creates the first local account as the non-demotable owner before integration setup; Plex is optional and its URL/token/machine-ID fields are all-or-none. Environment-overridden fields are read-only in the UI.
 - **Status:** Confirmed and implemented.

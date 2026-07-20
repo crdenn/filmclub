@@ -15,12 +15,15 @@
     : "c" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   async function api(path, opts = {}) {
+    const publicAuth = !!opts.publicAuth;
+    const fetchOpts = { ...opts };
+    delete fetchOpts.publicAuth;
     const res = await fetch(path, {
-      ...opts,
+      ...fetchOpts,
       headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID, ...(opts.headers || {}) },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
-    if (res.status === 401) {
+    if (res.status === 401 && !publicAuth) {
       // Clear stale identity-only sessions before showing login. The next normal
       // Plex login stores the per-user token needed for rating synchronization.
       await fetch("/auth/logout", { method: "POST" }).catch(() => {});
@@ -54,6 +57,9 @@
     memberBackHash: "#/stats",
     todo: { backlog: 0, watched: 0 },
     setupRequired: false,
+    authOptions: { plex_enabled: false },
+    setupCode: "",
+    inviteUrls: {},
   };
 
   // Per-member reminder counts driving the nav badges. Refreshed at boot and
@@ -275,9 +281,9 @@
   const SETTING_FIELDS = [
     ["APP_URL", "Film Club URL", "The exact address members open in their browser."],
     ["TMDB_API_KEY", "TMDB API key", "Required for film search and metadata."],
-    ["PLEX_URL", "Plex server URL", "An http(s) address reachable from this container."],
-    ["PLEX_TOKEN", "Plex owner token", "Used for library enrichment; stored encrypted."],
-    ["PLEX_MACHINE_ID", "Plex machine identifier", "Authorizes accounts with access to this server."],
+    ["PLEX_URL", "Plex server URL", "Optional. Set all three Plex fields to enable integration."],
+    ["PLEX_TOKEN", "Plex owner token", "Optional. Used for library enrichment; stored encrypted."],
+    ["PLEX_MACHINE_ID", "Plex machine identifier", "Optional. Authorizes accounts with access to this server."],
     ["PLEX_WEBHOOK_SECRET", "Plex webhook secret", "Optional. Enables inbound rating sync."],
     ["PLEX_REFRESH_INTERVAL", "Plex refresh interval", "Seconds between library refreshes (minimum 60)."],
     ["SEERR_URL", "Seerr URL", "Optional Overseerr/Jellyseerr server address."],
@@ -311,7 +317,8 @@
     });
     if (clear.length) values.clear_secrets = clear;
     ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT"].forEach(key => {
-      if (values[key] !== "") values[key] = Number(values[key]);
+      if (values[key] === "") delete values[key];
+      else values[key] = Number(values[key]);
     });
     return values;
   }
@@ -329,11 +336,51 @@
     try { status = await api("/api/setup/status"); }
     catch (e) { app.innerHTML = `<div class="login-wrap"><div class="login-card">${esc(e.message)}</div></div>`; return; }
     if (!status.required) { state.setupRequired = false; bootAuthenticated(); return; }
+    state.authOptions.plex_enabled = !!status.plex_enabled;
+    if (status.owner_required) {
+      app.innerHTML = `<div class="setup-wrap"><form class="setup-card setup-owner-card" id="setup-owner-form">
+        <div class="setup-kicker">First-run setup · 1 of 2</div><h1>Create the owner account</h1>
+        <p>This local account owns the installation and cannot be demoted. Enter the one-time setup code shown in the container logs.</p>
+        <div class="setup-grid">
+          <label class="setup-field"><span>Setup code *</span><input class="search-input" name="setup_code" required autocomplete="off" placeholder="XXXX-XXXX-XXXX" value="${esc(state.setupCode)}"></label>
+          <label class="setup-field"><span>Username *</span><input class="search-input" name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]+" autocomplete="username"></label>
+          <label class="setup-field"><span>Password *</span><input class="search-input" name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label class="setup-field"><span>Confirm password *</span><input class="search-input" name="confirm_password" type="password" required minlength="8" autocomplete="new-password"></label>
+        </div>
+        <div class="setup-actions"><span id="setup-message"></span><button class="btn btn-primary" type="submit">Create owner</button></div>
+      </form></div>`;
+      const ownerForm = $("#setup-owner-form");
+      ownerForm.onsubmit = async (event) => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(ownerForm));
+        if (values.password !== values.confirm_password) {
+          $("#setup-message").textContent = "Passwords do not match";
+          return;
+        }
+        const button = ownerForm.querySelector("button[type=submit]");
+        button.disabled = true; button.textContent = "Creating…";
+        state.setupCode = values.setup_code;
+        try {
+          await api("/api/setup/owner", { method: "POST", body: {
+            setup_code: values.setup_code, username: values.username, password: values.password,
+          }});
+          await renderSetup();
+        } catch (e) {
+          $("#setup-message").textContent = e.message;
+          button.disabled = false; button.textContent = "Create owner";
+        }
+      };
+      return;
+    }
+    if (!status.owner_exists) {
+      app.innerHTML = `<div class="login-wrap"><div class="login-card"><h1>Setup needs attention</h1><p>An existing database has members but no owner. Restore the expected database or contact the administrator.</p></div></div>`;
+      return;
+    }
     if (status.settings.APP_URL && !status.settings.APP_URL.locked) status.settings.APP_URL.value = window.location.origin;
     app.innerHTML = `<div class="setup-wrap"><form class="setup-card" id="setup-form">
-      <div class="setup-kicker">First-run setup</div><h1>Set up Film Club</h1>
-      <p>Enter the one-time setup code shown in <code>docker compose logs filmclub</code>, then connect your services. Secrets are encrypted before they are stored.</p>
-      <label class="setup-field"><span>Setup code *</span><input class="search-input" name="setup_code" required autocomplete="off" placeholder="XXXX-XXXX-XXXX"></label>
+      <div class="setup-kicker">First-run setup · 2 of 2</div><h1>Connect services</h1>
+      <p>TMDB powers film search. Plex is optional; leave all Plex fields blank for a local-only club. Secrets are encrypted before they are stored.</p>
+      <label class="setup-field"><span>Setup code *</span><input class="search-input" name="setup_code" required autocomplete="off" placeholder="XXXX-XXXX-XXXX" value="${esc(state.setupCode)}"></label>
       <div class="setup-grid">${settingsFields(status.settings, true)}</div>
       <div class="setup-actions"><span id="setup-message"></span><button class="btn btn-primary" type="submit">Validate and finish setup</button></div>
     </form></div>`;
@@ -342,10 +389,10 @@
       event.preventDefault(); showSettingsErrors(form);
       const button = form.querySelector("button[type=submit]");
       button.disabled = true; button.textContent = "Validating…";
-      $("#setup-message").textContent = "Checking Plex and TMDB…";
+      $("#setup-message").textContent = "Checking configured services…";
       try {
         await api("/api/setup", { method: "POST", body: collectSettings(form) });
-        location.href = "/auth/login";
+        location.href = "/";
       } catch (e) {
         showSettingsErrors(form, (e.data && e.data.errors) || {});
         $("#setup-message").textContent = e.message;
@@ -355,11 +402,112 @@
   }
 
   function renderLogin() {
-    app.innerHTML = `<div class="login-wrap"><div class="login-card">
+    const plex = state.authOptions.plex_enabled ? `
+      <div class="auth-divider"><span>or</span></div>
+      <a class="login-btn plex-login" href="/auth/login">Sign in with Plex</a>` : "";
+    app.innerHTML = `<div class="login-wrap"><div class="login-card auth-card">
       <h1>🎬 Film Club</h1>
-      <p>Sign in with your Plex account. You'll need access to the club's Plex server.</p>
-      <a class="login-btn" href="/auth/login">Sign in with Plex</a>
+      <p>Sign in to your club account.</p>
+      <form class="local-login-form" id="local-login-form">
+        <label><span>Username</span><input class="search-input" name="username" required autocomplete="username"></label>
+        <label><span>Password</span><input class="search-input" name="password" type="password" required autocomplete="current-password"></label>
+        <div class="auth-message" id="login-message"></div>
+        <button class="btn btn-primary" type="submit">Sign in</button>
+      </form>${plex}
     </div></div>`;
+    const form = $("#local-login-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form));
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true; button.textContent = "Signing in…";
+      try {
+        await api("/auth/local/login", { method: "POST", body: values, publicAuth: true });
+        location.href = "/";
+      } catch (e) {
+        $("#login-message").textContent = e.message;
+        button.disabled = false; button.textContent = "Sign in";
+      }
+    };
+  }
+
+  async function renderInvite(code) {
+    app.innerHTML = `<div class="login-wrap"><div class="login-card auth-card"><div class="empty">Checking invite…</div></div></div>`;
+    let invite;
+    try { invite = await api(`/auth/local/invite/${encodeURIComponent(code)}`); }
+    catch (e) { invite = { valid: false }; }
+    if (!invite.valid) {
+      app.innerHTML = `<div class="login-wrap"><div class="login-card auth-card"><h1>Invite unavailable</h1><p>This invite is invalid, expired, or has already been used.</p><a href="#/login">Back to sign in</a></div></div>`;
+      return;
+    }
+    app.innerHTML = `<div class="login-wrap"><div class="login-card auth-card">
+      <div class="setup-kicker">You're invited</div><h1>Create your account</h1>
+      <p>Choose a username and a password of at least 8 characters.${invite.email ? ` This invite was created for ${esc(invite.email)}.` : ""}</p>
+      <form class="local-login-form" id="invite-form">
+        <label><span>Username</span><input class="search-input" name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]+" autocomplete="username"></label>
+        <label><span>Password</span><input class="search-input" name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label><span>Confirm password</span><input class="search-input" name="confirm_password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <div class="auth-message" id="invite-message"></div>
+        <button class="btn btn-primary" type="submit">Create account</button>
+      </form>
+    </div></div>`;
+    const form = $("#invite-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form));
+      if (values.password !== values.confirm_password) {
+        $("#invite-message").textContent = "Passwords do not match"; return;
+      }
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true; button.textContent = "Creating…";
+      try {
+        await api("/auth/local/register", { method: "POST", publicAuth: true, body: {
+          code, username: values.username, password: values.password,
+        }});
+        location.href = "/";
+      } catch (e) {
+        $("#invite-message").textContent = e.message;
+        button.disabled = false; button.textContent = "Create account";
+      }
+    };
+  }
+
+  async function renderPasswordReset(token) {
+    app.innerHTML = `<div class="login-wrap"><div class="login-card auth-card"><div class="empty">Checking reset link…</div></div></div>`;
+    let reset;
+    try { reset = await api(`/auth/local/reset/${encodeURIComponent(token)}`); }
+    catch (e) { reset = { valid: false }; }
+    if (!reset.valid) {
+      app.innerHTML = `<div class="login-wrap"><div class="login-card auth-card"><h1>Reset link unavailable</h1><p>This link is invalid, expired, or has already been used.</p><a href="#/login">Back to sign in</a></div></div>`;
+      return;
+    }
+    app.innerHTML = `<div class="login-wrap"><div class="login-card auth-card">
+      <div class="setup-kicker">Password reset</div><h1>Choose a new password</h1>
+      <p>Set a new password for ${esc(reset.username)}. Using this link signs out existing sessions.</p>
+      <form class="local-login-form" id="reset-form">
+        <label><span>New password</span><input class="search-input" name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label><span>Confirm password</span><input class="search-input" name="confirm_password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <div class="auth-message" id="reset-message"></div>
+        <button class="btn btn-primary" type="submit">Set password</button>
+      </form>
+    </div></div>`;
+    const form = $("#reset-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(form));
+      if (values.password !== values.confirm_password) {
+        $("#reset-message").textContent = "Passwords do not match"; return;
+      }
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true; button.textContent = "Saving…";
+      try {
+        await api("/auth/local/reset", { method: "POST", publicAuth: true, body: { token, password: values.password } });
+        location.href = "/";
+      } catch (e) {
+        $("#reset-message").textContent = e.message;
+        button.disabled = false; button.textContent = "Set password";
+      }
+    };
   }
 
   // ---------- profile ----------
@@ -373,9 +521,16 @@
     const current = m.display_name || "";
     const s = p.stats;
     const connected = !!m.plex_rating_sync_connected;
+    const providers = m.identity_providers || [];
+    const plexLinked = providers.includes("plex");
     const syncEnabled = connected && m.plex_rating_sync_enabled !== false;
     const isDev = (m.plex_id || "").startsWith("dev:");
-    const syncTitle = isDev ? "Plex sync unavailable in development" : syncEnabled ? "Plex ratings sync on" : connected ? "Plex ratings sync off" : "Plex ratings sync unavailable";
+    const syncTitle = isDev ? "Plex sync unavailable in development"
+      : syncEnabled ? "Plex ratings sync on"
+      : connected ? "Plex ratings sync off"
+      : plexLinked ? "Plex reauthentication required"
+      : m.plex_available ? "Plex account not linked"
+      : "Plex is not configured";
     const recentRatings = p.ratings.slice(0, 4);
     const recentSuggestions = p.suggestions.slice(0, 4);
     const avg = s.mean_score_given != null ? s.mean_score_given.toFixed(2) : "—";
@@ -385,7 +540,7 @@
         <div class="profile-hero-copy">
           <div class="profile-eyebrow">Your Film Club profile</div>
           <h1>${esc(m.username)}</h1>
-          <div class="profile-sub">Plex account: ${esc(plexName)}</div>
+          <div class="profile-sub">${plexLinked ? `Plex account linked · ${esc(plexName)}` : "Local account"}</div>
         </div>
         <a class="btn profile-public" href="#/member/${m.id}">View public profile</a>
       </header>
@@ -402,7 +557,7 @@
             <span class="profile-label">Display name</span>
             <input type="text" id="display-name" class="search-input" maxlength="40"
               placeholder="${esc(plexName)}" value="${esc(current)}" autocomplete="off">
-            <span class="profile-hint">Leave blank to use your Plex username, “${esc(plexName)}”.</span>
+            <span class="profile-hint">Leave blank to use your account name, “${esc(plexName)}”.</span>
           </label>
           <div class="profile-actions"><button class="btn btn-primary" id="save-profile">Save changes</button></div>
           <div class="profile-sync ${syncEnabled ? "connected" : ""}">
@@ -411,7 +566,7 @@
             ${!isDev && connected ? `<label class="profile-sync-switch" title="Turn Plex ratings sync ${syncEnabled ? "off" : "on"}">
               <input type="checkbox" id="plex-sync-toggle" role="switch" aria-label="Plex ratings sync" ${syncEnabled ? "checked" : ""}>
               <span aria-hidden="true"></span>
-            </label>` : !isDev ? `<a class="profile-sync-link" href="/auth/login">Connect</a>` : ""}
+            </label>` : !isDev && m.plex_available ? `<a class="profile-sync-link" href="/auth/plex/link">${plexLinked ? "Reconnect Plex" : "Link Plex"}</a>` : ""}
           </div>
         </section>
         <section class="profile-section">
@@ -1666,8 +1821,10 @@
   // ================= ADMIN =================
   async function renderAdmin(preserve = false) {
     if (!preserve) paintView("admin", `<div class="empty">Loading…</div>`);
-    let data, configData;
-    try { [data, configData] = await Promise.all([api("/api/admin/members"), api("/api/admin/settings")]); }
+    let data, configData, invitesData;
+    try { [data, configData, invitesData] = await Promise.all([
+      api("/api/admin/members"), api("/api/admin/settings"), api("/api/admin/invites"),
+    ]); }
     catch (e) {
       if (e.message === "unauth") return;
       if (preserve) toast("Couldn't refresh: " + e.message, true);
@@ -1675,6 +1832,7 @@
       return;
     }
     const members = data.members;
+    const invites = invitesData.invites;
     const reals = members.filter(m => !m.is_placeholder);
     const placeholders = members.filter(m => m.is_placeholder);
 
@@ -1697,10 +1855,14 @@
           ${m.suggested_merge ? `<span class="hint">matches ${esc(m.suggested_merge.username)}</span>` : ""}
         </div>`;
       }
-      if (m.is_owner) return `<span style="color:var(--text-faint);font-size:.8rem">you · locked</span>`;
-      return m.is_admin
-        ? `<button class="btn admin-toggle" data-id="${m.id}" data-val="0">Remove admin</button>`
-        : `<button class="btn admin-toggle" data-id="${m.id}" data-val="1">Make admin</button>`;
+      const adminAction = m.is_owner
+        ? `<span style="color:var(--text-faint);font-size:.8rem">owner · locked</span>`
+        : m.is_admin
+          ? `<button class="btn admin-toggle" data-id="${m.id}" data-val="0">Remove admin</button>`
+          : `<button class="btn admin-toggle" data-id="${m.id}" data-val="1">Make admin</button>`;
+      const resetAction = (m.identity_providers || []).includes("local")
+        ? `<button class="btn password-reset-btn" data-id="${m.id}">Reset password</button>` : "";
+      return `<div class="admin-actions">${adminAction}${resetAction}</div>`;
     };
 
     const table = (list, emptyMsg) => list.length ? `
@@ -1708,13 +1870,21 @@
         <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Actions</th>
       </tr></thead><tbody>
       ${list.map(m => `<tr>
-        <td class="admin-member-cell"><div class="member-cell">${avatar(m, "sm")}${esc(m.username)}</div></td>
+        <td class="admin-member-cell"><div class="member-cell">${avatar(m, "sm")}<span>${esc(m.username)}<small class="identity-label">${esc((m.identity_providers || []).join(" + ") || "record only")}</small></span></div></td>
         <td class="admin-type-cell">${typeBadge(m)}</td>
         <td class="num" data-label="Suggested">${m.counts.suggested}${m.counts.suggested_watched ? ` <span style="color:var(--text-faint)">(${m.counts.suggested_watched} watched)</span>` : ""}</td>
         <td class="num" data-label="Ratings">${m.counts.ratings}</td>
         <td class="admin-actions-cell">${rowActions(m)}</td>
       </tr>`).join("")}
       </tbody></table>` : `<div class="empty" style="padding:2rem">${emptyMsg}</div>`;
+
+    const inviteTable = invites.length ? `<div class="invite-list">${invites.map(invite => {
+      const knownUrl = state.inviteUrls[invite.id];
+      const who = invite.redeemed_by ? ` · ${esc(invite.redeemed_by)}` : "";
+      return `<div class="invite-row"><div><strong>${esc(invite.email || "General invite")}</strong>
+        <span>${esc(invite.status)}${who} · expires ${esc(fmtDate(invite.expires_at))}</span></div>
+        ${knownUrl ? `<button class="btn copy-invite" data-id="${invite.id}">Copy link</button>` : ""}</div>`;
+    }).join("")}</div>` : `<div class="empty" style="padding:1.2rem">No invites yet.</div>`;
 
     const body = `
       <div class="page-head"><h1>Admin</h1>
@@ -1730,9 +1900,19 @@
 
       <div class="stat-card wide">
         <h3>Accounts</h3>
-        <div class="sub">Real Plex logins. Grant admin to give someone access to this panel.</div>
+        <div class="sub">Local and Plex identities resolve to these member records. Grant admin to give someone access to this panel.</div>
         ${table(reals, "No one has signed in yet.")}
       </div>
+      <section class="stat-card wide admin-invites">
+        <h3>Invites</h3>
+        <div class="sub">Create a single-use local-account link. For security, a link can only be copied during the browser session that created it.</div>
+        <form class="invite-create" id="invite-create-form">
+          <input class="search-input" name="email" type="email" placeholder="Email label (optional)" autocomplete="off">
+          <label>Expires in <input class="search-input" name="ttl_hours" type="number" min="1" max="720" value="72"> hours</label>
+          <button class="btn btn-primary" type="submit">Create invite</button>
+        </form>
+        ${inviteTable}
+      </section>
       <form class="stat-card wide admin-settings" id="admin-settings">
         <h3>Application settings</h3>
         <div class="sub">Update integrations without editing files. Saved secrets are never displayed; leave a saved secret blank to keep it.</div>
@@ -1760,6 +1940,28 @@
 
     app.querySelectorAll(".admin-toggle").forEach(btn => btn.onclick = () =>
       setAdmin(parseInt(btn.dataset.id, 10), btn.dataset.val === "1"));
+    app.querySelectorAll(".password-reset-btn").forEach(btn => btn.onclick = () =>
+      createPasswordReset(parseInt(btn.dataset.id, 10), members.find(m => m.id === parseInt(btn.dataset.id, 10))?.username));
+    app.querySelectorAll(".copy-invite").forEach(btn => btn.onclick = () =>
+      copyText(state.inviteUrls[parseInt(btn.dataset.id, 10)], "Invite link copied"));
+    const inviteForm = $("#invite-create-form");
+    inviteForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(inviteForm));
+      const button = inviteForm.querySelector("button[type=submit]");
+      button.disabled = true; button.textContent = "Creating…";
+      try {
+        const invite = await api("/api/admin/invites", { method: "POST", body: {
+          email: values.email.trim() || null, ttl_hours: Number(values.ttl_hours),
+        }});
+        state.inviteUrls[invite.id] = invite.invite_url;
+        await copyText(invite.invite_url, "Invite created and copied");
+        renderAdmin(true);
+      } catch (e) {
+        toast("Couldn't create invite: " + e.message, true);
+        button.disabled = false; button.textContent = "Create invite";
+      }
+    };
     const settingsForm = $("#admin-settings");
     settingsForm.onsubmit = async (event) => {
       event.preventDefault(); showSettingsErrors(settingsForm);
@@ -1774,6 +1976,55 @@
         button.disabled = false; button.textContent = "Validate and save";
       }
     };
+  }
+
+  async function copyText(value, successMessage = "Copied") {
+    if (!value) return false;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast(successMessage);
+      return true;
+    } catch {
+      const input = document.createElement("textarea");
+      input.value = value;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      const copied = document.execCommand("copy");
+      input.remove();
+      toast(copied ? successMessage : "Copy failed — select the link manually", !copied);
+      return copied;
+    }
+  }
+
+  function showSecretLink(title, url, expiresAt) {
+    const root = $("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="secret-link-backdrop"><div class="modal">
+      <div class="modal-head"><h2>${esc(title)}</h2><button class="modal-close" id="secret-link-close">×</button></div>
+      <div class="modal-body secret-link-body"><p>This link is shown once and expires ${esc(fmtDate(expiresAt))}.</p>
+        <input class="search-input" id="secret-link-value" value="${esc(url)}" readonly>
+        <button class="btn btn-primary" id="secret-link-copy">Copy link</button></div>
+    </div></div>`;
+    const close = () => { root.innerHTML = ""; };
+    $("#secret-link-close").onclick = close;
+    $("#secret-link-backdrop").onclick = (event) => {
+      if (event.target.id === "secret-link-backdrop") close();
+    };
+    $("#secret-link-copy").onclick = () => copyText(url, "Reset link copied");
+    $("#secret-link-value").select();
+  }
+
+  async function createPasswordReset(memberId, username) {
+    if (!confirm(`Create a one-hour password reset link for ${username}?`)) return;
+    try {
+      const reset = await api(`/api/admin/members/${memberId}/password-reset`, {
+        method: "POST", body: { ttl_hours: 1 },
+      });
+      showSecretLink(`Reset password · ${username}`, reset.reset_url, reset.expires_at);
+    } catch (e) {
+      toast("Couldn't create reset link: " + e.message, true);
+    }
   }
 
   async function mergeMembers(fromId, intoId) {
@@ -1800,10 +2051,14 @@
 
   // ---------- router ----------
   async function render({ preserve = false } = {}) {
-    if (!state.me) { renderLogin(); return; }
-    await ensureMembers().catch(() => {});
     const hash = location.hash || "#/thisweek";
     const [, view, arg] = hash.split("/");
+    if (!state.me) {
+      if (view === "invite" && arg) return renderInvite(arg);
+      if (view === "reset" && arg) return renderPasswordReset(arg);
+      renderLogin(); return;
+    }
+    await ensureMembers().catch(() => {});
     if (view === "member" && state.currentHash && !state.currentHash.startsWith("#/member/")) {
       state.memberBackHash = state.currentHash;
     }
@@ -1850,6 +2105,7 @@
   (async function boot() {
     try {
       const setup = await api("/api/setup/status");
+      state.authOptions.plex_enabled = !!setup.plex_enabled;
       if (setup.required) { state.setupRequired = true; renderSetup(); return; }
     } catch { /* normal auth flow will show the actionable error */ }
     bootAuthenticated();

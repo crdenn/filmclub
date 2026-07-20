@@ -74,10 +74,12 @@ class MigrationRunnerTests(unittest.TestCase):
         rows = c.execute("SELECT version, name FROM schema_migrations ORDER BY version").fetchall()
         c.close()
         self.assertEqual(rows, [(1, "baseline"), (2, "app-settings"),
-                                (3, "sessions"), (4, "identities")])
+                                (3, "sessions"), (4, "identities"),
+                                (5, "password-resets")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
         self.assertIn("provider_uid", _columns(self.db_path, "identities"))
+        self.assertIn("token_hash", _columns(self.db_path, "password_resets"))
 
     def test_upgrades_old_shaped_db_and_preserves_data(self):
         self._make_old_shaped_db()
@@ -98,6 +100,17 @@ class MigrationRunnerTests(unittest.TestCase):
         finally:
             c.close()
         self.assertEqual(migrations.current_version(self.db_path), migrations.latest_version())
+
+    def test_init_db_can_upgrade_before_owner_column_exists(self):
+        self._make_old_shaped_db()
+        db.init_db()
+        self.assertIn("is_owner", _columns(self.db_path, "members"))
+        c = sqlite3.connect(self.db_path)
+        try:
+            indexes = {r[1] for r in c.execute("PRAGMA index_list(members)")}
+        finally:
+            c.close()
+        self.assertIn("idx_members_single_owner", indexes)
 
     def test_backup_written_before_migrating_existing_db(self):
         self._make_old_shaped_db()

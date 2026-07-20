@@ -9,8 +9,7 @@ Runs as a single Docker container with a SQLite database on a bind-mounted
 `/data` volume. Dark, poster-forward, no-build vanilla-JS frontend.
 
 > **Status:** pre-1.0, self-hosted. Licensed under **AGPL-3.0-or-later**. Plex is
-> currently required; making it optional (with invite-only local accounts) and
-> shipping a prebuilt image are in progress — see `CHANGELOG.md`.
+> optional; a published prebuilt image is still in progress — see `CHANGELOG.md`.
 
 ## The one rule
 
@@ -72,9 +71,9 @@ scorecards, and genre/decade distributions.
 - **Seerr** *(optional)* — adding a film that isn't already on Plex submits a
   request to Overseerr/Jellyseerr. Degrades safely when off or unreachable.
 
-**Admin** — member list, placeholder-member merge, admin grants, movie deletion,
-manual Plex refresh, and a diagnostics endpoint (version, schema, DB health,
-backups, integration status).
+**Admin** — member list, local-account invites and password resets,
+placeholder-member merge, admin grants, movie deletion, manual Plex refresh,
+and diagnostics (version, schema, DB health, backups, integration status).
 
 ## Stack
 
@@ -91,8 +90,8 @@ Before starting, you need:
 
 - A host with Docker Engine and Docker Compose v2 (`docker compose`), with Git
   installed. Linux, Unraid, and Docker Desktop are all suitable.
-- A Plex server and an owner token. Plex must be reachable from the container.
 - A free TMDB API key for film search and metadata.
+- Optionally, a Plex server and owner token reachable from the container.
 - A persistent directory for the SQLite database. The included Compose file uses
   `./data`; replace that bind mount with an absolute host path if preferred.
 
@@ -144,12 +143,13 @@ docker compose logs filmclub
 ```
 
 Open <http://localhost:8000> (or the host address you mapped), enter the setup
-code, and complete the guided form. It validates Plex and TMDB before saving.
-API keys and tokens are encrypted in SQLite; secret values are never returned to
-the browser after saving.
+code, create the first local owner, and complete the guided form. It validates
+TMDB and, when all three Plex fields are supplied, Plex before saving. API keys
+and tokens are encrypted in SQLite; secret values are never returned to the
+browser after saving.
 
-The first Plex account to sign in after setup becomes the locked owner and can
-manage integrations and additional admins from the Admin screen.
+The local owner is locked against demotion and can manage integrations, invite
+members, issue password-reset links, and grant additional admins.
 
 ### 2. Verify the installation
 
@@ -158,8 +158,9 @@ docker compose ps
 curl http://localhost:8000/readyz
 ```
 
-Change the `curl` address if you mapped a different host port. Only Plex accounts
-with access to the configured server are admitted.
+Change the `curl` address if you mapped a different host port. Local accounts are
+invite-only. If Plex login is enabled, only accounts with access to the
+configured server are admitted.
 
 If startup fails, inspect `docker compose logs filmclub`. The most common causes
 are a Plex URL that the container cannot reach or a Film Club URL that differs
@@ -187,9 +188,9 @@ The setup wizard and Admin screen manage normal application configuration:
 | Variable | Required | Purpose |
 |---|:---:|---|
 | `TMDB_API_KEY` | ✓ | Film search and metadata |
-| `PLEX_URL` | ✓ | Plex server base URL for enrichment |
-| `PLEX_TOKEN` | ✓ | Plex server token for enrichment |
-| `PLEX_MACHINE_ID` | ✓ | Authorization: the server-access check |
+| `PLEX_URL` | — | Plex server base URL; set with token and machine ID |
+| `PLEX_TOKEN` | — | Plex server token for enrichment |
+| `PLEX_MACHINE_ID` | — | Plex login authorization server |
 | `APP_URL` | ✓ | OAuth callback target; must match how you open the app |
 | `PLEX_WEBHOOK_SECRET` | — | Enables inbound Plex→Film Club rating webhooks |
 | `PLEX_REFRESH_INTERVAL` | — | Seconds between library refreshes (default 3600) |
@@ -205,10 +206,12 @@ locked. Never enable `DEV_BYPASS_USER` in production.
 
 ### Authorization model
 
-Any Plex account in the world can authenticate — that alone is **not** club
-membership. Access to *your* server is the real signal: on login the app confirms
-your `PLEX_MACHINE_ID` appears in that account's Plex resources and rejects anyone
-else. Sessions are **revocable and server-side**: the HttpOnly cookie carries an
+Local membership is invite-only. Admins create expiring, single-use invite and
+password-reset links; only SHA-256 token hashes are retained. A local member can
+optionally link Plex from their profile, and future Plex logins resolve to the
+same member and history. For Plex login, authentication alone is not membership:
+the app confirms your `PLEX_MACHINE_ID` appears in that account's resources.
+Sessions are **revocable and server-side**: the HttpOnly cookie carries an
 opaque random token, and the database stores only its SHA-256 hash and an expiry,
 so logout and admin-wide invalidation kill a session immediately (a stolen cookie
 can be revoked). To write a member's own rating back to Plex, their token is **encrypted at

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Completed local-account delivery: the SPA now includes local login, invite
+  redemption, and admin invite management with one-time copyable links. Local
+  members can link Plex from their profile without creating a second member;
+  later Plex login resolves through `identities` to the existing history.
+- Admin-issued, expiring, single-use local password resets (`password_resets`,
+  migration `5`). Only token hashes are stored, reset redemption revokes prior
+  sessions, and the SPA provides the admin issue flow and member reset screen.
+- Local-first bootstrap: the setup wizard creates the first local account as the
+  locked owner before integration setup. Plex is now optional (its three core
+  settings remain all-or-none), so a fresh club can operate without Plex.
 - AGPL-3.0 `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md`.
 - This changelog.
 - Invite-only local accounts (backend): an `identities` table maps login methods
