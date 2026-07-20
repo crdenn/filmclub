@@ -90,7 +90,12 @@ tar --disable-copyfile --exclude='**pycache**' -czf "$BUNDLE" \
   app static Dockerfile requirements.txt .env deploy.sh
 
 local_hash="$(shasum -a 256 "$BUNDLE" | awk '{print $1}')"
-served_hash="$(curl -fsS --max-time 3 "http://127.0.0.1:$HTTP_PORT/$BUNDLE" 2>/dev/null | shasum -a 256 | awk '{print $1}' || true)"
+served_hash=""
+if fetched_hash="$(curl -fsS --max-time 3 \
+    "http://127.0.0.1:$HTTP_PORT/$BUNDLE" 2>/dev/null \
+    | shasum -a 256 | awk '{print $1}')"; then
+  served_hash="$fetched_hash"
+fi
 
 if [[ "$served_hash" == "$local_hash" ]]; then
   echo ">> Reusing the existing HTTP server on port $HTTP_PORT."
