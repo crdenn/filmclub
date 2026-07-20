@@ -665,7 +665,7 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
     out = []
     for m in members:
         placeholder = is_placeholder(m["plex_id"])
-        owner = m["plex_id"] in config.ADMIN_PLEX_IDS
+        owner = bool(m.get("is_owner")) or m["plex_id"] in config.ADMIN_PLEX_IDS
         suggested = count("SELECT COUNT(*) c FROM movies WHERE suggested_by = ?", (m["id"],))
         watched_sug = count(
             "SELECT COUNT(*) c FROM movies WHERE suggested_by = ? AND status='watched'", (m["id"],))
@@ -705,7 +705,7 @@ def merge_members(conn: sqlite3.Connection, from_id: int, into_id: int) -> dict:
     dst = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (into_id,))
     if not src or not dst:
         raise ValueError("Member not found")
-    if src["plex_id"] in config.ADMIN_PLEX_IDS:
+    if src["is_owner"] or src["plex_id"] in config.ADMIN_PLEX_IDS:
         raise ValueError("Can't merge away the owner account")
 
     # Suggestions: straightforward reassignment.
@@ -728,10 +728,10 @@ def merge_members(conn: sqlite3.Connection, from_id: int, into_id: int) -> dict:
 def set_member_admin(conn: sqlite3.Connection, member_id: int, value: bool) -> None:
     """Grant/revoke the admin flag. Owner accounts (env allowlist) stay admin
     regardless, since effective-admin ORs in the allowlist."""
-    row = db.query_one(conn, "SELECT plex_id FROM members WHERE id = ?", (member_id,))
+    row = db.query_one(conn, "SELECT plex_id, is_owner FROM members WHERE id = ?", (member_id,))
     if not row:
         raise ValueError("Member not found")
-    if row["plex_id"] in config.ADMIN_PLEX_IDS and not value:
+    if (row["is_owner"] or row["plex_id"] in config.ADMIN_PLEX_IDS) and not value:
         raise ValueError("Can't remove admin from the owner account")
     db.execute(conn, "UPDATE members SET is_admin = ? WHERE id = ?",
                (1 if value else 0, member_id))

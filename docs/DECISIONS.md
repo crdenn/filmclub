@@ -146,10 +146,10 @@ This file records decisions visible in the current repository. “Confirmed” m
 - **Consequences:** Routine deployment is one Mac command with no Unraid-terminal copy/paste. LAN SSH access and the Mac HTTP endpoint are required; current host/port/path defaults remain installation-specific but are environment-overridable.
 - **Status:** Confirmed.
 
-## Move toward distributable configuration in the future
+## Store normal configuration through the application UI
 
-- **Decision:** A reusable container and admin-manageable configuration are desired future directions, but not current architecture.
-- **Evidence:** Owner statement; current settings remain in `app/config.py` and `.env.example`.
-- **Likely reasoning:** Other operators need a friendlier setup than editing an Unraid-local `.env`.
-- **Consequences:** Secret-at-rest handling, bootstrap authentication, environment precedence, validation, persistence, and restart semantics must be designed before implementation.
-- **Status:** Confirmed product direction; technical design undecided.
+- **Decision:** Fresh installations use a setup-code-protected browser wizard; admins subsequently manage integrations in the Admin screen. Sensitive values are encrypted in SQLite using a durable key generated under `/data`. Explicit environment variables remain higher-precedence automation overrides.
+- **Evidence:** `app/settings.py`, migration v2, setup/admin routes in `app/main.py`, and the setup/admin forms in `static/app.js`.
+- **Likely reasoning:** Operators should be able to install and configure the product without editing files while existing automated deployments remain compatible.
+- **Consequences:** The complete `/data` directory, including `master.key`, must be backed up. The first authorized Plex login after setup becomes the non-demotable owner. Environment-overridden fields are read-only in the UI.
+- **Status:** Confirmed and implemented.

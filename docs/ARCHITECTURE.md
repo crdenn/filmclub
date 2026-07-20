@@ -236,11 +236,11 @@ Durable state is SQLite. Browser state is deliberately small and is reconstructe
 
 The Docker image uses `python:3.12-slim`, installs `requirements.txt`, copies `app/` and `static/`, exposes port 8000, and runs one Uvicorn process. `/data` is a declared volume and the image health check calls `/healthz`.
 
-The current authoritative entry point is `deploy-from-mac.sh`. It validates and packages the Mac source of truth, serves the bundle over the LAN, invokes Unraid through SSH, and performs a post-deploy health check. Unraid-side `deploy.sh` builds `filmclub:latest`, replaces the named container, loads `.env`, publishes port 8000, and mounts `/mnt/user/appdata/filmclub/data` at `/data`.
+The public installation path is the portable `docker-compose.yml`: clone, build, start, and complete the browser setup wizard. The installation-specific `deploy-from-mac.sh` and `deploy.sh` remain maintainer automation, not an end-user prerequisite.
 
-`docker-compose.yml` is useful for local or tool-driven testing but is not the primary deployment workflow. It mounts `./data` rather than the path used by `deploy.sh`.
+`docker-compose.yml` mounts `./data`; operators may replace it with an absolute persistent host path. The volume contains SQLite, migration backups, the generated Plex client ID, and the master encryption key.
 
-The long-term product direction is a distributable container other people can configure. Moving secrets/settings into the admin UI is not implemented and requires a secure configuration-store design.
+On an unconfigured database the app writes a one-time setup code to the container log. The wizard validates required Plex/TMDB credentials, stores sensitive values encrypted in `app_settings`, and marks setup complete. The first authorized Plex login atomically claims the durable owner role. Admin settings reuse the same validation/storage layer. Explicit environment values take precedence and are shown read-only.
 
 ## Visible architectural decisions
 

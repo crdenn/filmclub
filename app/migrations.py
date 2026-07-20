@@ -52,9 +52,27 @@ def _m1_baseline(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "movies", "seerr_status", "seerr_status TEXT")
 
 
+def _m2_app_settings(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(conn, "members", "is_owner",
+                           "is_owner INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS app_settings (
+               key        TEXT PRIMARY KEY,
+               value      TEXT NOT NULL,
+               encrypted  INTEGER NOT NULL DEFAULT 0,
+               updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           )"""
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_members_single_owner "
+        "ON members(is_owner) WHERE is_owner = 1"
+    )
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
+    (2, "app-settings", _m2_app_settings),
 ]
 
 

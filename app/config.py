@@ -1,11 +1,12 @@
-"""Environment-driven configuration.
+"""Configuration defaults and environment overrides.
 
-Everything the app needs is read from env vars (see .env.example). The only
-value that will self-provision if absent is PLEX_CLIENT_ID, which must be
-stable across restarts for the Plex OAuth flow to work; if it isn't supplied
-we generate one and persist it to the data directory.
+Normal application settings are loaded into this module from encrypted database
+storage after schema initialization. Explicit environment variables take
+precedence. Durable cryptographic and Plex client identifiers self-provision in
+the data directory when absent.
 """
 import os
+import secrets
 import uuid
 from pathlib import Path
 
@@ -18,6 +19,20 @@ APP_VERSION = os.environ.get("FILMCLUB_VERSION", "0.9.0")
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "filmclub.db"
+
+
+def _durable_secret() -> str:
+    """Return the operator secret or create a durable one in the data volume."""
+    supplied = os.environ.get("SESSION_SECRET", "").strip()
+    if supplied:
+        return supplied
+    path = DATA_DIR / "master.key"
+    if path.exists():
+        return path.read_text().strip()
+    value = secrets.token_urlsafe(48)
+    path.write_text(value)
+    path.chmod(0o600)
+    return value
 
 # --- Metadata / enrichment -------------------------------------------------
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
@@ -44,7 +59,7 @@ SEERR_TIMEOUT = float(os.environ.get("SEERR_TIMEOUT", "10"))
 
 # --- Auth ------------------------------------------------------------------
 APP_URL = os.environ.get("APP_URL", "http://localhost:8000").rstrip("/")
-SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
+SESSION_SECRET = _durable_secret()
 SESSION_COOKIE = "filmclub_session"
 SESSION_MAX_AGE = int(os.environ.get("SESSION_MAX_AGE", str(60 * 60 * 24 * 90)))  # 90 days
 PLEX_PRODUCT = os.environ.get("PLEX_PRODUCT", "Film Club Tracker")
@@ -99,8 +114,8 @@ def missing_required() -> list[str]:
     return [k for k, v in required.items() if not v]
 
 
-# A usable secret is required to sign cookies. Fall back to an ephemeral one
-# so the app boots, but sessions won't survive a restart — warned about below.
-EFFECTIVE_SESSION_SECRET = SESSION_SECRET or uuid.uuid4().hex
+# SESSION_SECRET is always durable: supplied by the operator or generated once
+# in the bind-mounted data directory.
+EFFECTIVE_SESSION_SECRET = SESSION_SECRET
 
 MEMBER_COUNT_HINT = 6  # club size; only used for friendly copy, not enforced

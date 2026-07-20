@@ -45,8 +45,8 @@ These are implemented code paths, not claims that each works in the current prod
 
 ## Features or work that are partial
 
-- **Portable distribution:** Docker packaging and one-command Mac-to-Unraid deployment exist, but defaults remain site-specific and there is no end-user setup/admin configuration flow.
-- **Admin-managed configuration:** desired as a future capability, but all settings and secrets are currently environment variables.
+- **Portable distribution:** Docker Compose provides the public source-build path, with a first-run browser wizard and Admin-managed encrypted integration settings. A prebuilt published image is still pending.
+- **Admin-managed configuration:** implemented through a setup-code-protected first-run wizard and Admin settings form; secrets are encrypted at rest and environment values remain higher-precedence overrides.
 - **Database migrations:** guarded additive column changes exist, but there is no versioned migration system.
 - **Health monitoring:** `/healthz` confirms only that FastAPI can respond.
 - **Runtime validation:** local logs and a populated local database show development execution, but current Plex, TMDB, Seerr, OAuth, and Unraid production behavior were not exercised during documentation work.
@@ -57,7 +57,7 @@ These are implemented code paths, not claims that each works in the current prod
 - The schema comment lists `scheduled`, and the implementation uses it, but there is no database CHECK constraint for status values.
 - `MEMBER_COUNT_HINT` exists in configuration but is not an enforced club size.
 - The current code permits multiple scheduled films. It is unclear whether this is intentional flexibility or an unenforced invariant.
-- Any plan for secure database-backed settings, secret encryption, or environment overrides is not yet designed.
+- The generated `/data/master.key` has no automated rotation or recovery flow and must be included in backups.
 
 ## Suspicious behavior and likely bugs
 
@@ -159,7 +159,7 @@ This evidence does not verify OAuth, external integrations, lifecycle edge cases
 ### Later
 
 1. Package and publish a reusable container and installation guide.
-2. Design an admin configuration system with encrypted secret storage, environment-variable precedence, validation, and safe credential rotation.
+2. Add safe master-key rotation/recovery and broader integration tests for the admin configuration system.
 3. Split `service.py` by domain if growth warrants it; avoid doing so as an unrelated refactor.
 4. Move SSE/cache state to shared infrastructure only if multiple workers or replicas become necessary.
 5. Consider explicit audit/history records for destructive or club-wide actions.

@@ -3,8 +3,11 @@ import asyncio
 import hmac
 import json
 import logging
+import os
+import re
 from datetime import date
 
+import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                RedirectResponse, StreamingResponse)
@@ -16,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from . import (auth, config, db, events, logsafe, migrations, plex,
                plex_ratings, seerr, service, stats, tmdb)
+from . import settings as app_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 # httpx logs full request URLs at INFO, including TMDB's query-string API key.
@@ -129,12 +133,29 @@ async def _backfill_movie_languages() -> None:
 @app.on_event("startup")
 async def _startup() -> None:
     db.init_db()
+    app_settings.load_into_config()
+    if not app_settings.is_setup_complete() and not config.missing_required():
+        app_settings.save({}, complete=True)
+    if app_settings.is_setup_complete():
+        # Upgrade compatibility: preserve an existing installation's admin as
+        # owner instead of allowing the next ordinary member login to claim it.
+        conn = db.connect()
+        try:
+            has_owner = db.query_one(conn, "SELECT id FROM members WHERE is_owner=1 LIMIT 1")
+            if not has_owner:
+                rows = db.query_all(conn, "SELECT id, plex_id, is_admin FROM members ORDER BY id")
+                candidate = next((r for r in rows if r["plex_id"] in config.ADMIN_PLEX_IDS), None)
+                candidate = candidate or next((r for r in rows if r["is_admin"]), None)
+                if candidate:
+                    db.execute(conn, "UPDATE members SET is_owner=1, is_admin=1 WHERE id=?",
+                               (candidate["id"],))
+        finally:
+            conn.close()
+    if not app_settings.is_setup_complete():
+        log.warning("FIRST-RUN SETUP REQUIRED — setup code: %s", app_settings.setup_code())
     missing = config.missing_required()
     if missing:
         log.warning("Missing required env vars: %s", ", ".join(missing))
-    if not config.SESSION_SECRET:
-        log.warning("SESSION_SECRET not set — using an ephemeral secret; "
-                    "sessions will not survive a restart.")
     if config.DEV_BYPASS_USER:
         log.warning("DEV_BYPASS_USER=%s active — Plex auth is bypassed.",
                     config.DEV_BYPASS_USER)
@@ -188,6 +209,68 @@ class DiscussDate(BaseModel):
     date: str  # ISO 'YYYY-MM-DD'
 
 
+class SettingsIn(BaseModel):
+    setup_code: str | None = None
+    clear_secrets: list[str] = Field(default_factory=list)
+    TMDB_API_KEY: str | None = None
+    PLEX_URL: str | None = None
+    PLEX_TOKEN: str | None = None
+    PLEX_MACHINE_ID: str | None = None
+    APP_URL: str | None = None
+    PLEX_WEBHOOK_SECRET: str | None = None
+    PLEX_REFRESH_INTERVAL: int | None = Field(default=None, ge=60, le=86400)
+    SEERR_URL: str | None = None
+    SEERR_API_KEY: str | None = None
+    SEERR_TIMEOUT: float | None = Field(default=None, ge=1, le=120)
+
+
+def _settings_values(body: SettingsIn) -> dict:
+    return body.model_dump(exclude={"setup_code", "clear_secrets"}, exclude_none=True)
+
+
+async def _validate_settings(values: dict, *, require_all: bool) -> dict[str, str]:
+    merged = {key: values.get(key, getattr(config, key, ""))
+              for key in app_settings.FIELDS}
+    errors: dict[str, str] = {}
+    if require_all:
+        for key, meta in app_settings.FIELDS.items():
+            if meta["required"] and not str(merged.get(key) or "").strip():
+                errors[key] = "Required"
+    for key in ("PLEX_URL", "APP_URL", "SEERR_URL"):
+        value = str(merged.get(key) or "").strip()
+        if value and not re.match(r"^https?://[^\s]+$", value):
+            errors[key] = "Enter a complete http:// or https:// URL"
+    if errors:
+        return errors
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                f"{str(merged['PLEX_URL']).rstrip('/')}/identity",
+                headers={"X-Plex-Token": merged["PLEX_TOKEN"],
+                         "Accept": "application/json"},
+            )
+            response.raise_for_status()
+            actual = str(response.json().get("MediaContainer", {}).get(
+                "machineIdentifier") or "")
+            if actual != str(merged["PLEX_MACHINE_ID"]):
+                errors["PLEX_MACHINE_ID"] = "Does not match this Plex server"
+    except Exception:
+        errors["PLEX_URL"] = "Could not authenticate to this Plex server"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.get(
+                "https://api.themoviedb.org/3/configuration",
+                params={"api_key": merged["TMDB_API_KEY"]},
+            )
+            response.raise_for_status()
+    except Exception:
+        errors["TMDB_API_KEY"] = "TMDB rejected this key or could not be reached"
+    if merged.get("SEERR_URL") or merged.get("SEERR_API_KEY"):
+        if not (merged.get("SEERR_URL") and merged.get("SEERR_API_KEY")):
+            errors["SEERR_URL"] = "URL and API key are both required to enable Seerr"
+    return errors
+
+
 def _validate_score(score: float) -> float:
     # 0.5 .. 5.0 in 0.5 increments
     steps = round(score * 2)
@@ -198,8 +281,36 @@ def _validate_score(score: float) -> float:
 
 # --- auth routes -----------------------------------------------------------
 
+@app.get("/api/setup/status")
+async def api_setup_status():
+    complete = app_settings.is_setup_complete()
+    return {
+        "required": not complete,
+        "settings": app_settings.public_values(reveal_nonsecrets=False) if not complete else None,
+    }
+
+
+@app.post("/api/setup")
+async def api_setup(body: SettingsIn):
+    if app_settings.is_setup_complete():
+        raise HTTPException(status_code=409, detail="Setup is already complete")
+    if not app_settings.verify_setup_code(body.setup_code or ""):
+        raise HTTPException(status_code=403, detail="Invalid setup code")
+    values = _settings_values(body)
+    errors = await _validate_settings(values, require_all=True)
+    if errors:
+        return JSONResponse({"detail": "Check the highlighted settings",
+                             "errors": errors}, status_code=422)
+    app_settings.save(values, complete=True)
+    app_settings.remove_setup_code()
+    await plex.refresh_library()
+    return {"ok": True, "next": "/auth/login"}
+
+
 @app.get("/auth/login")
 async def auth_login():
+    if not app_settings.is_setup_complete():
+        return RedirectResponse("/#/setup")
     if config.DEV_BYPASS_USER:
         return RedirectResponse("/")
     try:
@@ -684,6 +795,34 @@ async def api_stats(member=Depends(auth.current_member)):
 
 
 # --- admin routes (owner only) ---------------------------------------------
+
+@app.get("/api/admin/settings")
+async def api_admin_settings(admin=Depends(auth.require_admin)):
+    return {"settings": app_settings.public_values()}
+
+
+@app.put("/api/admin/settings")
+async def api_admin_update_settings(body: SettingsIn,
+                                    admin=Depends(auth.require_admin)):
+    values = _settings_values(body)
+    # Blank secret inputs mean "keep the saved value" in the admin form.
+    clear = {key for key in body.clear_secrets
+             if key in app_settings.FIELDS and app_settings.FIELDS[key]["secret"]
+             and not app_settings.FIELDS[key]["required"]}
+    values = {key: value for key, value in values.items()
+              if not (app_settings.FIELDS[key]["secret"] and value == "" and key not in clear)}
+    values.update({key: "" for key in clear})
+    locked = [key for key in values if os.environ.get(key, "").strip()]
+    if locked:
+        raise HTTPException(status_code=409,
+                            detail=f"Set by environment and cannot be changed here: {', '.join(locked)}")
+    errors = await _validate_settings(values, require_all=True)
+    if errors:
+        return JSONResponse({"detail": "Check the highlighted settings",
+                             "errors": errors}, status_code=422)
+    app_settings.save(values)
+    await plex.refresh_library()
+    return {"ok": True, "settings": app_settings.public_values()}
 
 @app.get("/api/admin/members")
 async def api_admin_members(admin=Depends(auth.require_admin)):

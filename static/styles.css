@@ -680,6 +680,30 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .login-card p { color: var(--text-dim); margin-bottom: 1.6rem; }
 .login-btn { display: inline-block; background: var(--accent); color: #08080b; font-weight: 700; padding: .8rem 1.6rem; border-radius: 12px; }
 
+/* First-run setup and reusable admin integration settings. */
+.setup-wrap { min-height: 100vh; padding: 3rem 1.2rem; display: flex; justify-content: center; }
+.setup-card { width: min(920px, 100%); background: var(--bg-raise); border: 1px solid var(--line); border-radius: 18px; padding: clamp(1.2rem, 4vw, 2.5rem); }
+.setup-card h1 { margin: .2rem 0 .5rem; }
+.setup-card > p { color: var(--text-dim); max-width: 48rem; line-height: 1.55; }
+.setup-kicker { color: var(--accent); text-transform: uppercase; letter-spacing: .1em; font-size: .75rem; font-weight: 700; }
+.setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1.2rem; margin-top: 1.4rem; }
+.setup-field { display: flex; flex-direction: column; gap: .35rem; }
+.setup-field > span:first-child { font-size: .86rem; font-weight: 650; }
+.setup-field small { color: var(--text-faint); font-weight: 400; }
+.setup-hint { min-height: 2em; color: var(--text-faint); font-size: .75rem; line-height: 1.35; }
+.setup-error { color: var(--danger); font-size: .75rem; min-height: 1em; }
+.setup-field.invalid .search-input { border-color: var(--danger); }
+.setup-clear { color: var(--text-dim); font-size: .75rem; font-weight: 400; }
+.setup-clear input { accent-color: var(--accent); }
+.setup-field input:disabled { opacity: .55; cursor: not-allowed; }
+.setup-actions { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; color: var(--text-dim); font-size: .85rem; }
+.admin-settings { margin-top: 1.3rem; }
+
+@media (max-width: 680px) {
+  .setup-grid { grid-template-columns: 1fr; }
+  .setup-actions { align-items: stretch; flex-direction: column; }
+}
+
 /* ---------- toast ---------- */
 #toast-root { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: .5rem; align-items: center; }
 .toast { background: var(--bg-raise-2); border: 1px solid var(--line); color: var(--text); padding: .6rem 1rem; border-radius: 10px; font-size: .88rem; box-shadow: var(--shadow); animation: rise .2s ease; }

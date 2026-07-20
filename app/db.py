@@ -80,6 +80,7 @@ def member_public(row: sqlite3.Row | dict) -> dict | None:
         "thumb": d.get("thumb"),
         "color": d["color"],
         "is_admin": bool(d.get("is_admin")),
+        "is_owner": bool(d.get("is_owner")),
     }
 
 

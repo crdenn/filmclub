@@ -83,21 +83,104 @@ single-page frontend served by FastAPI, hand-rolled inline-SVG charts. `httpx`
 for outbound calls, `itsdangerous` for signed cookies, `cryptography` for
 encrypted per-member Plex tokens. No external database and no Node build step.
 
-## Quick start (Docker)
+## Install with Docker Compose
+
+### Prerequisites
+
+Before starting, you need:
+
+- A host with Docker Engine and Docker Compose v2 (`docker compose`), with Git
+  installed. Linux, Unraid, and Docker Desktop are all suitable.
+- A Plex server and an owner token. Plex must be reachable from the container.
+- A free TMDB API key for film search and metadata.
+- A persistent directory for the SQLite database. The included Compose file uses
+  `./data`; replace that bind mount with an absolute host path if preferred.
+
+Verify both Docker and the Compose plugin before cloning:
 
 ```bash
-cp .env.example .env
-# edit .env — at minimum set the required values below
+docker --version
+docker compose version
+```
+
+Docker Desktop for Mac includes Compose. If you use Homebrew's Docker CLI with
+Colima, install Compose separately and expose it in Docker's standard plugin
+directory:
+
+```bash
+brew install docker-compose
+mkdir -p ~/.docker/cli-plugins
+ln -sf "$(brew --prefix)/lib/docker/cli-plugins/docker-compose" ~/.docker/cli-plugins/docker-compose
+docker compose version
+```
+
+If `docker compose version` still fails, resolve that Docker installation issue
+before continuing; `docker compose up` cannot fall back to the base Docker CLI.
+
+### 1. Download and start Film Club Tracker
+
+```bash
+git clone https://github.com/crdenn/filmclub.git
+cd filmclub
 docker compose up -d --build
 ```
 
-Open `APP_URL` in a browser. The first Plex login auto-provisions your member
-row. (An admin is anyone whose Plex UUID is listed in `ADMIN_PLEX_IDS`.)
+If host port 8000 is already occupied, choose another one for the install:
+
+```bash
+FILMCLUB_HTTP_PORT=8001 docker compose up -d --build
+```
+
+Use that same port in the browser and in the setup wizard's Film Club URL.
+
+No configuration file is required. On first startup, the app generates a
+durable master key and a one-time setup code in the persistent `/data` volume.
+Read the code from the container log:
+
+```bash
+docker compose logs filmclub
+```
+
+Open <http://localhost:8000> (or the host address you mapped), enter the setup
+code, and complete the guided form. It validates Plex and TMDB before saving.
+API keys and tokens are encrypted in SQLite; secret values are never returned to
+the browser after saving.
+
+The first Plex account to sign in after setup becomes the locked owner and can
+manage integrations and additional admins from the Admin screen.
+
+### 2. Verify the installation
+
+```bash
+docker compose ps
+curl http://localhost:8000/readyz
+```
+
+Change the `curl` address if you mapped a different host port. Only Plex accounts
+with access to the configured server are admitted.
+
+If startup fails, inspect `docker compose logs filmclub`. The most common causes
+are a Plex URL that the container cannot reach or a Film Club URL that differs
+from the address used in the browser.
+
+### Unraid and other Docker hosts
+
+The included Compose file is portable. On Unraid, Docker Compose Manager, or a
+manually created container, use these equivalent settings:
+
+- Build from this repository's `Dockerfile`.
+- Publish the desired host port to container port `8000`.
+- Bind a persistent host directory such as
+  `/mnt/user/appdata/filmclub/data` to `/data`.
+- Use the container health endpoint `/healthz` and restart policy
+  `unless-stopped`.
+
+There is not yet a published prebuilt image, so the current release must be
+built from the cloned source.
 
 ### Configuration
 
-All configuration is via environment variables; see [`.env.example`](.env.example)
-for the annotated list.
+The setup wizard and Admin screen manage normal application configuration:
 
 | Variable | Required | Purpose |
 |---|:---:|---|
@@ -106,18 +189,17 @@ for the annotated list.
 | `PLEX_TOKEN` | ✓ | Plex server token for enrichment |
 | `PLEX_MACHINE_ID` | ✓ | Authorization: the server-access check |
 | `APP_URL` | ✓ | OAuth callback target; must match how you open the app |
-| `SESSION_SECRET` | ✓ | Cookie signing + per-member token encryption key |
-| `PLEX_CLIENT_ID` | — | Stable OAuth client UUID (auto-generated into `/data` if unset) |
-| `ADMIN_PLEX_IDS` | — | Comma-separated Plex UUIDs granted owner/admin |
 | `PLEX_WEBHOOK_SECRET` | — | Enables inbound Plex→Film Club rating webhooks |
 | `PLEX_REFRESH_INTERVAL` | — | Seconds between library refreshes (default 3600) |
 | `SEERR_URL`, `SEERR_API_KEY` | — | Enable Seerr auto-request when both are set |
 | `SEERR_TIMEOUT` | — | Per-request Seerr timeout (default 10s) |
-| `FILMCLUB_VERSION` | — | Version string shown in `/readyz`, diagnostics, labels |
-| `DEV_BYPASS_USER` | — | **Development only** — skips Plex auth for everyone |
 
-`DATA_DIR` (default `/data`) and `PORT` (default `8000`) are operational. Never
-enable `DEV_BYPASS_USER` in a deployment.
+For automated or legacy deployments, environment variables override values
+saved through the UI. [`.env.example`](.env.example) documents those advanced
+overrides, including `SESSION_SECRET`, `PLEX_CLIENT_ID`, `ADMIN_PLEX_IDS`,
+`DATA_DIR`, `PORT`, `FILMCLUB_VERSION`, and development-only
+`DEV_BYPASS_USER`. UI fields backed by environment variables are shown as
+locked. Never enable `DEV_BYPASS_USER` in production.
 
 ### Authorization model
 
@@ -148,7 +230,10 @@ ignored, and clearing a Plex rating is not treated as a deletion.
 
 ## Data, migrations & backups
 
-The database is `filmclub.db` in the `/data` volume. On startup the app applies
+The database is `filmclub.db` in the `/data` volume. The same volume contains
+`master.key`, which is required to decrypt saved integration secrets and member
+Plex tokens. Back up the complete data directory, not only the database. On
+startup the app applies
 ordered, transactional migrations recorded in a `schema_migrations` table. Before
 any migration it writes a **timestamped backup** under `/data/backups/` (never
 overwriting an existing one).
@@ -160,6 +245,22 @@ overwriting an existing one).
   container first for a clean single-file copy).
 - **Health:** `/healthz` is a liveness check; `/readyz` reports readiness
   (database reachable, schema current, durable secret) without exposing secrets.
+
+### Updating
+
+Take a consistent backup as described above, then update and rebuild from the
+repository:
+
+```bash
+docker compose down
+git pull --ff-only
+docker compose up -d --build
+docker compose ps
+```
+
+Startup applies any pending database migrations and creates a pre-migration
+backup. Pin a release tag instead of tracking `main` if you prefer controlled
+upgrades.
 
 ## Running locally (without Docker)
 
@@ -188,19 +289,13 @@ python -m app.seed          # refuses if data already exists
 python -m app.seed --force  # wipe and reseed
 ```
 
-## Deployment notes
+## Internet exposure
 
-- **Unraid / Compose:** point a `/data` volume at persistent storage (e.g.
-  `/mnt/user/appdata/film-club-tracker:/data`), map a host port to container port
-  `8000`, and set `APP_URL` to the address you actually browse to (OAuth redirects
-  back there). Serve over HTTPS behind a reverse proxy or tunnel; don't expose a
-  plain-HTTP instance publicly.
-- **Maintainer workflow:** `deploy-from-mac.sh` packages the source and deploys it
-  to an Unraid host over SSH, then health-checks. Its host/port/paths default to
-  the maintainer's setup and are overridable via `UNRAID_HOST`, `UNRAID_USER`,
-  `UNRAID_SSH_PORT`, `FILMCLUB_REMOTE_DIR`, `FILMCLUB_HTTP_PORT`, and
-  `FILMCLUB_MAC_IP`. Run `./deploy-from-mac.sh --check` to validate prerequisites
-  without deploying. Keep SSH LAN-only.
+For access outside your trusted network, put the app behind an HTTPS reverse
+proxy or private tunnel and set `APP_URL` to that public HTTPS origin. Do not
+publish the plain HTTP container port directly to the internet. The
+`deploy-from-mac.sh` and `deploy.sh` files are installation-specific maintainer
+automation; they are not required for a normal install or upgrade.
 
 ## Data model notes
 

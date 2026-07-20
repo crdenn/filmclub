@@ -134,6 +134,7 @@ async def refresh_library() -> None:
                             rt_imdb.setdefault(i, rt)
         _library.update(tmdb=tmdb, imdb=imdb, rk_tmdb=rk_tmdb, rk_imdb=rk_imdb,
                         rt_tmdb=rt_tmdb, rt_imdb=rt_imdb,
+                        machine_id=config.PLEX_MACHINE_ID or None,
                         last_refresh=time.time(), ok=True)
         log.info("Plex library refreshed: %d tmdb ids, %d imdb ids", len(tmdb), len(imdb))
         events.broadcast({"path": "/api/metadata/plex", "client": None})

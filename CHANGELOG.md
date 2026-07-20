@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integrity, row counts, backup status, integration on/off flags).
 - Application version (`config.APP_VERSION`, overridable via `FILMCLUB_VERSION`)
   surfaced in `/readyz`, diagnostics, and OCI container labels.
+- Encrypted, database-backed application settings (`app/settings.py`,
+  `app_settings` table via migration `2`): a typed registry where secrets are
+  Fernet-encrypted at rest and never returned to the browser, values apply at
+  runtime, and explicit environment variables take precedence. A durable master
+  key self-provisions to `<data dir>/master.key` (so `SESSION_SECRET` no longer
+  needs to be supplied). Admin `GET`/`PUT /api/admin/settings` manage it, with
+  server-side Plex/TMDB connection tests. Covered by `tests/test_settings.py`.
+- First-run setup: an unconfigured instance logs a one-time setup code and routes
+  the SPA to `#/setup`; `/api/setup` validates the code and connections, saves
+  encrypted settings, and completes. An env-configured (existing) install
+  auto-completes on startup and promotes its existing admin to the single locked
+  **owner** (`is_owner`, DB-enforced unique), so upgrades don't require the wizard.
 
 ### Changed
 - Hardened `.gitignore` to exclude all credential-bearing and local-only

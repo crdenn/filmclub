@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS members (
     thumb        TEXT,               -- Plex avatar URL
     color        TEXT NOT NULL,      -- deterministic hex, derived from plex_id
     is_admin     INTEGER NOT NULL DEFAULT 0,  -- can access the admin panel
+    is_owner     INTEGER NOT NULL DEFAULT 0,  -- first setup owner; cannot be demoted
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -84,3 +85,13 @@ CREATE INDEX IF NOT EXISTS idx_movies_status ON movies(status);
 CREATE INDEX IF NOT EXISTS idx_ratings_movie ON ratings(movie_id);
 CREATE INDEX IF NOT EXISTS idx_prior_movie ON prior_views(movie_id);
 CREATE INDEX IF NOT EXISTS idx_votes_movie ON votes(movie_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_members_single_owner ON members(is_owner) WHERE is_owner = 1;
+
+-- Runtime configuration entered through first-run setup or Admin settings.
+-- Sensitive values are Fernet-encrypted with the durable key in /data.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key          TEXT PRIMARY KEY,
+    value        TEXT NOT NULL,
+    encrypted    INTEGER NOT NULL DEFAULT 0,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);

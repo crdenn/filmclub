@@ -31,7 +31,11 @@
     }
     let data = null;
     try { data = await res.json(); } catch { /* no body */ }
-    if (!res.ok) throw new Error((data && data.detail) || `HTTP ${res.status}`);
+    if (!res.ok) {
+      const error = new Error((data && data.detail) || `HTTP ${res.status}`);
+      error.data = data;
+      throw error;
+    }
     return data;
   }
 
@@ -49,6 +53,7 @@
     currentHash: null,
     memberBackHash: "#/stats",
     todo: { backlog: 0, watched: 0 },
+    setupRequired: false,
   };
 
   // Per-member reminder counts driving the nav badges. Refreshed at boot and
@@ -267,6 +272,88 @@
     });
   }
   // ---------- login ----------
+  const SETTING_FIELDS = [
+    ["APP_URL", "Film Club URL", "The exact address members open in their browser."],
+    ["TMDB_API_KEY", "TMDB API key", "Required for film search and metadata."],
+    ["PLEX_URL", "Plex server URL", "An http(s) address reachable from this container."],
+    ["PLEX_TOKEN", "Plex owner token", "Used for library enrichment; stored encrypted."],
+    ["PLEX_MACHINE_ID", "Plex machine identifier", "Authorizes accounts with access to this server."],
+    ["PLEX_WEBHOOK_SECRET", "Plex webhook secret", "Optional. Enables inbound rating sync."],
+    ["PLEX_REFRESH_INTERVAL", "Plex refresh interval", "Seconds between library refreshes (minimum 60)."],
+    ["SEERR_URL", "Seerr URL", "Optional Overseerr/Jellyseerr server address."],
+    ["SEERR_API_KEY", "Seerr API key", "Optional; required when a Seerr URL is set."],
+    ["SEERR_TIMEOUT", "Seerr timeout", "Request timeout in seconds."],
+  ];
+
+  function settingsFields(settings, setup = false) {
+    return SETTING_FIELDS.map(([key, label, hint]) => {
+      const meta = settings[key] || {};
+      const type = meta.secret ? "password" : key.includes("TIMEOUT") || key.includes("INTERVAL") ? "number" : "text";
+      const required = meta.required ? "required" : "";
+      const locked = meta.locked ? "disabled" : "";
+      const placeholder = meta.secret && meta.configured ? "Saved — leave blank to keep" : "";
+      const clear = !setup && meta.secret && meta.configured && !meta.required
+        ? `<span class="setup-clear"><input type="checkbox" name="clear:${key}"> Clear saved value</span>` : "";
+      return `<label class="setup-field" data-setting="${key}">
+        <span>${esc(label)}${meta.required ? " *" : ""}${meta.locked ? ` <small>environment override</small>` : ""}</span>
+        <input class="search-input" name="${key}" type="${type}" value="${esc(meta.value || "")}" placeholder="${placeholder}" ${required} ${locked} autocomplete="off">
+        <span class="setup-hint">${esc(hint)}</span>${clear}<span class="setup-error"></span>
+      </label>`;
+    }).join("");
+  }
+
+  function collectSettings(form) {
+    const values = {};
+    const clear = [];
+    new FormData(form).forEach((value, key) => {
+      if (key.startsWith("clear:")) clear.push(key.slice(6));
+      else values[key] = value;
+    });
+    if (clear.length) values.clear_secrets = clear;
+    ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT"].forEach(key => {
+      if (values[key] !== "") values[key] = Number(values[key]);
+    });
+    return values;
+  }
+
+  function showSettingsErrors(form, errors = {}) {
+    form.querySelectorAll(".setup-field").forEach(field => {
+      const msg = errors[field.dataset.setting] || "";
+      field.classList.toggle("invalid", !!msg);
+      field.querySelector(".setup-error").textContent = msg;
+    });
+  }
+
+  async function renderSetup() {
+    let status;
+    try { status = await api("/api/setup/status"); }
+    catch (e) { app.innerHTML = `<div class="login-wrap"><div class="login-card">${esc(e.message)}</div></div>`; return; }
+    if (!status.required) { state.setupRequired = false; bootAuthenticated(); return; }
+    if (status.settings.APP_URL && !status.settings.APP_URL.locked) status.settings.APP_URL.value = window.location.origin;
+    app.innerHTML = `<div class="setup-wrap"><form class="setup-card" id="setup-form">
+      <div class="setup-kicker">First-run setup</div><h1>Set up Film Club</h1>
+      <p>Enter the one-time setup code shown in <code>docker compose logs filmclub</code>, then connect your services. Secrets are encrypted before they are stored.</p>
+      <label class="setup-field"><span>Setup code *</span><input class="search-input" name="setup_code" required autocomplete="off" placeholder="XXXX-XXXX-XXXX"></label>
+      <div class="setup-grid">${settingsFields(status.settings, true)}</div>
+      <div class="setup-actions"><span id="setup-message"></span><button class="btn btn-primary" type="submit">Validate and finish setup</button></div>
+    </form></div>`;
+    const form = $("#setup-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault(); showSettingsErrors(form);
+      const button = form.querySelector("button[type=submit]");
+      button.disabled = true; button.textContent = "Validating…";
+      $("#setup-message").textContent = "Checking Plex and TMDB…";
+      try {
+        await api("/api/setup", { method: "POST", body: collectSettings(form) });
+        location.href = "/auth/login";
+      } catch (e) {
+        showSettingsErrors(form, (e.data && e.data.errors) || {});
+        $("#setup-message").textContent = e.message;
+        button.disabled = false; button.textContent = "Validate and finish setup";
+      }
+    };
+  }
+
   function renderLogin() {
     app.innerHTML = `<div class="login-wrap"><div class="login-card">
       <h1>🎬 Film Club</h1>
@@ -1579,8 +1666,8 @@
   // ================= ADMIN =================
   async function renderAdmin(preserve = false) {
     if (!preserve) paintView("admin", `<div class="empty">Loading…</div>`);
-    let data;
-    try { data = await api("/api/admin/members"); }
+    let data, configData;
+    try { [data, configData] = await Promise.all([api("/api/admin/members"), api("/api/admin/settings")]); }
     catch (e) {
       if (e.message === "unauth") return;
       if (preserve) toast("Couldn't refresh: " + e.message, true);
@@ -1645,7 +1732,13 @@
         <h3>Accounts</h3>
         <div class="sub">Real Plex logins. Grant admin to give someone access to this panel.</div>
         ${table(reals, "No one has signed in yet.")}
-      </div>`;
+      </div>
+      <form class="stat-card wide admin-settings" id="admin-settings">
+        <h3>Application settings</h3>
+        <div class="sub">Update integrations without editing files. Saved secrets are never displayed; leave a saved secret blank to keep it.</div>
+        <div class="setup-grid">${settingsFields(configData.settings)}</div>
+        <div class="setup-actions"><span id="settings-message"></span><button class="btn btn-primary" type="submit">Validate and save</button></div>
+      </form>`;
     paintView("admin", body, preserve);
 
     $("#refresh-lib").onclick = async (e) => {
@@ -1667,6 +1760,20 @@
 
     app.querySelectorAll(".admin-toggle").forEach(btn => btn.onclick = () =>
       setAdmin(parseInt(btn.dataset.id, 10), btn.dataset.val === "1"));
+    const settingsForm = $("#admin-settings");
+    settingsForm.onsubmit = async (event) => {
+      event.preventDefault(); showSettingsErrors(settingsForm);
+      const button = settingsForm.querySelector("button[type=submit]");
+      button.disabled = true; button.textContent = "Validating…";
+      try {
+        await api("/api/admin/settings", { method: "PUT", body: collectSettings(settingsForm) });
+        toast("Settings saved"); renderAdmin(true);
+      } catch (e) {
+        showSettingsErrors(settingsForm, (e.data && e.data.errors) || {});
+        $("#settings-message").textContent = e.message;
+        button.disabled = false; button.textContent = "Validate and save";
+      }
+    };
   }
 
   async function mergeMembers(fromId, intoId) {
@@ -1742,9 +1849,17 @@
   // ---------- boot ----------
   (async function boot() {
     try {
+      const setup = await api("/api/setup/status");
+      if (setup.required) { state.setupRequired = true; renderSetup(); return; }
+    } catch { /* normal auth flow will show the actionable error */ }
+    bootAuthenticated();
+  })();
+
+  async function bootAuthenticated() {
+    try {
       state.me = await api("/api/me");
     } catch { state.me = null; }
     render();
     if (state.me) { refreshTodo(); connectEvents(); }
-  })();
+  }
 })();

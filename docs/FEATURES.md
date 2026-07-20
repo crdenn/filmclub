@@ -322,6 +322,15 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 ## Operations
 
+### Browser setup and admin-managed integrations
+
+- **Purpose:** Configure a fresh installation and later rotate integration settings without editing deployment files.
+- **Main files:** `app/settings.py`, migration v2, `/api/setup`, `/api/admin/settings`, and setup/admin forms in `static/app.js`.
+- **Status:** Implemented.
+- **Dependencies:** Persistent `/data`, access to the one-time container-log setup code, and reachable Plex/TMDB services for validation.
+- **Limitations:** Explicit environment overrides remain read-only in the UI; the generated `master.key` must be backed up with the database; there is no master-key rotation flow.
+- **Follow-up:** Publish a prebuilt container image and add browser-level setup tests.
+
 ### Mac-to-Unraid container deployment
 
 - **Purpose:** Build and replace the production container with persistent SQLite storage.
@@ -329,7 +338,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Status:** Implemented and readiness-checked against the current installation on SSH port 22.
 - **Dependencies:** Mac SSH client/Python, LAN reachability, Unraid SSH key access, Docker, Unraid path layout, populated `.env`.
 - **Limitations:** Defaults contain installation-specific addresses and the Unraid-side script replaces the running container directly.
-- **Follow-up:** Parameterize and document before public distribution.
+- **Follow-up:** Keep this as maintainer-only automation; public installs use Docker Compose and the browser wizard.
 
 ### Local/tool testing
 

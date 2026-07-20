@@ -25,7 +25,7 @@ def _backup_files(db_path):
 
 # Columns the baseline migration must guarantee on an upgraded database.
 _MEMBER_COLS = ("is_admin", "display_name", "plex_account_id",
-                "plex_token_encrypted", "plex_rating_sync_enabled")
+                "plex_token_encrypted", "plex_rating_sync_enabled", "is_owner")
 _MOVIE_COLS = ("language", "seerr_status")
 
 
@@ -73,7 +73,8 @@ class MigrationRunnerTests(unittest.TestCase):
         c = sqlite3.connect(self.db_path)
         rows = c.execute("SELECT version, name FROM schema_migrations ORDER BY version").fetchall()
         c.close()
-        self.assertEqual(rows, [(1, "baseline")])
+        self.assertEqual(rows, [(1, "baseline"), (2, "app-settings")])
+        self.assertIn("key", _columns(self.db_path, "app_settings"))
 
     def test_upgrades_old_shaped_db_and_preserves_data(self):
         self._make_old_shaped_db()
@@ -93,7 +94,7 @@ class MigrationRunnerTests(unittest.TestCase):
             self.assertEqual(c.execute("SELECT plex_rating_sync_enabled FROM members").fetchone()[0], 1)
         finally:
             c.close()
-        self.assertEqual(migrations.current_version(self.db_path), 1)
+        self.assertEqual(migrations.current_version(self.db_path), migrations.latest_version())
 
     def test_backup_written_before_migrating_existing_db(self):
         self._make_old_shaped_db()
@@ -115,11 +116,11 @@ class MigrationRunnerTests(unittest.TestCase):
         c = sqlite3.connect(self.db_path)
         count = c.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
         c.close()
-        self.assertEqual(count, 1)  # no duplicate baseline row
+        self.assertEqual(count, len(migrations.MIGRATIONS))  # no duplicate rows
         self.assertEqual(_backup_files(self.db_path), first_backups)  # no extra backup
 
     def test_failed_migration_rolls_back_and_is_not_recorded(self):
-        db.init_db()  # at v1
+        db.init_db()  # at the current version
 
         def _boom(conn):
             conn.execute("ALTER TABLE movies ADD COLUMN temp_col TEXT")
@@ -134,7 +135,7 @@ class MigrationRunnerTests(unittest.TestCase):
             migrations.MIGRATIONS[:] = original
 
         # The failed version is not recorded and its DDL was rolled back.
-        self.assertEqual(migrations.current_version(self.db_path), 1)
+        self.assertEqual(migrations.current_version(self.db_path), migrations.latest_version())
         self.assertNotIn("temp_col", _columns(self.db_path, "movies"))
 
 

@@ -10,7 +10,7 @@ from fastapi import Cookie, Depends, HTTPException
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
 from itsdangerous.url_safe import URLSafeTimedSerializer
 
-from . import config, db
+from . import config, db, settings
 from .colors import color_for
 from .token_crypto import decrypt_plex_token, encrypt_plex_token
 
@@ -68,14 +68,19 @@ def upsert_member(plex_id: str, username: str, email: str | None, thumb: str | N
                 )
             row = db.query_one(conn, "SELECT * FROM members WHERE plex_id = ?", (plex_id,))
         else:
+            conn.execute("BEGIN IMMEDIATE")
+            owner = settings.is_setup_complete() and not bool(db.query_one(
+                conn, "SELECT id FROM members WHERE is_owner = 1 LIMIT 1"
+            ))
             db.execute(
                 conn,
                 """INSERT INTO members
                    (plex_id, plex_account_id, plex_token_encrypted, username,
-                    email, thumb, color, is_admin)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    email, thumb, color, is_admin, is_owner)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (plex_id, plex_account_id, encrypted_token, username, email,
-                 thumb, color_for(plex_id), force_admin or 0),
+                 thumb, color_for(plex_id), 1 if owner else force_admin or 0,
+                 1 if owner else 0),
             )
             row = db.query_one(conn, "SELECT * FROM members WHERE plex_id = ?", (plex_id,))
         return db.member_public(row)
@@ -124,7 +129,7 @@ def current_member(filmclub_session: str | None = Cookie(default=None)) -> dict:
 def _with_effective_admin(member: dict) -> dict:
     """Admin is true if the DB flag is set OR the account is on the env
     allowlist — so the owner is admin immediately, even before a re-login."""
-    if member and member.get("plex_id") in config.ADMIN_PLEX_IDS:
+    if member and (member.get("is_owner") or member.get("plex_id") in config.ADMIN_PLEX_IDS):
         member["is_admin"] = True
     return member
 
