@@ -34,6 +34,7 @@ The scheduling workflow in the code and README is authoritative.
 - Reminder badges for unanswered backlog items and unrated archived films.
 - Server-side statistics with explicit small-sample disclosure/suppression.
 - Admin member list, placeholder merging, admin grants, movie deletion, and manual Plex refresh.
+- Service-grouped Admin configuration with non-saving connection tests for the Film Club URL, TMDB, Plex, and Seerr.
 - Admin-downloadable portable backups and validated restore with automatic pre-restore safety copies and session revocation.
 - Plex library badges, deep links, and available Rotten Tomatoes critic/audience scores backed by a periodic in-memory cache.
 - Optional Seerr request flow with Plex cache/live checks and failure-tolerant behavior.
@@ -47,7 +48,7 @@ These are implemented code paths, not claims that each works in the current prod
 ## Features or work that are partial
 
 - **Portable distribution:** Docker Compose provides the public source-build path, with a first-run browser wizard and Admin-managed encrypted integration settings. A prebuilt published image is still pending.
-- **Admin-managed configuration:** implemented through a setup-code-protected first-run wizard and Admin settings form; secrets are encrypted at rest and environment values remain higher-precedence overrides.
+- **Admin-managed configuration:** implemented through a setup-code-protected first-run wizard and a service-grouped Admin settings form; secrets are encrypted at rest, environment values remain higher-precedence overrides, and connection tests can verify unsaved values before persistence.
 - **Database migrations:** guarded additive column changes exist, but there is no versioned migration system.
 - **Health monitoring:** `/healthz` confirms only that FastAPI can respond.
 - **Runtime validation:** local logs and a populated local database show development execution, but current Plex, TMDB, Seerr, OAuth, and Unraid production behavior were not exercised during documentation work.

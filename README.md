@@ -144,9 +144,11 @@ docker compose logs filmclub
 
 Open <http://localhost:8000> (or the host address you mapped), enter the setup
 code, create the first local owner, and complete the guided form. It validates
-TMDB and, when all three Plex fields are supplied, Plex before saving. API keys
-and tokens are encrypted in SQLite; secret values are never returned to the
-browser after saving.
+TMDB and, when configured, Plex and Seerr before saving. The Admin page also
+has a **Test connections** action that checks the current unsaved form values,
+including the Film Club URL format, without changing the saved configuration.
+API keys and tokens are encrypted in SQLite; secret values are never returned
+to the browser after saving.
 
 The local owner is locked against demotion and can manage integrations, invite
 members, issue password-reset links, and grant additional admins.

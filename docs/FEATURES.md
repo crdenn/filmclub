@@ -334,9 +334,10 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 ### Browser setup and admin-managed integrations
 
 - **Purpose:** Configure a fresh installation and later rotate integration settings without editing deployment files.
-- **Main files:** `app/settings.py`, migration v2, `/api/setup`, `/api/admin/settings`, and setup/admin forms in `static/app.js`.
-- **Status:** Implemented.
-- **Dependencies:** Persistent `/data`, access to the one-time container-log setup code, and reachable Plex/TMDB services for validation.
+- **Main files:** `app/settings.py`, migration v2, `/api/setup`, `/api/admin/settings`, `/api/admin/settings/test`, and setup/admin forms in `static/app.js`.
+- **Status:** Implemented, including a service-grouped Admin UI with per-connection results.
+- **Dependencies:** Persistent `/data`, access to the one-time container-log setup code, and reachable TMDB plus any configured Plex/Seerr services for validation.
+- **Behavior:** **Test connections** checks the current unsaved form values without persisting them. It validates the Film Club URL format, authenticates to TMDB, verifies the Plex token and machine identifier, and authenticates to Seerr. Blank saved-secret fields reuse the encrypted current value for both testing and saving.
 - **Limitations:** Explicit environment overrides remain read-only in the UI; the generated `master.key` must be backed up with the database; there is no master-key rotation flow.
 - **Follow-up:** Publish a prebuilt container image and add browser-level setup tests.
 

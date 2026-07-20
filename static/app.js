@@ -291,8 +291,32 @@
     ["SEERR_TIMEOUT", "Seerr timeout", "Request timeout in seconds."],
   ];
 
-  function settingsFields(settings, setup = false) {
-    return SETTING_FIELDS.map(([key, label, hint]) => {
+  const SETTING_GROUPS = [
+    {
+      id: "app_url", eyebrow: "Core", title: "Film Club",
+      description: "The public address used for sign-in callbacks and invite links.",
+      keys: ["APP_URL"], required: true,
+    },
+    {
+      id: "tmdb", eyebrow: "Movie data", title: "TMDB",
+      description: "Powers movie search, posters, and metadata.",
+      keys: ["TMDB_API_KEY"], required: true,
+    },
+    {
+      id: "plex", eyebrow: "Media server", title: "Plex",
+      description: "Connects member sign-in, library availability, and rating sync.",
+      keys: ["PLEX_URL", "PLEX_TOKEN", "PLEX_MACHINE_ID", "PLEX_WEBHOOK_SECRET", "PLEX_REFRESH_INTERVAL"],
+      required: false,
+    },
+    {
+      id: "seerr", eyebrow: "Requests", title: "Seerr",
+      description: "Optionally sends new film suggestions to Overseerr or Jellyseerr.",
+      keys: ["SEERR_URL", "SEERR_API_KEY", "SEERR_TIMEOUT"], required: false,
+    },
+  ];
+
+  function settingField(settings, key, setup = false) {
+      const [, label, hint] = SETTING_FIELDS.find(field => field[0] === key);
       const meta = settings[key] || {};
       const type = meta.secret ? "password" : key.includes("TIMEOUT") || key.includes("INTERVAL") ? "number" : "text";
       const required = meta.required ? "required" : "";
@@ -305,7 +329,25 @@
         <input class="search-input" name="${key}" type="${type}" value="${esc(meta.value || "")}" placeholder="${placeholder}" ${required} ${locked} autocomplete="off">
         <span class="setup-hint">${esc(hint)}</span>${clear}<span class="setup-error"></span>
       </label>`;
-    }).join("");
+  }
+
+  function settingsFields(settings, setup = false, keys = SETTING_FIELDS.map(field => field[0])) {
+    return keys.map(key => settingField(settings, key, setup)).join("");
+  }
+
+  function adminSettingsGroups(settings) {
+    return SETTING_GROUPS.map(group => `<section class="settings-service" data-service="${group.id}">
+      <div class="settings-service-head">
+        <div>
+          <span class="settings-eyebrow">${esc(group.eyebrow)}</span>
+          <h4>${esc(group.title)} <span class="settings-requirement">${group.required ? "Required" : "Optional"}</span></h4>
+          <p>${esc(group.description)}</p>
+        </div>
+        <span class="service-state idle" aria-live="polite">Not tested</span>
+      </div>
+      <div class="settings-fields">${settingsFields(settings, false, group.keys)}</div>
+      <div class="service-test-detail">Test this form to verify the current values.</div>
+    </section>`).join("");
   }
 
   function collectSettings(form) {
@@ -1923,10 +1965,16 @@
         <div class="backup-note">Restore verifies the file first, saves a pre-restore safety copy on the server, replaces all current data, and signs everyone out.</div>
       </section>
       <form class="stat-card wide admin-settings" id="admin-settings">
-        <h3>Application settings</h3>
-        <div class="sub">Update integrations without editing files. Saved secrets are never displayed; leave a saved secret blank to keep it.</div>
-        <div class="setup-grid">${settingsFields(configData.settings)}</div>
-        <div class="setup-actions"><span id="settings-message"></span><button class="btn btn-primary" type="submit">Validate and save</button></div>
+        <div class="settings-heading">
+          <div><span class="settings-kicker">Connections</span><h3>Application settings</h3>
+            <p>Configure the services Film Club uses. Test your changes before saving them.</p></div>
+          <div class="settings-secret-note"><span aria-hidden="true">●</span> Saved secrets stay hidden and encrypted</div>
+        </div>
+        <div class="settings-services">${adminSettingsGroups(configData.settings)}</div>
+        <div class="settings-footer">
+          <div class="settings-message" id="settings-message" aria-live="polite">No unsaved changes</div>
+          <div class="settings-buttons"><button class="btn" id="test-settings" type="button">Test connections</button><button class="btn btn-primary" type="submit">Validate and save</button></div>
+        </div>
       </form>`;
     paintView("admin", body, preserve);
 
@@ -1974,6 +2022,48 @@
       }
     };
     const settingsForm = $("#admin-settings");
+    const settingsMessage = $("#settings-message");
+    const setSettingsMessage = (message, status = "") => {
+      settingsMessage.className = `settings-message ${status}`.trim();
+      settingsMessage.textContent = message;
+    };
+    const setConnectionState = (id, status, detail) => {
+      const service = settingsForm.querySelector(`[data-service="${id}"]`);
+      if (!service) return;
+      const stateEl = service.querySelector(".service-state");
+      const labels = { ok: id === "app_url" ? "Valid" : "Connected", error: "Needs attention", skipped: "Not configured", testing: "Testing…", idle: "Not tested" };
+      stateEl.className = `service-state ${status}`;
+      stateEl.textContent = labels[status] || "Not tested";
+      service.querySelector(".service-test-detail").textContent = detail || "Test this form to verify the current values.";
+    };
+    $("#test-settings").onclick = async (event) => {
+      showSettingsErrors(settingsForm);
+      const button = event.currentTarget;
+      button.disabled = true; button.textContent = "Testing…";
+      SETTING_GROUPS.forEach(group => setConnectionState(group.id, "testing", "Checking current form values…"));
+      setSettingsMessage("Checking services…", "working");
+      try {
+        const result = await api("/api/admin/settings/test", {
+          method: "POST", body: collectSettings(settingsForm),
+        });
+        showSettingsErrors(settingsForm, result.errors || {});
+        result.checks.forEach(check => setConnectionState(check.id, check.status, check.detail));
+        setSettingsMessage(
+          result.ok ? "All configured connections passed" : "Some connections need attention",
+          result.ok ? "success" : "error",
+        );
+      } catch (error) {
+        SETTING_GROUPS.forEach(group => setConnectionState(group.id, "idle"));
+        setSettingsMessage(error.message, "error");
+      } finally {
+        button.disabled = false; button.textContent = "Test connections";
+      }
+    };
+    settingsForm.addEventListener("input", (event) => {
+      const service = event.target.closest(".settings-service");
+      if (service) setConnectionState(service.dataset.service, "idle", "Changed since the last test.");
+      setSettingsMessage("Unsaved changes", "changed");
+    });
     settingsForm.onsubmit = async (event) => {
       event.preventDefault(); showSettingsErrors(settingsForm);
       const button = settingsForm.querySelector("button[type=submit]");
@@ -1983,7 +2073,7 @@
         toast("Settings saved"); renderAdmin(true);
       } catch (e) {
         showSettingsErrors(settingsForm, (e.data && e.data.errors) || {});
-        $("#settings-message").textContent = e.message;
+        setSettingsMessage(e.message, "error");
         button.disabled = false; button.textContent = "Validate and save";
       }
     };

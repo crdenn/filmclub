@@ -76,6 +76,7 @@ class BroadcastMiddleware:
         if (scope["method"] in self._METHODS
                 and path.startswith("/api/")
                 and path != "/api/events"
+                and path != "/api/admin/settings/test"
                 and not path.startswith("/api/plex/webhook/")
                 and status["code"] < 400):
             headers = dict(scope.get("headers") or [])
@@ -245,7 +246,31 @@ def _settings_values(body: SettingsIn) -> dict:
     return body.model_dump(exclude={"setup_code", "clear_secrets"}, exclude_none=True)
 
 
-async def _validate_settings(values: dict, *, require_all: bool) -> dict[str, str]:
+def _settings_candidate(body: SettingsIn) -> dict:
+    """Return effective form changes without persisting them.
+
+    Blank secret inputs mean "keep the current value" unless the optional
+    secret's explicit clear checkbox was selected. Both save and connection-test
+    routes use this so they evaluate the same candidate configuration.
+    """
+    values = _settings_values(body)
+    clear = {
+        key for key in body.clear_secrets
+        if key in app_settings.FIELDS and app_settings.FIELDS[key]["secret"]
+        and not app_settings.FIELDS[key]["required"]
+    }
+    values = {
+        key: value for key, value in values.items()
+        if not (app_settings.FIELDS[key]["secret"] and value == "" and key not in clear)
+    }
+    values.update({key: "" for key in clear})
+    return values
+
+
+async def _test_settings_connections(
+    values: dict, *, require_all: bool,
+) -> tuple[dict[str, str], list[dict]]:
+    """Validate candidate settings and test integrations without saving them."""
     merged = {key: values.get(key, getattr(config, key, ""))
               for key in app_settings.FIELDS}
     errors: dict[str, str] = {}
@@ -257,15 +282,45 @@ async def _validate_settings(values: dict, *, require_all: bool) -> dict[str, st
         value = str(merged.get(key) or "").strip()
         if value and not re.match(r"^https?://[^\s]+$", value):
             errors[key] = "Enter a complete http:// or https:// URL"
-    if errors:
-        return errors
+
+    checks = [{
+        "id": "app_url",
+        "label": "Application URL",
+        "status": "error" if "APP_URL" in errors else "ok",
+        "detail": errors.get("APP_URL", "URL format is valid"),
+    }]
+
     plex_values = {key: str(merged.get(key) or "").strip()
                    for key in ("PLEX_URL", "PLEX_TOKEN", "PLEX_MACHINE_ID")}
     if any(plex_values.values()) and not all(plex_values.values()):
         for key, value in plex_values.items():
             if not value:
                 errors[key] = "Required when Plex is enabled"
-    if all(plex_values.values()) and not errors:
+
+    async def test_tmdb() -> dict:
+        if not str(merged.get("TMDB_API_KEY") or "").strip():
+            return {"id": "tmdb", "label": "TMDB", "status": "error",
+                    "detail": "API key is required"}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    "https://api.themoviedb.org/3/configuration",
+                    params={"api_key": merged["TMDB_API_KEY"]},
+                )
+                response.raise_for_status()
+            return {"id": "tmdb", "label": "TMDB", "status": "ok",
+                    "detail": "Connected and API key accepted"}
+        except Exception:
+            return {"id": "tmdb", "label": "TMDB", "status": "error",
+                    "detail": "API key rejected or service unreachable"}
+
+    async def test_plex() -> dict:
+        if not any(plex_values.values()):
+            return {"id": "plex", "label": "Plex", "status": "skipped",
+                    "detail": "Not configured"}
+        if not all(plex_values.values()) or "PLEX_URL" in errors:
+            return {"id": "plex", "label": "Plex", "status": "error",
+                    "detail": "URL, token, and machine identifier are required"}
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 response = await client.get(
@@ -277,21 +332,61 @@ async def _validate_settings(values: dict, *, require_all: bool) -> dict[str, st
                 actual = str(response.json().get("MediaContainer", {}).get(
                     "machineIdentifier") or "")
                 if actual != plex_values["PLEX_MACHINE_ID"]:
-                    errors["PLEX_MACHINE_ID"] = "Does not match this Plex server"
+                    return {"id": "plex", "label": "Plex", "status": "error",
+                            "detail": "Connected, but machine identifier does not match"}
+            return {"id": "plex", "label": "Plex", "status": "ok",
+                    "detail": "Connected, authenticated, and machine identifier matched"}
         except Exception:
-            errors["PLEX_URL"] = "Could not authenticate to this Plex server"
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.get(
-                "https://api.themoviedb.org/3/configuration",
-                params={"api_key": merged["TMDB_API_KEY"]},
-            )
-            response.raise_for_status()
-    except Exception:
-        errors["TMDB_API_KEY"] = "TMDB rejected this key or could not be reached"
-    if merged.get("SEERR_URL") or merged.get("SEERR_API_KEY"):
-        if not (merged.get("SEERR_URL") and merged.get("SEERR_API_KEY")):
-            errors["SEERR_URL"] = "URL and API key are both required to enable Seerr"
+            return {"id": "plex", "label": "Plex", "status": "error",
+                    "detail": "Could not authenticate to this Plex server"}
+
+    seerr_url = str(merged.get("SEERR_URL") or "").strip().rstrip("/")
+    seerr_key = str(merged.get("SEERR_API_KEY") or "").strip()
+    if bool(seerr_url) != bool(seerr_key):
+        if not seerr_url:
+            errors["SEERR_URL"] = "Required when Seerr is enabled"
+        if not seerr_key:
+            errors["SEERR_API_KEY"] = "Required when Seerr is enabled"
+
+    async def test_seerr() -> dict:
+        if not seerr_url and not seerr_key:
+            return {"id": "seerr", "label": "Seerr", "status": "skipped",
+                    "detail": "Not configured"}
+        if (not seerr_url or not seerr_key
+                or "SEERR_URL" in errors or "SEERR_API_KEY" in errors):
+            return {"id": "seerr", "label": "Seerr", "status": "error",
+                    "detail": "URL and API key are both required"}
+        try:
+            timeout = float(merged.get("SEERR_TIMEOUT") or 10)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    f"{seerr_url}/api/v1/settings/main",
+                    headers={"X-Api-Key": seerr_key, "Accept": "application/json"},
+                )
+                response.raise_for_status()
+            return {"id": "seerr", "label": "Seerr", "status": "ok",
+                    "detail": "Connected and API key accepted"}
+        except Exception:
+            return {"id": "seerr", "label": "Seerr", "status": "error",
+                    "detail": "API key rejected or service unreachable"}
+
+    integration_checks = await asyncio.gather(test_tmdb(), test_plex(), test_seerr())
+    checks.extend(integration_checks)
+    for check in integration_checks:
+        if check["status"] != "error":
+            continue
+        if check["id"] == "tmdb":
+            errors.setdefault("TMDB_API_KEY", "TMDB rejected this key or could not be reached")
+        elif check["id"] == "plex":
+            field = "PLEX_MACHINE_ID" if "machine identifier" in check["detail"] else "PLEX_URL"
+            errors.setdefault(field, check["detail"])
+        elif check["id"] == "seerr":
+            errors.setdefault("SEERR_URL", check["detail"])
+    return errors, checks
+
+
+async def _validate_settings(values: dict, *, require_all: bool) -> dict[str, str]:
+    errors, _ = await _test_settings_connections(values, require_all=require_all)
     return errors
 
 
@@ -1006,17 +1101,19 @@ async def api_admin_settings(admin=Depends(auth.require_admin)):
     return {"settings": app_settings.public_values()}
 
 
+@app.post("/api/admin/settings/test")
+async def api_admin_test_settings(body: SettingsIn,
+                                  admin=Depends(auth.require_admin)):
+    """Test the unsaved form values against configured external services."""
+    values = _settings_candidate(body)
+    errors, checks = await _test_settings_connections(values, require_all=True)
+    return {"ok": not errors, "checks": checks, "errors": errors}
+
+
 @app.put("/api/admin/settings")
 async def api_admin_update_settings(body: SettingsIn,
                                     admin=Depends(auth.require_admin)):
-    values = _settings_values(body)
-    # Blank secret inputs mean "keep the saved value" in the admin form.
-    clear = {key for key in body.clear_secrets
-             if key in app_settings.FIELDS and app_settings.FIELDS[key]["secret"]
-             and not app_settings.FIELDS[key]["required"]}
-    values = {key: value for key, value in values.items()
-              if not (app_settings.FIELDS[key]["secret"] and value == "" and key not in clear)}
-    values.update({key: "" for key in clear})
+    values = _settings_candidate(body)
     locked = [key for key in values if os.environ.get(key, "").strip()]
     if locked:
         raise HTTPException(status_code=409,
