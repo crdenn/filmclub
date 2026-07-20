@@ -17,11 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the baseline (the former `db._migrate()` additive columns), so existing
   databases upgrade with data preserved and no behaviour change. Covered by
   `tests/test_migrations.py`.
+- `/readyz` readiness endpoint (database reachable + schema at latest + durable
+  signing secret; returns 503 until ready, never exposes secret values), and an
+  admin-only `/api/admin/diagnostics` endpoint (app/schema version, database
+  integrity, row counts, backup status, integration on/off flags).
+- Application version (`config.APP_VERSION`, overridable via `FILMCLUB_VERSION`)
+  surfaced in `/readyz`, diagnostics, and OCI container labels.
 
 ### Changed
 - Hardened `.gitignore` to exclude all credential-bearing and local-only
   artifacts (`.env`, `.claude/`, deployment bundles, databases, logs,
   generated IDs, caches) ahead of publishing source history.
+- Documented the rollback model: restore the matching `<data dir>/backups/`
+  snapshot and run the previous image/source tag.
 
 ## [0.9.0] - 2026-07-19
 

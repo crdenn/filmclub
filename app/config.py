@@ -9,6 +9,11 @@ import os
 import uuid
 from pathlib import Path
 
+# --- App metadata ----------------------------------------------------------
+# Human-readable version, surfaced in /readyz, admin diagnostics, and container
+# labels. Overridable at build/run time (e.g. from a CI-injected release tag).
+APP_VERSION = os.environ.get("FILMCLUB_VERSION", "0.9.0")
+
 # --- Paths -----------------------------------------------------------------
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)

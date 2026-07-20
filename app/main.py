@@ -14,8 +14,8 @@ from itsdangerous.url_safe import URLSafeTimedSerializer
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from . import (auth, config, db, events, plex, plex_ratings, seerr, service,
-               stats, tmdb)
+from . import (auth, config, db, events, migrations, plex, plex_ratings, seerr,
+               service, stats, tmdb)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 # httpx logs full request URLs at INFO, including TMDB's query-string API key.
@@ -732,6 +732,45 @@ async def api_admin_refresh_library(admin=Depends(auth.require_admin)):
     return {"ok": True}
 
 
+@app.get("/api/admin/diagnostics")
+async def api_admin_diagnostics(admin=Depends(auth.require_admin)):
+    """Operational diagnostics for admins: app/schema version, database health,
+    backup status, and which integrations are enabled. Never returns secret
+    values — only booleans, counts, and names."""
+    conn = db.connect()
+    try:
+        integrity = conn.execute("PRAGMA quick_check").fetchone()[0]
+        fk_violations = len(conn.execute("PRAGMA foreign_key_check").fetchall())
+        counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                  for t in ("members", "movies", "ratings", "votes", "prior_views")}
+    finally:
+        conn.close()
+
+    backups_dir = config.DATA_DIR / "backups"
+    backup_files = sorted(backups_dir.glob("filmclub-*.db")) if backups_dir.exists() else []
+
+    return {
+        "app_version": config.APP_VERSION,
+        "schema_version": migrations.current_version(config.DB_PATH),
+        "schema_latest": migrations.latest_version(),
+        "database": {
+            "integrity": integrity,
+            "foreign_key_violations": fk_violations,
+            "counts": counts,
+        },
+        "backups": {
+            "count": len(backup_files),
+            "latest": backup_files[-1].name if backup_files else None,
+        },
+        "integrations": {
+            "tmdb": bool(config.TMDB_API_KEY),
+            "plex": bool(config.PLEX_URL and config.PLEX_TOKEN and config.PLEX_MACHINE_ID),
+            "plex_rating_webhook": bool(config.PLEX_WEBHOOK_SECRET),
+            "seerr": bool(getattr(config, "SEERR_URL", "") and getattr(config, "SEERR_API_KEY", "")),
+        },
+    }
+
+
 # --- SPA + static ----------------------------------------------------------
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -744,4 +783,47 @@ async def index():
 
 @app.get("/healthz")
 async def healthz():
+    """Liveness: the process can answer HTTP. Non-sensitive, unauthenticated."""
     return {"ok": True}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness: the database is reachable and migrated to the latest schema,
+    and the signing secret is durable. Reports only names/status — never secret
+    values. Returns 503 until the app can actually serve its purpose."""
+    checks: dict = {"version": config.APP_VERSION}
+    ready = True
+
+    try:
+        conn = db.connect()
+        try:
+            conn.execute("SELECT 1")
+        finally:
+            conn.close()
+        current = migrations.current_version(config.DB_PATH)
+        latest = migrations.latest_version()
+        checks["database"] = "ok"
+        checks["schema_version"] = current
+        checks["schema_latest"] = latest
+        if current != latest:
+            ready = False
+            checks["schema"] = "behind"
+    except Exception:  # noqa: BLE001 — readiness must never leak internals
+        ready = False
+        checks["database"] = "error"
+
+    # Durable session secret is required for sessions to survive a restart.
+    if not config.SESSION_SECRET:
+        ready = False
+        checks["session_secret"] = "ephemeral"
+
+    # Report (but don't leak) which required env vars are still unset.
+    missing = config.missing_required()
+    if missing:
+        checks["missing_config"] = missing
+
+    return JSONResponse(
+        {"ready": ready, **checks},
+        status_code=200 if ready else 503,
+    )

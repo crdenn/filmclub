@@ -68,6 +68,10 @@ The startup handler initializes/migrates the database, warns about missing confi
 
 `app/schema.sql` initializes new databases and enables WAL and foreign keys. `app/migrations.py` then applies ordered, transactional migrations recorded in a `schema_migrations` table, writing a timestamped backup under `<data dir>/backups/` before any pending migration. Migration `1` is the baseline (the additive column set from the former `db._migrate()`), so both fresh and existing databases converge on the same recorded version.
 
+**Rollback** is deliberately simple: stop the container, restore the pre-migration backup that matches the failed upgrade from `<data dir>/backups/` over `filmclub.db` (removing any stale `-wal`/`-shm` sidecars), and start the previous image or source tag. There are no down-migrations by design.
+
+`/healthz` is an unauthenticated liveness check (the process can answer HTTP). `/readyz` is a readiness check that reports the app version, whether the database is reachable and migrated to the latest schema, and whether the signing secret is durable — returning 503 until the app can serve its purpose, and never returning secret values. `/api/admin/diagnostics` (admin only) surfaces the app/schema version, database integrity and row counts, backup status, and which integrations are enabled.
+
 ## Major modules and entry points
 
 | Module | Responsibility |

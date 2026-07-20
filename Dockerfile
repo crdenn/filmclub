@@ -1,10 +1,21 @@
 FROM python:3.12-slim
 
+# Version is injected at build time (e.g. from a release tag) and surfaced in
+# container labels, /readyz, and admin diagnostics.
+ARG FILMCLUB_VERSION=0.9.0
+
+LABEL org.opencontainers.image.title="Film Club Tracker" \
+      org.opencontainers.image.description="Self-hosted weekly film club tracker" \
+      org.opencontainers.image.version="${FILMCLUB_VERSION}" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.source="https://github.com/crdenn/filmclub"
+
 # Runtime environment
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DATA_DIR=/data \
-    PORT=8000
+    PORT=8000 \
+    FILMCLUB_VERSION=${FILMCLUB_VERSION}
 
 WORKDIR /app
 
