@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# Secrets & credential-bearing artifacts — NEVER commit these.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# .claude/ holds launch.json with real API keys/tokens.
+.claude/
+
+# Future /data master key for encrypted settings.
+filmclub-master.key
+*.key
+*.pem
+id_ed25519
+id_rsa
+
+# Deployment bundles embed a real .env — keep them out of history entirely.
+*.tar.gz
+*.tgz
+filmclub-deploy.tar.gz
+
+# ---------------------------------------------------------------------------
+# Local data, databases, backups (source of truth lives on the server).
+# ---------------------------------------------------------------------------
+data/
+devdata/
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.bak
+
+# Logs & generated runtime identifiers.
+*.log
+logs/
+client_id
+.macip
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------------------------------------------------------------------------
+# OS / editor cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

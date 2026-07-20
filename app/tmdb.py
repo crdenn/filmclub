@@ -1,0 +1,121 @@
+"""TMDB client.
+
+TMDB is the source of truth for film metadata. We search on demand
+(search-as-you-type) but *snapshot* the full metadata into our DB on selection
+so page loads never re-hit TMDB.
+"""
+import asyncio
+
+import httpx
+
+from . import config
+
+BASE = "https://api.themoviedb.org/3"
+
+
+def _params(extra: dict | None = None) -> dict:
+    p = {"api_key": config.TMDB_API_KEY}
+    if extra:
+        p.update(extra)
+    return p
+
+
+def _poster(path: str | None, size: str = "w500") -> str | None:
+    return f"{config.TMDB_IMAGE_BASE}/{size}{path}" if path else None
+
+
+def _backdrop(path: str | None, size: str = "w1280") -> str | None:
+    return f"{config.TMDB_IMAGE_BASE}/{size}{path}" if path else None
+
+
+def language_name(movie: dict) -> str | None:
+    """Return TMDB's English name for the movie's original language."""
+    code = movie.get("original_language")
+    if not code:
+        return None
+    for language in movie.get("spoken_languages", []) or []:
+        if language.get("iso_639_1") == code:
+            return language.get("english_name") or language.get("name") or code.upper()
+    return str(code).upper()
+
+
+async def _director(client: httpx.AsyncClient, tmdb_id: int) -> str | None:
+    """Look up a film's director. Degrades to None on any failure."""
+    try:
+        r = await client.get(f"{BASE}/movie/{tmdb_id}/credits", params=_params())
+        r.raise_for_status()
+        for crew in r.json().get("crew", []):
+            if crew.get("job") == "Director":
+                return crew.get("name")
+    except Exception:  # noqa: BLE001 — a missing director must not break search
+        return None
+    return None
+
+
+async def search(query: str, limit: int = 6) -> list[dict]:
+    """Search-as-you-type. Results carry poster, title, year, and director.
+
+    The search endpoint doesn't return crew, so we fetch directors in parallel
+    for the (capped, debounced) result set. Failures degrade to no director
+    rather than erroring the whole search.
+    """
+    query = query.strip()
+    if not query or not config.TMDB_API_KEY:
+        return []
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(
+            f"{BASE}/search/movie",
+            params=_params({"query": query, "include_adult": "false"}),
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])[:limit]
+
+        directors = await asyncio.gather(*(_director(client, r["id"]) for r in results))
+
+        out = []
+        for r, director in zip(results, directors):
+            year = (r.get("release_date") or "")[:4]
+            out.append(
+                {
+                    "tmdb_id": r["id"],
+                    "title": r.get("title") or r.get("original_title") or "Untitled",
+                    "year": int(year) if year.isdigit() else None,
+                    "poster_url": _poster(r.get("poster_path")),
+                    "overview": r.get("overview"),
+                    "director": director,
+                    "language": language_name(r),
+                }
+            )
+    return out
+
+
+async def details(tmdb_id: int) -> dict:
+    """Full metadata snapshot for a chosen film, including director and genres."""
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(
+            f"{BASE}/movie/{tmdb_id}",
+            params=_params({"append_to_response": "credits"}),
+        )
+        resp.raise_for_status()
+        d = resp.json()
+
+    director = None
+    for crew in d.get("credits", {}).get("crew", []):
+        if crew.get("job") == "Director":
+            director = crew.get("name")
+            break
+
+    year = (d.get("release_date") or "")[:4]
+    return {
+        "tmdb_id": d["id"],
+        "title": d.get("title") or d.get("original_title") or "Untitled",
+        "year": int(year) if year.isdigit() else None,
+        "poster_url": _poster(d.get("poster_path")),
+        "backdrop_url": _backdrop(d.get("backdrop_path")),
+        "runtime": d.get("runtime"),
+        "director": director,
+        "language": language_name(d),
+        "overview": d.get("overview"),
+        "genres": [g["name"] for g in d.get("genres", [])],
+        "imdb_id": d.get("imdb_id"),
+    }

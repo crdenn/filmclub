@@ -1,0 +1,747 @@
+"""FastAPI application: routes, auth flow, static SPA, startup tasks."""
+import asyncio
+import hmac
+import json
+import logging
+from datetime import date
+
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse, StreamingResponse)
+from fastapi.staticfiles import StaticFiles
+from itsdangerous import BadSignature
+from itsdangerous.url_safe import URLSafeTimedSerializer
+from pathlib import Path
+from pydantic import BaseModel, Field
+
+from . import (auth, config, db, events, plex, plex_ratings, seerr, service,
+               stats, tmdb)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# httpx logs full request URLs at INFO, including TMDB's query-string API key.
+# Keep integration failures visible through our own module loggers without ever
+# copying credentials into routine container logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+log = logging.getLogger("filmclub")
+
+STATIC_DIR = Path(__file__).parent.parent / "static"
+
+# Short-lived signer for carrying the Plex pin across the OAuth redirect.
+_pin_signer = URLSafeTimedSerializer(config.EFFECTIVE_SESSION_SECRET, salt="filmclub-pin")
+PIN_COOKIE = "filmclub_pin"
+
+app = FastAPI(title="Film Club Tracker")
+
+
+class BroadcastMiddleware:
+    """Pure-ASGI middleware: after any successful state-changing API request,
+    notify live SSE clients that something changed.
+
+    Doing it here (rather than in each endpoint) keeps the broadcast in one
+    place. It's pure ASGI — not BaseHTTPMiddleware — so it never buffers or
+    interferes with the streaming /api/events response; it only inspects the
+    response status and passes everything through untouched. The change is
+    already committed by the time the response finishes, so clients that
+    re-fetch on the ping see fresh data. The originating client id (from the
+    X-Client-Id header) is echoed so a client can ignore its own change."""
+
+    _METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        status = {"code": 500}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status["code"] = message["status"]
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        path = scope["path"]
+        if (scope["method"] in self._METHODS
+                and path.startswith("/api/")
+                and path != "/api/events"
+                and not path.startswith("/api/plex/webhook/")
+                and status["code"] < 400):
+            headers = dict(scope.get("headers") or [])
+            client = (headers.get(b"x-client-id", b"").decode() or None)
+            events.broadcast({"path": path, "client": client})
+
+
+app.add_middleware(BroadcastMiddleware)
+
+
+async def _backfill_movie_languages() -> None:
+    """Populate the new language field for existing TMDB-backed movies.
+
+    This runs once in the background after startup and only selects rows still
+    missing a language, so normal restarts do no external work after the first
+    successful pass.
+    """
+    if not config.TMDB_API_KEY:
+        return
+    conn = db.connect()
+    try:
+        rows = db.query_all(
+            conn,
+            "SELECT id, tmdb_id FROM movies WHERE language IS NULL AND tmdb_id IS NOT NULL",
+        )
+    finally:
+        conn.close()
+    if not rows:
+        return
+
+    semaphore = asyncio.Semaphore(4)
+
+    async def fetch(row):
+        async with semaphore:
+            try:
+                meta = await tmdb.details(row["tmdb_id"])
+                return row["id"], meta.get("language")
+            except Exception as exc:  # noqa: BLE001 — retry on next restart
+                log.warning("Language backfill failed for movie %s: %s", row["id"], exc)
+                return row["id"], None
+
+    results = await asyncio.gather(*(fetch(row) for row in rows))
+    updates = [(language, movie_id) for movie_id, language in results if language]
+    if not updates:
+        return
+    conn = db.connect()
+    try:
+        conn.executemany("UPDATE movies SET language = ? WHERE id = ?", updates)
+        conn.commit()
+    finally:
+        conn.close()
+    log.info("Backfilled language for %d movies", len(updates))
+    events.broadcast({"path": "/api/metadata/languages", "client": None})
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    db.init_db()
+    missing = config.missing_required()
+    if missing:
+        log.warning("Missing required env vars: %s", ", ".join(missing))
+    if not config.SESSION_SECRET:
+        log.warning("SESSION_SECRET not set — using an ephemeral secret; "
+                    "sessions will not survive a restart.")
+    if config.DEV_BYPASS_USER:
+        log.warning("DEV_BYPASS_USER=%s active — Plex auth is bypassed.",
+                    config.DEV_BYPASS_USER)
+    if not config.PLEX_WEBHOOK_SECRET:
+        log.info("PLEX_WEBHOOK_SECRET not set — Plex-to-Film-Club rating sync is disabled")
+    # Kick off Plex library enrichment in the background.
+    asyncio.create_task(plex.refresh_loop())
+    asyncio.create_task(_backfill_movie_languages())
+
+
+# --- request models --------------------------------------------------------
+
+class AddMovie(BaseModel):
+    tmdb_id: int
+
+
+class ProfileIn(BaseModel):
+    # Chosen display name; blank/whitespace/null clears it (revert to Plex name).
+    display_name: str | None = Field(default=None, max_length=40)
+
+
+class RatingSyncPreferenceIn(BaseModel):
+    enabled: bool
+
+
+class VoteIn(BaseModel):
+    voted: bool
+
+
+class PriorView(BaseModel):
+    # true = seen, false = not seen, null = unknown (clears the row)
+    seen: bool | None = None
+
+
+class RatingIn(BaseModel):
+    score: float = Field(..., ge=0.5, le=5.0)
+    seen_before: bool = False
+    note: str | None = None
+
+
+class MergeIn(BaseModel):
+    from_id: int
+    into_id: int
+
+
+class AdminFlagIn(BaseModel):
+    is_admin: bool
+
+
+class DiscussDate(BaseModel):
+    date: str  # ISO 'YYYY-MM-DD'
+
+
+def _validate_score(score: float) -> float:
+    # 0.5 .. 5.0 in 0.5 increments
+    steps = round(score * 2)
+    if steps < 1 or steps > 10 or abs(steps / 2 - score) > 1e-9:
+        raise HTTPException(status_code=400, detail="score must be 0.5–5.0 in 0.5 steps")
+    return steps / 2
+
+
+# --- auth routes -----------------------------------------------------------
+
+@app.get("/auth/login")
+async def auth_login():
+    if config.DEV_BYPASS_USER:
+        return RedirectResponse("/")
+    try:
+        pin = await plex.create_pin()
+    except Exception as e:  # noqa: BLE001
+        log.error("Failed to create Plex pin: %s", e)
+        raise HTTPException(status_code=502, detail="Could not reach Plex to start login")
+    resp = RedirectResponse(plex.auth_url(pin["code"]))
+    token = _pin_signer.dumps({"id": pin["id"], "code": pin["code"]})
+    resp.set_cookie(PIN_COOKIE, token, max_age=600, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    raw = request.cookies.get(PIN_COOKIE)
+    if not raw:
+        return _login_error("Login session expired. Please try again.")
+    try:
+        pin = _pin_signer.loads(raw, max_age=600)
+    except BadSignature:
+        return _login_error("Login session invalid. Please try again.")
+
+    token = await plex.poll_pin(pin["id"], pin["code"])
+    if not token:
+        return _login_error("Timed out waiting for Plex authorisation. Please try again.")
+
+    # Authorisation: a valid Plex account is not enough — require access to
+    # OUR server. This check is not optional.
+    if not await plex.has_server_access(token):
+        return _login_error(
+            "You authenticated with Plex, but you don't have access to this "
+            "Plex server, so you can't use the film club tracker.")
+
+    identity = await plex.get_user(token)
+    # Retain an encrypted server-side copy for this member's future Plex rating
+    # writes. The raw token never enters the signed browser session.
+    member = auth.upsert_member(
+        plex_id=identity["uuid"],
+        username=identity["username"],
+        email=identity.get("email"),
+        thumb=identity.get("thumb"),
+        plex_account_id=identity.get("account_id"),
+        plex_token=token,
+    )
+
+    resp = RedirectResponse("/")
+    resp.delete_cookie(PIN_COOKIE)
+    resp.set_cookie(
+        config.SESSION_COOKIE,
+        auth.make_session_cookie(member["id"], identity["uuid"]),
+        max_age=config.SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=config.APP_URL.startswith("https"),
+    )
+    return resp
+
+
+@app.post("/auth/logout")
+async def auth_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(config.SESSION_COOKIE)
+    return resp
+
+
+def _login_error(message: str) -> HTMLResponse:
+    """Minimal standalone error page with a retry link."""
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+    <title>Film Club — sign in</title>
+    <style>body{{background:#0d0d10;color:#e8e8ea;font-family:system-ui,sans-serif;
+    display:grid;place-items:center;height:100vh;margin:0}}
+    .box{{max-width:26rem;text-align:center;padding:2rem}}
+    a{{color:#5b8def}}</style></head>
+    <body><div class="box"><h1>Can't sign you in</h1>
+    <p>{message}</p><p><a href="/auth/login">Try again</a></p></div></body></html>"""
+    return HTMLResponse(html, status_code=403)
+
+
+# --- API routes ------------------------------------------------------------
+
+@app.get("/api/me")
+async def api_me(member=Depends(auth.current_member)):
+    return auth.with_connection_status(member)
+
+
+@app.patch("/api/me")
+async def api_update_me(body: ProfileIn, member=Depends(auth.current_member)):
+    """Update the current member's profile (currently just the display name)."""
+    conn = db.connect()
+    try:
+        service.set_display_name(conn, member["id"], body.display_name)
+        row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member["id"],))
+        return auth.with_connection_status(db.member_public(row))
+    finally:
+        conn.close()
+
+
+@app.patch("/api/me/plex-rating-sync")
+async def api_update_rating_sync(body: RatingSyncPreferenceIn,
+                                 member=Depends(auth.current_member)):
+    """Enable or pause future Plex rating synchronization for this member."""
+    conn = db.connect()
+    try:
+        service.set_plex_rating_sync_enabled(conn, member["id"], body.enabled)
+        row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member["id"],))
+        return auth.with_connection_status(db.member_public(row))
+    finally:
+        conn.close()
+
+
+@app.get("/api/me/todo")
+async def api_me_todo(member=Depends(auth.current_member)):
+    """Per-member reminder counts for the nav badges."""
+    conn = db.connect()
+    try:
+        return service.todo_counts(conn, member["id"])
+    finally:
+        conn.close()
+
+
+@app.get("/api/events")
+async def api_events(request: Request, member=Depends(auth.current_member)):
+    """Server-Sent Events stream of 'something changed' pings for live updates.
+
+    Clients re-fetch the relevant view when they receive an event. Each event
+    carries the originating client id so a client ignores the echo of its own
+    action (it already updated optimistically)."""
+    async def event_stream():
+        q = events.subscribe()
+        try:
+            # Prime the stream so proxies flush the response headers immediately.
+            yield ": connected\n\n"
+            while True:
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=25)
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    # Heartbeat: keeps the connection alive through Cloudflare's
+                    # ~100s idle timeout when nothing is happening.
+                    yield ": keepalive\n\n"
+                if await request.is_disconnected():
+                    break
+        finally:
+            events.unsubscribe(q)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # ask any proxy not to buffer the stream
+        },
+    )
+
+
+@app.get("/api/members")
+async def api_members(member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        return service.all_members(conn)
+    finally:
+        conn.close()
+
+
+@app.get("/api/members/{member_id}/profile")
+async def api_member_profile(member_id: int, member=Depends(auth.current_member)):
+    """A member's public film-club activity page."""
+    conn = db.connect()
+    try:
+        prof = service.member_profile(conn, member_id, member["id"])
+        if not prof:
+            raise HTTPException(status_code=404, detail="Member not found")
+        return prof
+    finally:
+        conn.close()
+
+
+@app.get("/api/backlog")
+async def api_backlog(
+    member=Depends(auth.current_member),
+    sort: str = Query("seconds"),
+    eligible_only: bool = Query(False),
+):
+    conn = db.connect()
+    try:
+        return {"items": service.backlog(conn, member["id"], sort=sort,
+                                         eligible_only=eligible_only),
+                "me": member}
+    finally:
+        conn.close()
+
+
+@app.get("/api/thisweek")
+async def api_thisweek(member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        return {"items": service.this_week(conn), "me": member}
+    finally:
+        conn.close()
+
+
+@app.get("/api/watched")
+async def api_watched(member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        return {"items": service.watched(conn, member["id"])}
+    finally:
+        conn.close()
+
+
+@app.get("/api/movies/{movie_id}")
+async def api_movie(movie_id: int, member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        detail = service.movie_detail(conn, movie_id, member["id"])
+        if not detail:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        detail["my_rating_default"] = {
+            "seen_before": service.default_seen_before(conn, movie_id, member["id"]),
+        }
+        return detail
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies")
+async def api_add_movie(body: AddMovie, member=Depends(auth.current_member)):
+    try:
+        meta = await tmdb.details(body.tmdb_id)
+    except Exception as e:  # noqa: BLE001
+        log.error("TMDB details failed for %s: %s", body.tmdb_id, e)
+        raise HTTPException(status_code=502, detail="Could not fetch film metadata from TMDB")
+    conn = db.connect()
+    try:
+        existing = db.query_one(
+            conn, "SELECT id, status FROM movies WHERE tmdb_id = ?", (body.tmdb_id,))
+        if existing:
+            raise HTTPException(status_code=409,
+                                detail="That film is already on the list")
+        movie_id = service.add_suggestion(conn, meta, member["id"])
+        # Auto-request from Seerr if the film isn't already on Plex. This runs
+        # AFTER the insert and never raises, so the add itself can't be broken by
+        # a Seerr/Plex hiccup — worst case the film is added with status 'failed'.
+        seerr_result = await _maybe_request_from_seerr(conn, movie_id, meta)
+        return {"id": movie_id, "seerr": seerr_result}
+    finally:
+        conn.close()
+
+
+async def _maybe_request_from_seerr(conn, movie_id: int, meta: dict) -> dict:
+    """Decide presence and (if missing) request from Seerr. Returns a status dict.
+
+    Existence check is cache-first: a positive `library_match` is trusted (a GUID
+    in the set means it's really on Plex). On a cache miss we do one targeted live
+    Plex lookup to catch films added since the last interval refresh, and only
+    request from Seerr if that also misses. Never raises."""
+    if not seerr.is_configured():
+        return {"status": "disabled"}
+
+    tmdb_id, imdb_id = meta.get("tmdb_id"), meta.get("imdb_id")
+    in_library = bool(plex.library_match(tmdb_id, imdb_id))
+    if not in_library:
+        in_library = await plex.library_has_live(tmdb_id, imdb_id, meta.get("title"))
+
+    if in_library:
+        result = {"status": "in_library"}
+    else:
+        result = await seerr.request_movie(tmdb_id)
+
+    try:
+        service.set_seerr_status(conn, movie_id, result["status"])
+    except Exception as e:  # noqa: BLE001 — persistence is best-effort
+        log.warning("Could not store seerr_status for movie %s: %s", movie_id, e)
+    return result
+
+
+@app.post("/api/movies/{movie_id}/schedule")
+async def api_schedule(movie_id: int, member=Depends(auth.current_member)):
+    """Pick a backlog film as this week's movie (suggested -> scheduled)."""
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        changed = service.schedule_movie(conn, movie_id)
+        return {"ok": True, "changed": changed}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/unschedule")
+async def api_unschedule(movie_id: int, member=Depends(auth.current_member)):
+    """Send this week's movie back to the backlog (scheduled -> suggested)."""
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        changed = service.unschedule_movie(conn, movie_id)
+        return {"ok": True, "changed": changed}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/discuss_date")
+async def api_discuss_date(movie_id: int, body: DiscussDate, member=Depends(auth.current_member)):
+    """Change the discussion date for this week's pick."""
+    try:
+        d = date.fromisoformat(body.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        if not service.set_discuss_date(conn, movie_id, d.isoformat()):
+            raise HTTPException(status_code=400,
+                                detail="Only this week's pick has a discussion date")
+        return {"ok": True, "date": d.isoformat()}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/watch")
+async def api_archive(movie_id: int, member=Depends(auth.current_member)):
+    """Close out this week's movie into the archive (scheduled -> watched)."""
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        changed = service.archive_movie(conn, movie_id)
+        return {"ok": True, "changed": changed}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/unwatch")
+async def api_unmark_watched(movie_id: int, member=Depends(auth.current_member)):
+    """Send an archived film back to the backlog (watched -> suggested)."""
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        changed = service.unmark_watched(conn, movie_id)
+        return {"ok": True, "changed": changed}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/return-to-this-week")
+async def api_return_to_this_week(movie_id: int,
+                                  admin=Depends(auth.require_admin)):
+    """Reopen an archived film as this week's pick without deleting any data."""
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        changed = service.return_to_this_week(conn, movie_id)
+        return {"ok": True, "changed": changed}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/movies/{movie_id}")
+async def api_delete_movie(movie_id: int, member=Depends(auth.current_member)):
+    """Delete a backlog film. Allowed for an admin or the member who added it,
+    and only while the film is still in the backlog (not scheduled/watched)."""
+    conn = db.connect()
+    try:
+        mv = db.query_one(
+            conn, "SELECT status, suggested_by FROM movies WHERE id = ?", (movie_id,))
+        if not mv:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        if mv["status"] != "suggested":
+            raise HTTPException(status_code=400,
+                                detail="Only backlog films can be deleted")
+        if not (member.get("is_admin") or mv["suggested_by"] == member["id"]):
+            raise HTTPException(status_code=403,
+                                detail="You can only delete films you added")
+        service.delete_movie(conn, movie_id)
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/prior_view")
+async def api_prior_view(movie_id: int, body: PriorView, member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        service.set_prior_view(conn, movie_id, member["id"], body.seen)
+        # Return refreshed coverage so the card can update in place.
+        return {"coverage": service.coverage_for(conn, movie_id)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/vote")
+async def api_vote(movie_id: int, body: VoteIn, member=Depends(auth.current_member)):
+    """Second (or un-second) a backlog film. The suggester can't vote for their
+    own, and only backlog films can be seconded."""
+    conn = db.connect()
+    try:
+        mv = db.query_one(
+            conn, "SELECT status, suggested_by FROM movies WHERE id = ?", (movie_id,))
+        if not mv:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        if mv["status"] != "suggested":
+            raise HTTPException(status_code=400,
+                                detail="Only backlog films can be seconded")
+        if mv["suggested_by"] == member["id"]:
+            raise HTTPException(status_code=400,
+                                detail="You can't second a film you suggested")
+        count = service.set_vote(conn, movie_id, member["id"], body.voted)
+        return {"vote_count": count, "voted": body.voted}
+    finally:
+        conn.close()
+
+
+@app.post("/api/movies/{movie_id}/rating")
+async def api_rate(movie_id: int, body: RatingIn, member=Depends(auth.current_member)):
+    score = _validate_score(body.score)
+    conn = db.connect()
+    try:
+        mv = db.query_one(conn, "SELECT * FROM movies WHERE id = ?", (movie_id,))
+        if not mv:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        # Ratings open once a film is picked (members rate through the week) and
+        # stay open in the archive.
+        if mv["status"] not in ("scheduled", "watched"):
+            raise HTTPException(status_code=400,
+                                detail="Can only rate this week's or watched films")
+        service.upsert_rating(conn, movie_id, member["id"], score,
+                              body.seen_before, (body.note or "").strip() or None)
+        movie = dict(mv)
+    finally:
+        conn.close()
+    plex_sync = await plex_ratings.push_rating(movie, member["id"], score)
+    return {"ok": True, "plex": plex_sync}
+
+
+@app.post("/api/plex/webhook/{secret}")
+async def api_plex_webhook(secret: str, payload: str = Form(...)):
+    """Receive Plex `media.rate` webhooks for inbound rating synchronization."""
+    expected = config.PLEX_WEBHOOK_SECRET
+    if not expected or not hmac.compare_digest(secret, expected):
+        # Use 404 rather than revealing whether a webhook secret is configured.
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        body = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid Plex webhook payload")
+    conn = db.connect()
+    try:
+        result = await plex_ratings.apply_webhook(conn, body)
+    finally:
+        conn.close()
+    if result.get("status") == "updated":
+        # The webhook path contains a secret, so never pass it through the
+        # generic middleware event. Broadcast only a non-sensitive marker.
+        events.broadcast({"path": "/api/plex/rating-sync", "client": None})
+    return result
+
+
+@app.get("/api/tmdb/search")
+async def api_tmdb_search(q: str, member=Depends(auth.current_member)):
+    try:
+        return {"results": await tmdb.search(q)}
+    except Exception as e:  # noqa: BLE001
+        log.error("TMDB search failed: %s", e)
+        raise HTTPException(status_code=502, detail="TMDB search failed")
+
+
+@app.get("/api/stats")
+async def api_stats(member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        return stats.compute(conn)
+    finally:
+        conn.close()
+
+
+# --- admin routes (owner only) ---------------------------------------------
+
+@app.get("/api/admin/members")
+async def api_admin_members(admin=Depends(auth.require_admin)):
+    conn = db.connect()
+    try:
+        return {"members": service.admin_members(conn), "me": admin}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/merge")
+async def api_admin_merge(body: MergeIn, admin=Depends(auth.require_admin)):
+    conn = db.connect()
+    try:
+        result = service.merge_members(conn, body.from_id, body.into_id)
+        return {"ok": True, **result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/members/{member_id}/admin")
+async def api_admin_set_admin(member_id: int, body: AdminFlagIn, admin=Depends(auth.require_admin)):
+    conn = db.connect()
+    try:
+        service.set_member_admin(conn, member_id, body.is_admin)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/movies/{movie_id}")
+async def api_admin_delete_movie(movie_id: int, admin=Depends(auth.require_admin)):
+    conn = db.connect()
+    try:
+        if not service.delete_movie(conn, movie_id):
+            raise HTTPException(status_code=404, detail="Movie not found")
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/refresh_library")
+async def api_admin_refresh_library(admin=Depends(auth.require_admin)):
+    await plex.refresh_library()
+    return {"ok": True}
+
+
+# --- SPA + static ----------------------------------------------------------
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True}
