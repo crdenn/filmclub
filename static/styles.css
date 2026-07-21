@@ -744,29 +744,35 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .setup-field input:disabled { opacity: .55; cursor: not-allowed; }
 .setup-actions { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; color: var(--text-dim); font-size: .85rem; }
 .admin-settings { margin: 0; padding: 0; }
-.settings-kicker, .settings-eyebrow { display: block; color: var(--accent); font-size: .67rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
-.settings-secret-note { display: flex; align-items: center; gap: .45rem; flex: 0 0 auto; margin-top: .15rem; color: var(--text-faint); font-size: .72rem; }
-.settings-secret-note span { color: var(--good); font-size: .55rem; }
+.settings-kicker { display: block; color: var(--accent); font-size: .67rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
 .settings-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin: -3.7rem 0 1.2rem; }
 .settings-services { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); column-gap: 2rem; }
-.settings-service { min-width: 0; padding: 1.25rem 0 1.5rem; border-top: 1px solid var(--line); }
-.settings-service[data-service="plex"] { grid-column: 1 / -1; }
-.settings-service-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; min-height: 4rem; padding-bottom: .85rem; border-bottom: 1px solid var(--line); }
-.settings-service-head h4 { display: flex; align-items: center; gap: .5rem; margin: .1rem 0 .15rem; font-size: .98rem; }
-.settings-service-head p { max-width: 32rem; margin: 0; color: var(--text-faint); font-size: .76rem; line-height: 1.4; }
-.settings-requirement { color: var(--text-faint); font-size: .59rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.settings-service { min-width: 0; padding: 1.15rem 0 1.35rem; border-top: 1px solid var(--line); }
+.settings-service-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .8rem; }
+.settings-service-head h3 { margin: 0; font-size: 1rem; }
+.settings-service-optional { grid-column: 1 / -1; }
+.settings-service-optional summary { display: flex; justify-content: space-between; align-items: center; gap: 1rem; cursor: pointer; list-style: none; font-size: 1rem; font-weight: 700; }
+.settings-service-optional summary::-webkit-details-marker { display: none; }
+.settings-service-optional summary > span::before { content: "+"; display: inline-block; width: 1.2rem; color: var(--accent); font-weight: 500; }
+.settings-service-optional[open] summary > span::before { content: "−"; }
+.settings-service-optional summary small { margin-left: .35rem; color: var(--text-faint); font-size: .67rem; font-weight: 500; }
 .service-state { display: inline-flex; align-items: center; gap: .4rem; flex: 0 0 auto; color: var(--text-faint); font-size: .68rem; white-space: nowrap; }
 .service-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .service-state.ok { color: var(--good); }
 .service-state.error { color: var(--bad); }
 .service-state.testing { color: var(--accent); }
 .service-state.skipped { color: var(--text-dim); }
-.settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .9rem 1rem; padding-top: .95rem; }
+.service-state.idle:empty { display: none; }
+.settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .9rem 1rem; }
+.settings-service-optional .settings-fields { padding: 1rem 0 .25rem 1.2rem; }
 .settings-service[data-service="app_url"] .settings-fields,
 .settings-service[data-service="tmdb"] .settings-fields { grid-template-columns: 1fr; }
-.settings-service .setup-hint { min-height: 0; }
+.admin-settings .setup-field { gap: .3rem; }
+.admin-settings .setup-field > span:first-child { font-size: .8rem; }
+.setting-locked { margin-left: .25rem; color: var(--text-faint); font-size: .55rem; }
 .settings-service .setup-error:empty { display: none; }
-.service-test-detail { margin-top: .8rem; padding-top: .7rem; border-top: 1px solid var(--line); color: var(--text-faint); font-size: .72rem; }
+.service-test-detail { margin: .65rem 0 0; color: var(--text-faint); font-size: .72rem; }
+.service-test-detail:empty { display: none; }
 .settings-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.1rem 0 0; border-top: 1px solid var(--line); }
 .settings-message { color: var(--text-dim); font-size: .8rem; }
 .settings-message.success { color: var(--good); }
@@ -805,8 +811,8 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
   .setup-actions { align-items: stretch; flex-direction: column; }
   .settings-toolbar { align-items: stretch; flex-direction: column; margin: 0 0 1rem; }
   .settings-services, .settings-fields { grid-template-columns: 1fr; }
-  .settings-service[data-service="plex"] { grid-column: auto; }
-  .settings-service-head { flex-direction: column; min-height: 0; }
+  .settings-service-optional { grid-column: auto; }
+  .settings-service-optional .settings-fields { padding-left: 0; }
   .settings-footer { align-items: stretch; flex-direction: column; }
   .settings-buttons { display: grid; grid-template-columns: 1fr; }
   .invite-create { grid-template-columns: 1fr; }

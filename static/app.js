@@ -282,10 +282,10 @@
     ["PLEX_TOKEN", "Plex owner token", "Optional. Used for library enrichment; stored encrypted."],
     ["PLEX_MACHINE_ID", "Plex machine identifier", "Optional. Authorizes accounts with access to this server."],
     ["PLEX_WEBHOOK_SECRET", "Plex webhook secret", "Optional. Enables inbound rating sync."],
-    ["PLEX_REFRESH_INTERVAL", "Plex refresh interval", "Seconds between library refreshes (minimum 60)."],
+    ["PLEX_REFRESH_INTERVAL", "Plex refresh interval (seconds)", "Seconds between library refreshes (minimum 60)."],
     ["SEERR_URL", "Seerr URL", "Optional Overseerr/Jellyseerr server address."],
     ["SEERR_API_KEY", "Seerr API key", "Optional; required when a Seerr URL is set."],
-    ["SEERR_TIMEOUT", "Seerr timeout", "Request timeout in seconds."],
+    ["SEERR_TIMEOUT", "Seerr timeout (seconds)", "Request timeout in seconds."],
   ];
 
   const SETTING_GROUPS = [
@@ -321,10 +321,11 @@
       const placeholder = meta.secret && meta.configured ? "Saved — leave blank to keep" : "";
       const clear = !setup && meta.secret && meta.configured && !meta.required
         ? `<span class="setup-clear"><input type="checkbox" name="clear:${key}"> Clear saved value</span>` : "";
+      const source = meta.locked ? (setup ? ` <small>environment override</small>` : ` <small class="setting-locked" title="Managed by an environment variable" aria-label="Managed by an environment variable">●</small>`) : "";
       return `<label class="setup-field" data-setting="${key}">
-        <span>${esc(label)}${meta.required ? " *" : ""}${meta.locked ? ` <small>environment override</small>` : ""}</span>
+        <span>${esc(label)}${meta.required ? " *" : ""}${source}</span>
         <input class="search-input" name="${key}" type="${type}" value="${esc(meta.value || "")}" placeholder="${placeholder}" ${required} ${locked} autocomplete="off">
-        <span class="setup-hint">${esc(hint)}</span>${clear}<span class="setup-error"></span>
+        ${setup ? `<span class="setup-hint">${esc(hint)}</span>` : ""}${clear}<span class="setup-error"></span>
       </label>`;
   }
 
@@ -333,18 +334,15 @@
   }
 
   function adminSettingsGroups(settings) {
-    return SETTING_GROUPS.map(group => `<section class="settings-service" data-service="${group.id}">
-      <div class="settings-service-head">
-        <div>
-          <span class="settings-eyebrow">${esc(group.eyebrow)}</span>
-          <h4>${esc(group.title)} <span class="settings-requirement">${group.required ? "Required" : "Optional"}</span></h4>
-          <p>${esc(group.description)}</p>
-        </div>
-        <span class="service-state idle" aria-live="polite">Not tested</span>
-      </div>
-      <div class="settings-fields">${settingsFields(settings, false, group.keys)}</div>
-      <div class="service-test-detail">Test this form to verify the current values.</div>
-    </section>`).join("");
+    return SETTING_GROUPS.map(group => {
+      const status = `<span class="service-state idle" aria-live="polite"></span>`;
+      const fields = `<div class="settings-fields">${settingsFields(settings, false, group.keys)}</div>
+        <div class="service-test-detail"></div>`;
+      if (!group.required) return `<details class="settings-service settings-service-optional" data-service="${group.id}">
+        <summary><span>${esc(group.title)} <small>Optional</small></span>${status}</summary>${fields}</details>`;
+      return `<section class="settings-service" data-service="${group.id}">
+        <div class="settings-service-head"><h3>${esc(group.title)}</h3>${status}</div>${fields}</section>`;
+    }).join("");
   }
 
   function collectSettings(form) {
@@ -2085,8 +2083,7 @@
     try { configData = await api("/api/admin/settings"); }
     catch (error) { adminError(error, preserve); return; }
     const content = `<form class="admin-settings" id="admin-settings">
-      <div class="settings-toolbar"><div class="settings-secret-note"><span aria-hidden="true">●</span> Saved secrets stay hidden and encrypted</div>
-        <button class="btn" id="refresh-lib" type="button">↻ Refresh Plex library</button></div>
+      <div class="settings-toolbar"><button class="btn" id="refresh-lib" type="button">↻ Refresh Plex library</button></div>
       <div class="settings-services">${adminSettingsGroups(configData.settings)}</div>
       <div class="settings-footer"><div class="settings-message" id="settings-message" aria-live="polite">No unsaved changes</div>
         <div class="settings-buttons"><button class="btn" id="test-settings" type="button">Test connections</button><button class="btn btn-primary" type="submit">Validate and save</button></div></div>
@@ -2112,7 +2109,7 @@
       const labels = { ok: id === "app_url" ? "Valid" : "Connected", error: "Needs attention", skipped: "Not configured", testing: "Testing…", idle: "Not tested" };
       stateEl.className = `service-state ${status}`;
       stateEl.textContent = labels[status] || "Not tested";
-      service.querySelector(".service-test-detail").textContent = detail || "Test this form to verify the current values.";
+      service.querySelector(".service-test-detail").textContent = detail || "";
     };
     $("#test-settings").onclick = async (event) => {
       showSettingsErrors(settingsForm);
@@ -2131,7 +2128,7 @@
           result.ok ? "success" : "error",
         );
       } catch (error) {
-        SETTING_GROUPS.forEach(group => setConnectionState(group.id, "idle"));
+        SETTING_GROUPS.forEach(group => setConnectionState(group.id, "idle", ""));
         setSettingsMessage(error.message, "error");
       } finally {
         button.disabled = false; button.textContent = "Test connections";
@@ -2139,7 +2136,7 @@
     };
     settingsForm.addEventListener("input", (event) => {
       const service = event.target.closest(".settings-service");
-      if (service) setConnectionState(service.dataset.service, "idle", "Changed since the last test.");
+      if (service) setConnectionState(service.dataset.service, "idle", "");
       setSettingsMessage("Unsaved changes", "changed");
     });
     settingsForm.onsubmit = async (event) => {
