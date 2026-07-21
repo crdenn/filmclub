@@ -1,5 +1,6 @@
 """FastAPI application: routes, auth flow, static SPA, startup tasks."""
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -10,8 +11,8 @@ from datetime import date
 import httpx
 from fastapi import (Cookie, Depends, FastAPI, File, Form, HTTPException, Query,
                      Request, UploadFile)
-from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
-                               RedirectResponse, StreamingResponse)
+from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature
 from itsdangerous.url_safe import URLSafeTimedSerializer
@@ -1309,10 +1310,35 @@ async def api_admin_diagnostics(admin=Depends(auth.require_admin)):
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+_ASSET_RE = re.compile(r'(/static/(?:app\.js|styles\.css))\?v=[^"\']*')
+
+
+def _asset_version() -> str:
+    """Content hash of the SPA bundle, used to bust browser caches.
+
+    index.html carries `?v=` markers on its script/stylesheet. Those used to be
+    bumped by hand, which is easy to forget — a deploy would then ship new code
+    that returning browsers never fetched. Deriving the value from the files
+    themselves makes a stale cache impossible.
+    """
+    digest = hashlib.sha256()
+    for name in ("app.js", "styles.css"):
+        try:
+            digest.update((STATIC_DIR / name).read_bytes())
+        except OSError:  # missing asset: fall back to the literal markup
+            return ""
+    return digest.hexdigest()[:12]
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    version = _asset_version()
+    if version:
+        html = _ASSET_RE.sub(rf"\1?v={version}", html)
+    # The shell itself must never be cached, or the browser keeps resolving the
+    # old asset URLs and the hash above can never take effect.
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/healthz")

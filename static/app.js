@@ -812,6 +812,7 @@
     const date = m.watched_at ? fmtDate(m.watched_at) : "";
     const facts = [
       m.year || "",
+      m.content_rating ? `Rated ${esc(m.content_rating)}` : "",
       m.director ? esc(m.director) : "",
       m.language ? esc(m.language) : "",
       fmtRuntime(m.runtime),
