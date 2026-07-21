@@ -19,6 +19,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Main files:** `app/auth.py`, `app/db.py`, `app/colors.py`, `app/schema.sql`.
 - **Status:** Implemented.
 - **Dependencies:** Successful Plex identity lookup.
+- **Behavior:** Member colors are allocated from a dark-theme palette without reusing a color already held by another member. Startup repairs legacy duplicate or blank assignments while preserving every already-unique color.
 - **Limitations:** Members are authorized through server access rather than an explicit club roster. Plex thumbnails are stored but intentionally not displayed.
 - **Follow-up:** Clarify whether an explicit membership approval layer will ever be needed for public distribution.
 

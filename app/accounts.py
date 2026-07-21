@@ -11,7 +11,7 @@ import re
 import secrets
 
 from . import db
-from .colors import color_for
+from .colors import available_color
 from .passwords import hash_password, verify_password
 from .token_crypto import encrypt_plex_token
 
@@ -135,7 +135,7 @@ def redeem_invite(code: str, username: str, password: str) -> int:
         plex_id = "local:" + secrets.token_hex(16)
         cur = conn.execute(
             "INSERT INTO members (plex_id, username, color) VALUES (?, ?, ?)",
-            (plex_id, uid, color_for(plex_id)),
+            (plex_id, uid, available_color(conn, plex_id)),
         )
         member_id = cur.lastrowid
         conn.execute(
@@ -179,7 +179,7 @@ def create_first_owner(username: str, password: str) -> int:
         cur = conn.execute(
             "INSERT INTO members (plex_id, username, color, is_admin, is_owner) "
             "VALUES (?, ?, ?, 1, 1)",
-            (plex_id, uid, color_for(plex_id)),
+            (plex_id, uid, available_color(conn, plex_id)),
         )
         member_id = cur.lastrowid
         conn.execute(

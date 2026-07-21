@@ -14,7 +14,7 @@ import sqlite3
 from fastapi import Cookie, Depends, HTTPException
 
 from . import config, db, settings
-from .colors import color_for
+from .colors import available_color
 from .token_crypto import decrypt_plex_token, encrypt_plex_token
 
 log = logging.getLogger("filmclub.auth")
@@ -150,7 +150,7 @@ def upsert_member(plex_id: str, username: str, email: str | None, thumb: str | N
                     email, thumb, color, is_admin, is_owner)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (plex_id, plex_account_id, encrypted_token, username, email,
-                 thumb, color_for(plex_id), 1 if owner else force_admin or 0,
+                 thumb, available_color(conn, plex_id), 1 if owner else force_admin or 0,
                  1 if owner else 0),
             )
             member_id = cur.lastrowid

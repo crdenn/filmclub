@@ -145,7 +145,7 @@
     const initials = (member.username || "?").slice(0, 2).toUpperCase();
     // Always render the coloured-initials style (ignore Plex thumbs) so every
     // avatar looks the same — placeholder and real accounts alike.
-    const style = `background:${member.color};border-color:${member.color}`;
+    const style = `background:${member.color}`;
     return `<span class="avatar ${cls}" style="${style}" title="${esc(member.username)}">${esc(initials)}</span>`;
   }
 
@@ -1202,7 +1202,7 @@
     const chunk = (ids, klass) => ids.map(id => {
       const mem = byId[id];
       const init = mem ? mem.username.slice(0, 2).toUpperCase() : "?";
-      const style = klass === "unknown" ? "" : `background:${mem ? mem.color : "#555"};border-color:${mem ? mem.color : "#555"}`;
+      const style = `background:${mem ? mem.color : "#555"}`;
       const av = `<span class="avatar ${klass}" style="${style}" title="${esc(mem ? mem.username : "?")} — ${klass}">${klass === "unknown" ? "?" : esc(init)}</span>`;
       return mem ? `<a class="member-link cov-member" href="#/member/${mem.id}" aria-label="View ${esc(mem.username)}'s profile">${av}</a>` : av;
     }).join("");
@@ -1501,7 +1501,7 @@
       <div class="rating-group-label">${label}</div>
       <div class="coverage-people">${ids.map(id => {
         const mem = coverageMemberIndex[id] || (m.members || []).find(x => x.id === id);
-        const style = klass === "unknown" ? "" : `background:${mem ? mem.color : "#555"};border-color:${mem ? mem.color : "#555"}`;
+        const style = `background:${mem ? mem.color : "#555"}`;
         const av = `<span class="avatar sm ${klass}" style="${style}">${klass === "unknown" ? "?" : esc((mem ? mem.username : "?").slice(0, 2).toUpperCase())}</span>`;
         return mem
           ? `<a class="coverage-person" href="#/member/${mem.id}">${av}<span>${esc(mem.username)}</span></a>`

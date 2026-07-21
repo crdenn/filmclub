@@ -179,7 +179,7 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 1.4rem 1.1rem 4rem; }
   width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
   display: inline-grid; place-items: center; font-size: .72rem; font-weight: 700;
   color: #0c0c0f; background: var(--text-faint); overflow: hidden;
-  border: 1.5px solid transparent; object-fit: cover;
+  border: 0; object-fit: cover;
 }
 .avatar.sm { width: 20px; height: 20px; font-size: .62rem; }
 .avatar.lg { width: 34px; height: 34px; font-size: .85rem; }
@@ -317,9 +317,9 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .cov-avatars { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; }
 .cov-member { display: inline-flex; border-radius: 50%; }
 .cov-avatars .avatar { width: 22px; height: 22px; font-size: .6rem; }
-.cov-avatars .avatar.unseen { box-shadow: 0 0 0 2px var(--good); }
-.cov-avatars .avatar.seen { opacity: .38; }
-.cov-avatars .avatar.unknown { opacity: .55; border: 1.5px dashed var(--text-faint); background: transparent; color: var(--text-faint); }
+.avatar.unseen { box-shadow: none; }
+.avatar.seen { opacity: .58; filter: brightness(.62); }
+.avatar.unknown { opacity: .5; filter: brightness(.58); color: #0c0c0f; }
 .elig-tag { font-size: .7rem; font-weight: 700; padding: .12rem .4rem; border-radius: 5px; letter-spacing: .02em; text-transform: uppercase; }
 .elig-eligible { color: var(--good); background: rgba(76,195,138,.12); }
 .elig-ineligible { color: var(--bad); background: rgba(229,72,77,.12); }

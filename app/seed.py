@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, timedelta
 
 from . import db
-from .colors import color_for
+from .colors import available_color
 
 random.seed(1729)
 
@@ -90,7 +90,8 @@ def seed(force: bool = False):
             cur = conn.execute(
                 "INSERT INTO members (plex_id, username, email, thumb, color) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (plex_id, name, f"{name.lower()}@example.com", None, color_for(plex_id)),
+                (plex_id, name, f"{name.lower()}@example.com", None,
+                 available_color(conn, plex_id)),
             )
             member_ids.append(cur.lastrowid)
         conn.commit()

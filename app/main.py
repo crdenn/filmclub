@@ -18,8 +18,8 @@ from itsdangerous.url_safe import URLSafeTimedSerializer
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from . import (accounts, auth, backups, config, db, events, logsafe, migrations,
-               plex, plex_ratings, seerr, service, stats, tmdb)
+from . import (accounts, auth, backups, colors, config, db, events, logsafe,
+               migrations, plex, plex_ratings, seerr, service, stats, tmdb)
 from . import settings as app_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -135,6 +135,14 @@ async def _backfill_movie_languages() -> None:
 @app.on_event("startup")
 async def _startup() -> None:
     db.init_db()
+    conn = db.connect()
+    try:
+        recolored = colors.reconcile_member_colors(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    if recolored:
+        log.info("Reassigned %d duplicate member colour(s)", recolored)
     app_settings.load_into_config()
     auth.purge_expired_sessions()
     # Preserve the zero-touch upgrade path for already Plex-configured installs.
