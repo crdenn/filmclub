@@ -1312,7 +1312,7 @@
       { key: "seen", label: "Seen", sort: "unseen", dir: "desc", cls: "lr-seen",
         width: "104px", render: m => coverageMeter(m.coverage) },
       { key: "keen", label: "Keen", sort: "seconds", dir: "desc", cls: "lr-keen",
-        width: "116px", nav: false, render: m => keenStack(m) },
+        width: "136px", nav: false, render: m => keenStack(m) },
       { key: "you", label: "You", cls: "lr-answer", width: "176px", nav: false,
         render: m => seenControl(m.id, myCovState(m.coverage)) },
     ],
@@ -1543,8 +1543,10 @@
   }
 
   // Show at most this many faces before collapsing the rest into a "+N" chip, so
-  // the column stays a fixed width whether the club is 6 people or 60.
-  const KEEN_MAX_FACES = 3;
+  // the column stays a fixed width whether the club is 6 people or 60. Five fits
+  // a typical club without overflowing at all; the column is sized for five
+  // faces PLUS a "+N" and the add button, which is the widest this can get.
+  const KEEN_MAX_FACES = 5;
 
   // Who else would watch this, as faces rather than a bare tally — in a club the
   // useful fact is *who* is keen, not how many. Your own control sits at the end

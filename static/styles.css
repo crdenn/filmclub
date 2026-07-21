@@ -830,6 +830,9 @@ select:focus-visible { outline: none; border-color: var(--accent); }
    that row's own columns sideways. */
 .lr-answer .seen-seg { width: auto; min-width: 172px; justify-content: flex-end; }
 .lr-answer .seg { min-width: 82px; height: 30px; }
+/* Its content is right-anchored, so the header has to be too — otherwise the
+   label floats over the empty left half of the cell. */
+.list-head .lr-answer { text-align: right; }
 
 /* Narrow desktops: shed the least decision-relevant columns rather than let the
    title collapse. The track template is swapped too — hiding a cell alone would
