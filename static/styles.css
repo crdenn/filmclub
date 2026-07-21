@@ -227,6 +227,10 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .filterbar-toggle.has-active { border-color: var(--warn); color: var(--text); }
 .filterbar-toggle.has-active::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 .filterbar-body { display: flex; gap: .55rem; align-items: center; flex-wrap: wrap; }
+/* On desktop the selects state their own meaning ("Most seconded", "All
+   suggesters"), so the "Sort"/"By" prefixes are noise. The mobile filter panel
+   re-shows them, where labelled rows do earn their space. */
+.filterbar-body .ctl-label { display: none; }
 
 /* active-filter chips */
 .active-filters { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: 0 0 1rem; }
@@ -253,12 +257,10 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .poster-wrap:hover { transform: translateY(-2px); }
 .poster-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .poster-fallback {
-  position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end;
-  padding: .7rem; font-size: .82rem; color: var(--text-dim);
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: linear-gradient(160deg, #232330, #16161d);
 }
-.poster-fallback .pf-title { color: var(--text); font-weight: 600; font-size: .95rem; }
-.card[data-cov-mode="backlog"] .poster-fallback span:not(.pf-title) { display: none; }
+.poster-fallback .pf-glyph { font-size: 1.7rem; opacity: .3; filter: grayscale(1); }
 .badges { position: absolute; z-index: 2; top: .5rem; left: .5rem; right: .5rem; display: flex; justify-content: space-between; gap: .3rem; pointer-events: none; }
 .badge {
   font-size: .68rem; font-weight: 600; padding: .2rem .45rem; border-radius: 6px;
@@ -298,12 +300,10 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .backlog-card-meta .card-meta { flex: 1 1 auto; }
 .backlog-card-meta .cov-summary { flex: 0 0 auto; }
 .backlog-card-meta .cov-sum { min-height: 20px; font-size: .76rem; }
-.film-metadata { min-height: 20px; color: var(--text-faint); font-size: .75rem; display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
 .rt-scores { display: inline-flex; align-items: center; gap: .45rem; font-variant-numeric: tabular-nums; }
 .rt-score { display: inline-flex; align-items: center; gap: .16rem; white-space: nowrap; color: var(--text-dim); }
 .rt-scores.hero, .rt-scores.detail-rt { margin: 0 0 .8rem; font-size: .84rem; }
 .rt-scores.hero .rt-score, .rt-scores.detail-rt .rt-score { padding: .2rem .5rem; border: 1px solid rgba(255,255,255,.1); border-radius: 999px; background: rgba(0,0,0,.22); color: var(--text); }
-.film-metadata .rt-scores { margin-left: auto; }
 .card-meta { font-size: .8rem; color: var(--text-dim); display: flex; align-items: center; gap: .4rem; min-width: 0; }
 .card-meta .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggester-person { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
@@ -385,8 +385,9 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .attn-seen { left: .5rem; }
 .attn-rate { right: .5rem; }
 /* Unmarked-by-you cue: quiet, semantic amber on the answer control itself
-   (not a poster-covering pill) so you know exactly what to do. */
-.card.needs-me .seen-seg .seg { border-color: rgba(229,161,58,.5); }
+   (not a poster-covering pill) so you know exactly what to do. Kept faint so a
+   grid of unanswered cards reads as a gentle prompt, not a wall of warnings. */
+.card.needs-me .seen-seg .seg { border-color: rgba(229,161,58,.3); }
 .list-row.needs-me { border-left: 3px solid var(--warn); }
 .seen-seg .seg {
   flex: 1 1 0; min-width: 0; height: 34px; padding: 0 .5rem;
@@ -395,10 +396,10 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
   cursor: pointer; transition: background .1s, color .1s, border-color .1s;
 }
 .seen-seg .seg:hover { color: var(--text); border-color: var(--text-faint); }
-/* active state gets colour-filled; the inactive one stays muted */
-.seen-seg[data-state="seen"] .seg[data-set="seen"] {
-  background: rgba(76,195,138,.16); border-color: var(--good); color: var(--good);
-}
+/* Your answer gets colour-filled; the inactive one stays muted. Both answers use
+   the same accent: "seen" and "not seen" are two sides of one question, not a
+   good/bad pair, so giving them different hues only added noise to the grid. */
+.seen-seg[data-state="seen"] .seg[data-set="seen"],
 .seen-seg[data-state="notseen"] .seg[data-set="notseen"] {
   background: rgba(91,141,239,.16); border-color: var(--accent); color: var(--accent);
 }
@@ -442,9 +443,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
   background: linear-gradient(150deg, #21212a, #14141a);
 }
 .lr-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.lr-poster .poster-fallback { padding: .3rem; }
-.lr-poster .poster-fallback .pf-title { font-size: .6rem; line-height: 1.15; }
-.lr-poster .poster-fallback span:not(.pf-title) { font-size: .55rem; }
+.lr-poster .poster-fallback .pf-glyph { font-size: 1rem; }
 .lr-poster .status-icon { top: 3px; right: 3px; width: 15px; height: 15px; border-width: 1px; }
 .lr-poster .status-icon svg { width: 9px; height: 9px; }
 
@@ -874,6 +873,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
   }
   .filterbar-body.open label { display: flex; justify-content: space-between; gap: .6rem; align-items: center; }
   .filterbar-body.open label select { flex: 0 1 62%; }
+  .filterbar-body.open .ctl-label { display: inline; }
   .filterbar-body.open .view-toggle { align-self: flex-start; }
   .add-full { display: none; }
   .add-short { display: inline; }

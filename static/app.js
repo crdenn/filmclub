@@ -168,7 +168,10 @@
 
   function posterEl(m, cls = "") {
     if (m.poster_url) return `<img src="${esc(m.poster_url)}" alt="${esc(m.title)}" loading="lazy" class="${cls}">`;
-    return `<div class="poster-fallback"><span class="pf-title">${esc(m.title)}</span><span>${m.year || ""}</span></div>`;
+    // The title always sits directly beside or below the poster, so repeating it
+    // inside the placeholder just doubled it up. A quiet glyph reads cleaner;
+    // the accessible name keeps the film identifiable to screen readers.
+    return `<div class="poster-fallback" role="img" aria-label="${esc(m.title)}"><span class="pf-glyph" aria-hidden="true">🎞</span></div>`;
   }
 
   function fmtRuntime(mins) {
@@ -185,12 +188,6 @@
     const audience = rt.audience != null
       ? `<span class="rt-score rt-audience" title="Rotten Tomatoes audience">🍿 ${rt.audience}%</span>` : "";
     return critic || audience ? `<span class="rt-scores ${extra}">${critic}${audience}</span>` : "";
-  }
-
-  function cardFilmMetadata(m) {
-    const language = m.language ? `<span>${esc(m.language)}</span>` : "";
-    const rt = rottenTomatoes(m, "compact");
-    return `<div class="film-metadata">${language}${rt}</div>`;
   }
 
   function fmtDate(s) {
@@ -969,8 +966,8 @@
             <button type="button" class="filterbar-toggle btn ${backlogState.suggester != null ? "has-active" : ""}" id="filter-toggle" aria-expanded="false" aria-controls="filter-panel">${ICON_FILTER}<span>Filters</span></button>
             <div class="filterbar-body" id="filter-panel">
               ${viewToggle()}
-              <label>Sort <select id="sort-sel">${sortOpts}</select></label>
-              <label>By <select id="suggester-sel">${backlogSuggesterOptions()}</select></label>
+              <label><span class="ctl-label">Sort</span> <select id="sort-sel" aria-label="Sort films">${sortOpts}</select></label>
+              <label><span class="ctl-label">By</span> <select id="suggester-sel" aria-label="Filter by suggester">${backlogSuggesterOptions()}</select></label>
             </div>
           </div>
           <button class="btn btn-primary" id="add-btn"><span class="add-full">+ Add suggestion</span><span class="add-short">+ Add</span></button>
@@ -1312,7 +1309,6 @@
       </div>
       <div class="accent-bar" style="background:${m.suggester ? m.suggester.color : "var(--line)"}"></div>
       <div class="card-title">${esc(m.title)} <span class="yr">${m.year || ""}</span></div>
-      ${cardFilmMetadata(m)}
       <div class="card-meta">${suggesterLink(m.suggester)}
         <span class="rated-count">${m.rating_count}/${m.total_members} rated</span>
       </div>
@@ -1331,7 +1327,6 @@
       <div class="lr-content">
         <div class="lr-body">
           <div class="lr-title">${esc(m.title)} <span class="yr">${m.year || ""}</span></div>
-          ${cardFilmMetadata(m)}
           <div class="lr-meta">${suggesterLink(m.suggester)}<span class="rated-count">${m.rating_count}/${m.total_members} rated</span></div>
         </div>
         <div class="lr-trailing">${club}${mine}</div>
@@ -1349,12 +1344,11 @@
     const isWatched = m.status === "watched";
     const isScheduled = m.status === "scheduled";
     const canRate = isScheduled || isWatched;
-    const dateLabel = isWatched ? "Watched" : isScheduled ? "Discussing" : "Suggested";
-    const dateVal = isWatched ? (m.watched_at || "").slice(0, 10)
-      : isScheduled ? fmtDate(m.watched_at)
-      : (m.suggested_at || "").slice(0, 10);
+    const dateLabel = isWatched ? "Discussed" : isScheduled ? "Discussing" : "";
+    const dateVal = (isWatched || isScheduled) ? fmtDate(m.watched_at) : "";
     const facts = [
       m.year || "",
+      m.content_rating ? `Rated ${esc(m.content_rating)}` : "",
       m.director ? esc(m.director) : "",
       m.language ? esc(m.language) : "",
       fmtRuntime(m.runtime),
