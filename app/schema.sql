@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS members (
     color        TEXT NOT NULL,      -- deterministic hex, derived from plex_id
     is_admin     INTEGER NOT NULL DEFAULT 0,  -- can access the admin panel
     is_owner     INTEGER NOT NULL DEFAULT 0,  -- first setup owner; cannot be demoted
+    theme        TEXT NOT NULL DEFAULT 'system', -- 'system' | 'dark' | 'light'
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

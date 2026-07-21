@@ -101,10 +101,21 @@ Keep route-specific HTTP validation and authorization in `main.py`; keep reusabl
 - Escape untrusted strings with `esc()` before inserting them into template strings.
 - Use the shared `api()` wrapper so JSON handling, client IDs, and 401 behavior remain consistent.
 - Mutating requests carry `X-Client-Id`; the SSE stream uses it to suppress a client's own echo.
-- Preserve the dark, poster-forward design, CSS custom properties, responsive breakpoints, and grid/list preference stored in `localStorage`.
+- Preserve the poster-forward design, responsive breakpoints, and grid/list preference stored in `localStorage`.
+- The app ships dark and light themes. **Never write a colour literal outside the
+  `THEME:BEGIN`/`THEME:END` block in `static/styles.css`** — every rule must use a token, or a
+  `color-mix()` against one, so a theme stays a flat list of variable overrides. The same applies
+  to `static/app.js`: colours there come from `var(--token)` or the server-assigned member colour.
+  Use the `-text` variants (`--accent-text` etc.) when a hue is text on the page rather than a fill,
+  and the `--on-*` tokens for ink on a saturated chip. Verify with the audit commands below.
+- Visual mode is per member: `members.theme` (`system`/`dark`/`light`), exposed on the current-user
+  payload via `auth.with_connection_status()` and mirrored to `localStorage` only so the inline
+  `<head>` script can paint before first render. It is deliberately absent from `db.member_public()`,
+  which also serves other members' public payloads.
 - Use existing UI primitives for avatars, posters, buttons, eligibility labels, toasts, skeletons, and cards.
 - Member avatars intentionally use deterministic colored initials rather than Plex thumbnails.
-- Update the query-string version in `static/index.html` when changing `static/app.js` or `static/styles.css` if cache invalidation is needed.
+- Asset cache-busting is automatic: the index route rewrites the `?v=` markers in
+  `static/index.html` from a content hash and serves the shell `no-cache`. Do not hand-bump them.
 - Eligibility copy must not represent unknown members as unseen.
 - Statistics UI must continue to disclose low confidence and suppression rather than presenting thin samples as reliable.
 
@@ -158,6 +169,22 @@ Available non-mutating syntax checks:
 PYTHONDONTWRITEBYTECODE=1 ./.venv/bin/python -c \
   "import ast,pathlib; [ast.parse(p.read_text(), filename=str(p)) for p in pathlib.Path('app').glob('*.py')]"
 node --check static/app.js
+
+# Theme audits — both must print nothing. A hit means a colour escaped the token
+# system and will not follow the active theme. (The sed strips `white-space`,
+# which would otherwise match on `white`.)
+awk '/THEME:BEGIN/{s=1} !s{printf "%d:%s\n", NR, $0} /THEME:END/{s=0}' static/styles.css \
+  | sed 's/white-space//g' \
+  | grep -E '#[0-9a-fA-F]{3,8}\b|rgba?\(|\bwhite\b|\bblack\b|brightness\('
+grep -nE '#[0-9a-fA-F]{3,8}\b|rgba?\(' static/app.js | grep -vE '\$\("#|querySelector'
+```
+
+A typo'd token (`var(--acccent-soft)`) fails silently in CSS. To catch one, load the
+app and run this in the console — it should return an empty array:
+
+```js
+[...new Set([...document.styleSheets].flatMap(s=>[...s.cssRules]).map(r=>r.cssText).join('').match(/var\(--[\w-]+/g))]
+  .map(t=>t.slice(4)).filter(t=>!getComputedStyle(document.documentElement).getPropertyValue(t).trim())
 ```
 
 Focused automated tests:

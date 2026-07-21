@@ -225,7 +225,7 @@ def with_connection_status(member: dict) -> dict:
     try:
         row = db.query_one(
             conn,
-            "SELECT plex_token_encrypted, plex_rating_sync_enabled "
+            "SELECT plex_token_encrypted, plex_rating_sync_enabled, theme "
             "FROM members WHERE id = ?",
             (member["id"],),
         )
@@ -242,6 +242,9 @@ def with_connection_status(member: dict) -> dict:
     result["plex_rating_sync_enabled"] = bool(
         row and row["plex_rating_sync_enabled"]
     )
+    # A private preference: it rides on the current-user payload only, never on
+    # db.member_public(), which also serves other members' public profiles.
+    result["theme"] = (row["theme"] if row and row["theme"] else "system")
     result["identity_providers"] = sorted(providers)
     result["plex_available"] = bool(
         config.PLEX_URL and config.PLEX_TOKEN and config.PLEX_MACHINE_ID

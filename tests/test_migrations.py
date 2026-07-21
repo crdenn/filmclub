@@ -76,11 +76,13 @@ class MigrationRunnerTests(unittest.TestCase):
         self.assertEqual(rows, [(1, "baseline"), (2, "app-settings"),
                                 (3, "sessions"), (4, "identities"),
                                 (5, "password-resets"),
-                                (6, "movie-content-rating")])
+                                (6, "movie-content-rating"),
+                                (7, "member-theme")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
         self.assertIn("provider_uid", _columns(self.db_path, "identities"))
         self.assertIn("token_hash", _columns(self.db_path, "password_resets"))
+        self.assertIn("theme", _columns(self.db_path, "members"))
 
     def test_upgrades_old_shaped_db_and_preserves_data(self):
         self._make_old_shaped_db()

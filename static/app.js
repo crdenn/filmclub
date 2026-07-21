@@ -155,7 +155,7 @@
     const gid = `g_${Math.random().toString(36).slice(2, 8)}`;
     return `<svg viewBox="0 0 24 24"><defs><linearGradient id="${gid}">`
       + `<stop offset="${pct}%" stop-color="var(--star)"/>`
-      + `<stop offset="${pct}%" stop-color="#3a3a44"/></linearGradient></defs>`
+      + `<stop offset="${pct}%" stop-color="var(--star-empty)"/></linearGradient></defs>`
       + `<path fill="url(#${gid})" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>`;
   }
 
@@ -229,6 +229,7 @@
           <span class="me-caret">▾</span>
         </button>
         <div class="me-menu" id="me-menu" hidden>
+          ${themeToggle("me-menu-theme")}
           <a class="me-menu-item" href="#/profile" id="menu-profile">Profile</a>
           <button class="me-menu-item" id="logout-btn">Sign out</button>
         </div>
@@ -274,6 +275,86 @@
       if (b.dataset.view !== viewMode) { setViewMode(b.dataset.view); rerender(); }
     });
   }
+
+  // ---------- visual mode (dark / light / auto) ----------
+  // The account is the source of truth so the choice follows you between
+  // devices; localStorage is only a mirror, so the inline <head> script has
+  // something to paint from before /api/me resolves. `data-theme` on <html>
+  // always holds a RESOLVED value — "system" lives in the preference alone.
+  const THEME_KEY = "fc_theme";
+  const THEME_ICONS = {
+    system: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 20.5h8"/></svg>`,
+    light: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>`,
+    dark: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.5 8.5 0 1 0 10.2 10.2z"/></svg>`,
+  };
+  const THEME_LABELS = { system: "Auto", light: "Light", dark: "Dark" };
+  const themeQuery = window.matchMedia("(prefers-color-scheme: light)");
+  let themePref = readStoredTheme();
+
+  function readStoredTheme() {
+    // Normalised on the way in: never trust storage to hold a valid value.
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return v === "dark" || v === "light" ? v : "system";
+    } catch (e) { return "system"; }
+  }
+  function resolvedTheme() {
+    return themePref === "system" ? (themeQuery.matches ? "light" : "dark") : themePref;
+  }
+  function applyTheme() {
+    const resolved = resolvedTheme();
+    document.documentElement.setAttribute("data-theme", resolved);
+    // Read the real token rather than a copy, so the browser chrome colour can
+    // never drift from the stylesheet the way the old hardcoded value did.
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta && bg) meta.setAttribute("content", bg);
+    // Both switchers (app bar + profile) reflect the same state.
+    document.querySelectorAll(".theme-btn").forEach(b => {
+      const on = b.dataset.theme === themePref;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+  }
+  function setThemePref(pref, { persist = true } = {}) {
+    themePref = ["system", "dark", "light"].includes(pref) ? pref : "system";
+    applyTheme();
+    try { localStorage.setItem(THEME_KEY, themePref); } catch (e) {}
+    if (!persist || !state.me) return;
+    // Durable record. A failure must not revert the UI under the user — they
+    // asked for this theme and it is already applied and mirrored locally.
+    api("/api/me/theme", { method: "PATCH", body: { theme: themePref } })
+      .then(me => { state.me = me; })
+      .catch(() => toast("Theme saved on this device only", true));
+  }
+  // Auto must keep tracking the OS after load. The listener is attached once and
+  // simply does nothing unless the preference is actually "system".
+  themeQuery.addEventListener("change", () => { if (themePref === "system") applyTheme(); });
+  // Keep other open tabs in step.
+  window.addEventListener("storage", (e) => {
+    if (e.key !== THEME_KEY) return;
+    themePref = readStoredTheme();
+    applyTheme();
+  });
+
+  // Delegated once at the document, so both switchers keep working across the
+  // wholesale re-renders the SPA does, and changing theme never triggers one.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest(".theme-btn");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();   // keep the app-bar menu open while trying modes
+    if (btn.dataset.theme !== themePref) setThemePref(btn.dataset.theme);
+  });
+
+  function themeToggle(extraClass = "") {
+    return `<div class="theme-toggle ${extraClass}" role="group" aria-label="Visual mode">${
+      ["system", "light", "dark"].map(t =>
+        `<button type="button" class="theme-btn ${themePref === t ? "active" : ""}" data-theme="${t}"` +
+        ` aria-pressed="${themePref === t}" title="${THEME_LABELS[t]}">` +
+        `${THEME_ICONS[t]}<span>${THEME_LABELS[t]}</span></button>`).join("")}</div>`;
+  }
+
   // ---------- login ----------
   const SETTING_FIELDS = [
     ["APP_URL", "Film Club URL", "The exact address members open in their browser."],
@@ -590,6 +671,11 @@
       <div class="profile-grid">
         <section class="profile-section profile-settings">
           <div class="section-heading"><div><h2>Account settings</h2><p>Choose how your name appears to the club.</p></div></div>
+          <div class="profile-field">
+            <span class="profile-label">Appearance</span>
+            ${themeToggle("profile-theme")}
+            <span class="profile-hint">Auto follows your device's light or dark setting. Saved to your account.</span>
+          </div>
           <label class="profile-field">
             <span class="profile-label">Display name</span>
             <input type="text" id="display-name" class="search-input" maxlength="40"
@@ -810,7 +896,7 @@
     const date = m.watched_at ? fmtDate(m.watched_at) : "";
     const facts = [
       m.year || "",
-      m.content_rating ? `Rated ${esc(m.content_rating)}` : "",
+      m.content_rating ? esc(m.content_rating) : "",
       m.director ? esc(m.director) : "",
       m.language ? esc(m.language) : "",
       fmtRuntime(m.runtime),
@@ -1099,8 +1185,8 @@
   // requested from Seerr but not on the server yet. `m.library` is the live
   // membership signal and wins, so a requested film flips to the check as soon
   // as it lands on Plex — a stale 'requested' seerr_status can't override it.
-  const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4.2L19 7"/></svg>`;
-  const ICON_CLOCK = `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>`;
+  const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="var(--on-overlay)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4.2L19 7"/></svg>`;
+  const ICON_CLOCK = `<svg viewBox="0 0 24 24" fill="none" stroke="var(--on-overlay)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>`;
 
   function statusIcon(m) {
     const onServer = !!m.library || m.seerr_status === "available";
@@ -1198,7 +1284,7 @@
     const chunk = (ids, klass) => ids.map(id => {
       const mem = byId[id];
       const init = mem ? mem.username.slice(0, 2).toUpperCase() : "?";
-      const style = `background:${mem ? mem.color : "#555"}`;
+      const style = `background:${mem ? mem.color : "var(--text-faint)"}`;
       const av = `<span class="avatar ${klass}" style="${style}" title="${esc(mem ? mem.username : "?")} — ${klass}">${klass === "unknown" ? "?" : esc(init)}</span>`;
       return mem ? `<a class="member-link cov-member" href="#/member/${mem.id}" aria-label="View ${esc(mem.username)}'s profile">${av}</a>` : av;
     }).join("");
@@ -1348,7 +1434,7 @@
     const dateVal = (isWatched || isScheduled) ? fmtDate(m.watched_at) : "";
     const facts = [
       m.year || "",
-      m.content_rating ? `Rated ${esc(m.content_rating)}` : "",
+      m.content_rating ? esc(m.content_rating) : "",
       m.director ? esc(m.director) : "",
       m.language ? esc(m.language) : "",
       fmtRuntime(m.runtime),
@@ -1495,7 +1581,7 @@
       <div class="rating-group-label">${label}</div>
       <div class="coverage-people">${ids.map(id => {
         const mem = coverageMemberIndex[id] || (m.members || []).find(x => x.id === id);
-        const style = `background:${mem ? mem.color : "#555"}`;
+        const style = `background:${mem ? mem.color : "var(--text-faint)"}`;
         const av = `<span class="avatar sm ${klass}" style="${style}">${klass === "unknown" ? "?" : esc((mem ? mem.username : "?").slice(0, 2).toUpperCase())}</span>`;
         return mem
           ? `<a class="coverage-person" href="#/member/${mem.id}">${av}<span>${esc(mem.username)}</span></a>`
@@ -1647,7 +1733,7 @@
       if (movie.error) return `<div class="sr-preview-status error">${esc(movie.error)}</div>`;
       const facts = [
         movie.year || "",
-        movie.content_rating ? `Rated ${esc(movie.content_rating)}` : "",
+        movie.content_rating ? esc(movie.content_rating) : "",
         movie.director ? esc(movie.director) : "",
         movie.language ? esc(movie.language) : "",
         fmtRuntime(movie.runtime),
@@ -1840,10 +1926,12 @@
   }
 
   function matrixColor(r) {
-    // muted diverging: negative -> red, positive -> green
+    // Muted diverging scale: negative -> red, positive -> green. Mixing against
+    // the theme tokens rather than baked rgba keeps the heatmap legible on both
+    // a dark and a light background.
     if (r == null) return "var(--bg)";
-    const a = Math.min(0.7, Math.abs(r) * 0.7 + 0.08);
-    return r >= 0 ? `rgba(76,195,138,${a.toFixed(2)})` : `rgba(229,72,77,${a.toFixed(2)})`;
+    const pct = (Math.min(0.7, Math.abs(r) * 0.7 + 0.08) * 100).toFixed(1);
+    return `color-mix(in srgb, var(--${r >= 0 ? "good" : "bad"}) ${pct}%, transparent)`;
   }
 
   function matrixTable(s, memById) {
@@ -1933,19 +2021,21 @@
 
   // ================= ADMIN =================
   const ADMIN_SECTIONS = {
-    users: { label: "Users", description: "Manage accounts, permissions, password resets, and placeholder reconciliation." },
-    invites: { label: "Invites", description: "Create and review single-use invitations for local accounts." },
-    settings: { label: "Application settings", description: "Configure and test Film Club's external services and public address." },
-    backups: { label: "Backup & restore", description: "Download a portable backup or restore the complete application state." },
+    users: { label: "Users" },
+    invites: { label: "Invites" },
+    settings: { label: "Application settings" },
+    backups: { label: "Backup & restore" },
   };
 
-  function adminLayout(section, content, meta = "") {
+  // The main nav already says you're in Admin and the subnav says which section
+  // you're in, so a title block and blurb repeating both only pushed the actual
+  // controls down the page. The heading stays for assistive tech and the
+  // document outline, just not on screen.
+  function adminLayout(section, content) {
     const links = Object.entries(ADMIN_SECTIONS).map(([key, item]) =>
       `<a href="#/admin/${key}" class="admin-subnav-link ${section === key ? "active" : ""}" ${section === key ? 'aria-current="page"' : ""}>${esc(item.label)}</a>`).join("");
-    const current = ADMIN_SECTIONS[section];
-    return `<div class="page-head admin-page-head"><div><h1>Admin</h1><p>Manage your Film Club installation.</p></div>${meta ? `<span class="count">${meta}</span>` : ""}</div>
+    return `<h1 class="sr-only">Admin — ${esc(ADMIN_SECTIONS[section].label)}</h1>
       <nav class="admin-subnav" aria-label="Admin sections">${links}</nav>
-      <div class="admin-section-head"><h2>${esc(current.label)}</h2><p>${esc(current.description)}</p></div>
       <div class="admin-section">${content}</div>`;
   }
 
@@ -1972,7 +2062,7 @@
       const placeholders = members.filter(m => m.is_placeholder);
       const typeBadge = (m) => m.is_owner ? `<span class="elig-tag elig-eligible">Owner</span>`
         : m.is_placeholder ? `<span class="elig-tag elig-unconfirmed">Placeholder</span>`
-        : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:rgba(91,141,239,.12)">Admin</span>`
+        : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:var(--accent-soft)">Admin</span>`
         : `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Member</span>`;
       const realOptions = (selectedId) => reals.map(member =>
         `<option value="${member.id}" ${selectedId === member.id ? "selected" : ""}>${esc(member.username)}</option>`).join("");
@@ -2007,7 +2097,7 @@
           <div class="sub">Merge each temporary record after the real person signs in. Their suggestions, ratings, and seen states move to the account.</div>${table(placeholders, "")}</section>` : ""}
         <section class="admin-card"><h3>Accounts</h3>
           <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(reals, "No one has signed in yet.")}</section>`;
-      paintView("admin", adminLayout("users", content, `${reals.length} accounts · ${placeholders.length} placeholders`), preserve);
+      paintView("admin", adminLayout("users", content), preserve);
       app.querySelectorAll(".merge-btn").forEach(button => button.onclick = () => {
         const fromId = parseInt(button.dataset.from, 10);
         const select = app.querySelector(`.merge-target[data-from="${fromId}"]`);
@@ -2043,7 +2133,7 @@
           <label>Expires in <input class="search-input" name="ttl_hours" type="number" min="1" max="720" value="72"> hours</label>
           <button class="btn btn-primary" type="submit">Create invite</button>
         </form>${inviteTable}</section>`;
-      paintView("admin", adminLayout("invites", content, `${invites.length} total`), preserve);
+      paintView("admin", adminLayout("invites", content), preserve);
       app.querySelectorAll(".copy-invite").forEach(button => button.onclick = () =>
         copyText(state.inviteUrls[parseInt(button.dataset.id, 10)], "Invite link copied"));
       const inviteForm = $("#invite-create-form");
@@ -2361,6 +2451,10 @@
 
   // ---------- boot ----------
   (async function boot() {
+    // The <head> script already set data-theme from the mirror; re-apply here so
+    // the browser-chrome colour comes from the real --bg token rather than the
+    // small literal map that script has to carry.
+    applyTheme();
     try {
       const setup = await api("/api/setup/status");
       state.authOptions.plex_enabled = !!setup.plex_enabled;
@@ -2373,6 +2467,12 @@
     try {
       state.me = await api("/api/me");
     } catch { state.me = null; }
+    // The account is authoritative. If it disagrees with the local mirror the
+    // theme was changed on another device, so adopt it (and re-mirror) before
+    // rendering, which is also what puts the switchers in the right state.
+    if (state.me && state.me.theme && state.me.theme !== themePref) {
+      setThemePref(state.me.theme, { persist: false });
+    }
     render();
     if (state.me) { refreshTodo(); connectEvents(); }
   }

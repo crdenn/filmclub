@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from datetime import date
+from typing import Literal
 
 import httpx
 from fastapi import (Cookie, Depends, FastAPI, File, Form, HTTPException, Query,
@@ -210,6 +211,11 @@ class ProfileIn(BaseModel):
 
 class RatingSyncPreferenceIn(BaseModel):
     enabled: bool
+
+
+class ThemeIn(BaseModel):
+    # 'system' follows the operating system; the other two pin a mode.
+    theme: Literal["system", "dark", "light"]
 
 
 class VoteIn(BaseModel):
@@ -698,12 +704,20 @@ async def api_password_reset(body: PasswordResetIn):
 
 def _login_error(message: str) -> HTMLResponse:
     """Minimal standalone error page with a retry link."""
+    # Standalone: this page never loads styles.css, so it carries its own theme.
+    # It is shown before a session exists, so there is no stored preference to
+    # honour — following the operating system is the only correct signal here.
     html = f"""<!doctype html><html><head><meta charset="utf-8">
+    <meta name="color-scheme" content="dark light">
     <title>Film Club — sign in</title>
-    <style>body{{background:#0d0d10;color:#e8e8ea;font-family:system-ui,sans-serif;
+    <style>:root{{color-scheme:dark light;--bg:#0c0c0f;--fg:#e8e8ea;--link:#5b8def}}
+    @media (prefers-color-scheme: light){{
+      :root{{--bg:#f4f4f7;--fg:#17171c;--link:#2b58b4}}
+    }}
+    body{{background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;
     display:grid;place-items:center;height:100vh;margin:0}}
     .box{{max-width:26rem;text-align:center;padding:2rem}}
-    a{{color:#5b8def}}</style></head>
+    a{{color:var(--link)}}</style></head>
     <body><div class="box"><h1>Can't sign you in</h1>
     <p>{message}</p><p><a href="/auth/login">Try again</a></p></div></body></html>"""
     return HTMLResponse(html, status_code=403)
@@ -735,6 +749,18 @@ async def api_update_rating_sync(body: RatingSyncPreferenceIn,
     conn = db.connect()
     try:
         service.set_plex_rating_sync_enabled(conn, member["id"], body.enabled)
+        row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member["id"],))
+        return auth.with_connection_status(db.member_public(row))
+    finally:
+        conn.close()
+
+
+@app.patch("/api/me/theme")
+async def api_update_theme(body: ThemeIn, member=Depends(auth.current_member)):
+    """Persist this member's visual mode so it follows them to other devices."""
+    conn = db.connect()
+    try:
+        service.set_theme(conn, member["id"], body.theme)
         row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member["id"],))
         return auth.with_connection_status(db.member_public(row))
     finally:

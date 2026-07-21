@@ -144,6 +144,13 @@ def _m6_movie_content_rating(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "movies", "content_rating", "content_rating TEXT")
 
 
+def _m7_member_theme(conn: sqlite3.Connection) -> None:
+    # Per-member visual mode. 'system' follows the operating system preference,
+    # which is what an existing member should get until they choose otherwise.
+    _add_column_if_missing(conn, "members", "theme",
+                           "theme TEXT NOT NULL DEFAULT 'system'")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -152,6 +159,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (4, "identities", _m4_identities),
     (5, "password-resets", _m5_password_resets),
     (6, "movie-content-rating", _m6_movie_content_rating),
+    (7, "member-theme", _m7_member_theme),
 ]
 
 

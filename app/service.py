@@ -399,6 +399,20 @@ def set_display_name(conn: sqlite3.Connection, member_id: int, name: str | None)
                (cleaned, member_id))
 
 
+THEMES = ("system", "dark", "light")
+
+
+def set_theme(conn: sqlite3.Connection, member_id: int, theme: str) -> None:
+    """Set the member's visual mode.
+
+    Whitelisted here as well as in the request model so a value can never reach
+    the column from another call site.
+    """
+    if theme not in THEMES:
+        raise ValueError(f"Unknown theme: {theme!r}")
+    db.execute(conn, "UPDATE members SET theme = ? WHERE id = ?", (theme, member_id))
+
+
 def set_plex_rating_sync_enabled(conn: sqlite3.Connection, member_id: int,
                                  enabled: bool) -> None:
     """Set the member's opt-in state for future rating changes in both directions."""
