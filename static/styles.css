@@ -607,7 +607,8 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 /* Unmarked-by-you cue: quiet, semantic amber on the answer control itself
    (not a poster-covering pill) so you know exactly what to do. Kept faint so a
    grid of unanswered cards reads as a gentle prompt, not a wall of warnings. */
-.card.needs-me .seen-seg .seg { border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.card.needs-me .seen-seg .seg,
+.list-row.needs-me .seen-seg .seg { border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
 /* Inset rather than a real border, so the marker doesn't shift a flush row's
    content sideways relative to its neighbours. */
 .list-row.needs-me { box-shadow: inset 3px 0 0 var(--warn); }
@@ -688,73 +689,155 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .profile-theme { align-self: flex-start; }
 
 /* ---------- list view (backlog + watched) ---------- */
-/* One bordered table rather than a ladder of floating cards: hairline dividers
-   between flush rows scan far better down a long backlog, and drop ~14 borders
-   and 14 gaps' worth of vertical space. */
+/* On desktop this is a real table. The grid already wins at browsing (a poster
+   is the most recognisable thing about a film), so the list earns its place by
+   doing the one thing a grid can't: let you compare one attribute straight down
+   every film. Aligned, sortable columns are what fill the width honestly —
+   widening the old row layout would only have spread five facts over more space.
+   `--cols` is set inline per table from the JS column spec, so the header and
+   every row share one source of truth. */
 .list {
-  display: flex; flex-direction: column; width: 100%; max-width: 880px; margin-inline: auto;
-  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  width: 100%;
+  background: var(--bg-raise); border: 1px solid var(--line);
+  border-radius: 12px; overflow: hidden;
 }
+.list-head, .list-row {
+  display: grid; grid-template-columns: var(--cols);
+  align-items: center; gap: 1rem; padding: .4rem .9rem;
+}
+.list-head {
+  background: var(--bg-raise-2); border-bottom: 1px solid var(--line);
+  padding-block: .5rem;
+  font-size: .67rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+/* Header and data cells share a class per column, so the per-column type rules
+   below would otherwise leak up here and give some headers their own size and
+   shade. Restate the header's own type once, and let it win. */
+.list-head .lr-cell, .list-head .lr-sort {
+  font-size: .67rem; font-weight: 700; color: var(--text-faint);
+}
+.lr-sort {
+  display: inline-flex; align-items: center; gap: .3rem;
+  background: none; border: 0; padding: 0; margin: 0;
+  font-family: inherit; letter-spacing: inherit; text-transform: inherit;
+  cursor: pointer;
+}
+.list-head .lr-sort:hover, .list-head .lr-sort.active { color: var(--text); }
+.lr-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.lr-caret { width: 10px; height: 10px; flex: 0 0 auto; }
+.lr-sort[data-dir="desc"] .lr-caret { transform: rotate(180deg); }
+
 .list-row {
-  display: flex; flex-direction: row; align-items: center;
-  background: transparent; border: 0; border-radius: 0;
-  padding: .4rem .75rem; cursor: pointer;
+  background: transparent; border: 0; border-radius: 0; cursor: pointer;
   transition: background .12s ease;
 }
-/* Beats `.card[data-cov-mode="backlog"]`'s column gap on specificity. */
-.list > .list-row { gap: .85rem; }
 .list-row + .list-row { border-top: 1px solid var(--line); }
 .list-row:hover { background: var(--bg-raise-2); }
-/* The row navigates; the controls at its end do not. */
 .list-row:hover .lr-title { text-decoration: underline; text-underline-offset: 2px; }
-.lr-actions { cursor: default; }
+.lr-cell { min-width: 0; }
+/* Cells holding their own controls don't navigate, so they shouldn't claim to. */
+.lr-cell:not([data-nav]) { cursor: default; }
+
 .lr-poster {
-  position: relative; flex: 0 0 auto; width: 40px; aspect-ratio: 2/3;
+  position: relative; width: 40px; aspect-ratio: 2/3;
   border-radius: 5px; overflow: hidden;
   background: var(--grad-poster);
 }
+/* The poster column has no label, so its header cell must not inherit the
+   poster's own box or it renders as an empty placeholder plate. */
+.list-head .lr-poster { aspect-ratio: auto; background: none; }
 .lr-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .lr-poster .poster-fallback .pf-glyph { font-size: 1rem; }
 .lr-poster .status-icon { top: 3px; right: 3px; width: 15px; height: 15px; border-width: 1px; }
 .lr-poster .status-icon svg { width: 9px; height: 9px; }
 
-/* A fixed coverage column and a modest gap: letting the title track 1fr with a
-   2.5vw gap stranded the title and its tally ~700px apart on a wide screen,
-   with nothing to carry the eye across. */
-.lr-content { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) 210px auto; align-items: center; gap: 1.25rem; }
-.lr-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
-.lr-title { font-weight: 600; font-size: 1rem; line-height: 1.25; }
-.list-row[data-cov-mode="backlog"] .lr-title { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.lr-film { font-weight: 600; font-size: 1rem; line-height: 1.25; }
+.lr-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lr-title .yr { color: var(--text-faint); font-weight: 400; }
-.lr-meta { display: flex; align-items: center; gap: .45rem; font-size: .8rem; color: var(--text-dim); flex-wrap: wrap; }
-.lr-meta .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12ch; }
-.lr-cov { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .8rem; color: var(--text-dim); }
-.lr-cov .coverage-line b { color: var(--text); }
-/* Tally over faces: the fraction stays scannable, the faces say who "of 6" is. */
-.lr-secondary.lr-cov { align-items: flex-start; }
-.lr-cov .cov-sum { flex-direction: column; align-items: flex-start; gap: .2rem; min-height: 0; }
-.lr-cov .cov-avatars { gap: .15rem; flex-wrap: nowrap; }
-.lr-cov .cov-avatars .avatar { width: 18px; height: 18px; font-size: .5rem; }
-.lr-secondary { min-width: 0; display: flex; flex-direction: column; gap: .2rem; color: var(--text-dim); font-size: .8rem; }
+.lr-runtime, .lr-added, .lr-disc, .lr-rated-col {
+  font-size: .82rem; color: var(--text-dim); font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lr-dash { color: var(--text-faint); }
+.lr-sugg { font-size: .82rem; color: var(--text-dim); }
+.lr-sugg .suggester-person { min-width: 0; }
+.lr-sugg .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.lr-actions { flex: 0 0 auto; display: flex; align-items: center; gap: .5rem; }
-.lr-vote-slot { flex: 0 0 44px; width: 44px; display: inline-flex; justify-content: center; }
-/* Reserve the expanded chooser's width even while collapsed, so opening a row
-   doesn't shove that row's own coverage column sideways. */
-.lr-actions .seen-seg { width: auto; min-width: 172px; justify-content: flex-end; }
-.lr-actions .seg { min-width: 82px; height: 30px; }
+/* --- coverage meter: how much of the club still hasn't seen it ---
+   A bar compares far better down a column than a row of faces does, and it
+   answers the app's core question at a glance — a film is pickable while
+   somebody hasn't seen it, so "unseen" is the emphasised bucket. Bucket order
+   matches `coverageAvatars`: not-seen, unknown, seen. */
+.cov-cell { display: flex; flex-direction: column; gap: .28rem; }
+.cov-meter { display: flex; gap: 2px; height: 6px; width: 100%; max-width: 84px; }
+.cov-meter .cm-seg { flex: 1 1 0; min-width: 0; border-radius: 1px; }
+/* Past ~12 members one segment per person is an unreadable comb, so the JS
+   switches to a single proportional bar and these take over. */
+.cov-meter-cont { gap: 0; border-radius: 3px; overflow: hidden; }
+.cov-meter-cont .cm-fill { height: 100%; }
+.cm-unseen { background: var(--good); }
+.cm-unknown { background: var(--text-faint); }
+.cm-seen { background: color-mix(in srgb, var(--text-faint) 38%, transparent); }
+/* Everyone has seen it: not pickable, so stop it reading as available. */
+.cov-meter-full .cm-seg, .cov-meter-full .cm-fill {
+  background: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.cov-frac { font-size: .76rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.cov-frac b { color: var(--text); font-weight: 700; }
 
-.lr-trailing { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; text-align: right; }
-.lr-rating { display: inline-flex; align-items: center; gap: .35rem; }
-.lr-rating .stars svg { width: 14px; height: 14px; }
+/* --- keen: who else would watch this ---
+   Faces, not a tally: in a club the useful fact is *who* is in. Capped at three
+   with a "+N" overflow so the column keeps a fixed width however big the club
+   gets. The ring matches the row background so the overlap reads cleanly. */
+.keen { display: inline-flex; align-items: center; }
+.keen-face { display: inline-flex; }
+.keen-face + .keen-face, .keen-more { margin-left: -6px; }
+.keen .avatar.sm { width: 20px; height: 20px; font-size: .56rem; box-shadow: 0 0 0 2px var(--bg-raise); }
+.keen-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 4px; border-radius: 999px;
+  background: var(--bg-raise-2); color: var(--text-dim);
+  font-size: .6rem; font-weight: 700; box-shadow: 0 0 0 2px var(--bg-raise);
+}
+.list-row:hover .keen .avatar.sm, .list-row:hover .keen-more { box-shadow: 0 0 0 2px var(--bg-raise-2); }
+.keen-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; margin-left: .35rem; padding: 0;
+  border: 1px dashed var(--line); border-radius: 50%;
+  background: var(--bg-raise); color: var(--text-faint);
+  font: inherit; font-size: .82rem; font-weight: 700; line-height: 1; cursor: pointer;
+  transition: color .1s, border-color .1s, background .1s;
+}
+.keen-add:hover { color: var(--text); border-color: var(--text-faint); }
+.keen-add.in {
+  border-style: solid; border-color: var(--accent);
+  background: var(--accent-soft-strong); color: var(--accent-text);
+}
+.keen .keen-face + .keen-add { margin-left: .45rem; }
+
+/* --- watched trailing columns --- */
+.lr-rating { display: inline-flex; align-items: center; gap: .3rem; }
+.lr-rating .stars svg { width: 13px; height: 13px; }
 .lr-rating-num { color: var(--star); font-weight: 700; font-variant-numeric: tabular-nums; }
 .lr-unrated { color: var(--text-faint); font-size: .8rem; }
-.lr-rated { font-size: .74rem; }
-.lr-you { font-size: .8rem; color: var(--text-dim); display: inline-flex; align-items: center; gap: .25rem; }
+.lr-you { font-size: .82rem; color: var(--text-dim); display: inline-flex; align-items: center; gap: .25rem; }
 .lr-you .star-ico { color: var(--star); }
 .lr-you.lr-rate { color: var(--accent-text); font-weight: 600; }
 .rated-count { margin-left: auto; color: var(--text-faint); font-size: .78rem; white-space: nowrap; }
-.lr-meta .rated-count { margin-left: 0; }
+
+/* The answer control keeps its reserved width so expanding one row can't shove
+   that row's own columns sideways. */
+.lr-answer .seen-seg { width: auto; min-width: 172px; justify-content: flex-end; }
+.lr-answer .seg { min-width: 82px; height: 30px; }
+
+/* Narrow desktops: shed the least decision-relevant columns rather than let the
+   title collapse. The track template is swapped too — hiding a cell alone would
+   leave its track behind and misalign everything after it. */
+@media (max-width: 1100px) {
+  .list-head, .list-row { grid-template-columns: var(--cols-md); gap: .8rem; }
+  .lr-desk { display: none; }
+}
 
 /* ---------- empty / loading ---------- */
 .empty { text-align: center; color: var(--text-faint); padding: 4rem 1rem; }
@@ -1103,6 +1186,29 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
 /* ---------- responsive: tablet ---------- */
 @media (max-width: 900px) {
+  /* Below roughly this width a table can't hold its columns without either
+     overflowing or crushing the title, so the list becomes stacked rows again —
+     the layout that already works well on a phone. Placement here is explicit
+     rather than auto, so dropping the desktop-only cells can't shift anything. */
+  .list-head { display: none; }
+  .list-row {
+    grid-template-columns: 44px 1fr auto;
+    gap: .2rem .7rem; padding: .6rem .75rem;
+    align-items: center;
+  }
+  .lr-poster { grid-row: 1 / span 3; width: 44px; align-self: start; }
+  .lr-film { grid-column: 2 / -1; }
+  .lr-sugg { grid-column: 2 / -1; }
+  .lr-seen, .lr-club { grid-column: 2; }
+  .lr-keen, .lr-you-rating { grid-column: 3; justify-self: end; }
+  .lr-disc { grid-column: 2 / -1; }
+  .cov-cell { flex-direction: row; align-items: center; gap: .5rem; }
+  .cov-meter { width: 84px; }
+  /* Your answer gets the full width and splits the two buttons evenly. */
+  .lr-answer { grid-column: 1 / -1; margin-top: .45rem; }
+  .lr-answer .seen-seg { width: 100%; min-width: 0; justify-content: stretch; }
+  .lr-answer .seg { flex: 1 1 0; min-width: 0; }
+
   .detail-cols { grid-template-columns: 1fr; }
   .detail-body { grid-template-columns: 1fr; gap: 1.4rem; }
   .dp-col + .dp-col { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; padding-top: 1.4rem; }
@@ -1183,21 +1289,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .card-title { font-size: .9rem; }
   .grid .pv-card { width: 34px; height: 34px; }
   .grid .card-meta { flex-wrap: wrap; row-gap: .3rem; }
-
-  /* --- list view: stack the backlog seen-control below the body --- */
-  .list { max-width: none; }
-  .list > .list-row { gap: .7rem; }
-  .list-row { padding: .6rem .75rem; }
-  .list-row .lr-content { display: flex; flex-direction: column; align-items: stretch; gap: .55rem; }
-  .list-row .lr-secondary { flex-direction: row; flex-wrap: wrap; gap: .25rem .7rem; }
-  .list-row .lr-secondary.lr-cov .cov-sum { flex-direction: row; align-items: center; gap: .5rem; }
-  .lr-vote-slot:empty { display: none; }
-  /* No room to explain an empty seconding slot here; just omit it. */
-  .lr-vote-slot:has(.pv-none) { display: none; }
-  .list-row[data-cov-mode] { align-items: flex-start; }
-  .list-row[data-cov-mode] .lr-actions { display: flex; gap: .5rem; }
-  .list-row[data-cov-mode] .lr-actions .seen-seg { width: auto; flex: 1 1 auto; }
-  .list-row[data-cov-mode] .lr-actions .seg { flex: 1 1 0; min-width: 0; }
 
   /* nav reminder badge floats over the bottom-tab icon */
   .nav .nav-badge { position: absolute; top: .05rem; left: 50%; margin-left: 3px; }

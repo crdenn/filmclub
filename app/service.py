@@ -107,6 +107,7 @@ def backlog(conn: sqlite3.Connection, member_id: int, sort: str = "seconds",
             "suggester": suggesters.get(mv["suggested_by"]),
             "library": _in_library(mv),
             "vote_count": len(voters),
+            "voter_ids": sorted(voters),
             "voted": member_id in voters,
             "can_vote": mv["suggested_by"] != member_id,
         })
@@ -366,6 +367,7 @@ def movie_detail(conn: sqlite3.Connection, movie_id: int, member_id: int) -> dic
         "rewatch_count": len(rewatch),
         "library": _in_library(mv),
         "vote_count": len(voters),
+        "voter_ids": sorted(voters),
         "voted": member_id in voters,
         "can_vote": mv["status"] == "suggested" and mv["suggested_by"] != member_id,
     }
@@ -423,8 +425,11 @@ def set_plex_rating_sync_enabled(conn: sqlite3.Connection, member_id: int,
     )
 
 
-def set_vote(conn: sqlite3.Connection, movie_id: int, member_id: int, voted: bool) -> int:
-    """Add or remove a member's second on a backlog film. Returns the new count.
+def set_vote(conn: sqlite3.Connection, movie_id: int, member_id: int, voted: bool) -> list[int]:
+    """Add or remove a member's second on a backlog film.
+
+    Returns the full list of member ids who now second the film, so the caller can
+    render *who* is keen rather than just how many — the count is len() of this.
 
     The caller is responsible for the eligibility checks (film is on the backlog,
     member isn't the suggester); this just applies the toggle idempotently.
@@ -438,8 +443,10 @@ def set_vote(conn: sqlite3.Connection, movie_id: int, member_id: int, voted: boo
     else:
         db.execute(conn, "DELETE FROM votes WHERE movie_id = ? AND member_id = ?",
                    (movie_id, member_id))
-    return db.query_one(
-        conn, "SELECT COUNT(*) c FROM votes WHERE movie_id = ?", (movie_id,))["c"]
+    rows = db.query_all(
+        conn, "SELECT member_id FROM votes WHERE movie_id = ? ORDER BY member_id",
+        (movie_id,))
+    return [r["member_id"] for r in rows]
 
 
 def todo_counts(conn: sqlite3.Connection, member_id: int) -> dict:

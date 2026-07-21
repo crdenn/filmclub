@@ -1070,8 +1070,9 @@ async def api_vote(movie_id: int, body: VoteIn, member=Depends(auth.current_memb
         if mv["suggested_by"] == member["id"]:
             raise HTTPException(status_code=400,
                                 detail="You can't second a film you suggested")
-        count = service.set_vote(conn, movie_id, member["id"], body.voted)
-        return {"vote_count": count, "voted": body.voted}
+        voter_ids = service.set_vote(conn, movie_id, member["id"], body.voted)
+        return {"vote_count": len(voter_ids), "voter_ids": voter_ids,
+                "voted": body.voted}
     finally:
         conn.close()
 

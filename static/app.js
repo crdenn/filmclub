@@ -995,7 +995,9 @@
   }
 
   // ================= BACKLOG =================
-  const backlogState = { sort: "seconds", suggester: null, query: "" };
+  // `dir` is the display direction; each sortable column declares its natural
+  // default (see BACKLOG_TABLE), and re-clicking an active header flips it.
+  const backlogState = { sort: "seconds", dir: "desc", suggester: null, query: "" };
   let backlogItems = [];  // full fetched list; filtering happens client-side
 
   async function renderBacklog(preserve = false) {
@@ -1041,7 +1043,7 @@
     return opts;
   }
 
-  const SORT_LABELS = { seconds: "Most seconded", unseen: "Unseen count", date: "Date suggested", title: "Title", year: "Year", runtime: "Runtime" };
+  const SORT_LABELS = { seconds: "Most wanted", unseen: "Unseen count", date: "Date suggested", title: "Title", year: "Year", runtime: "Runtime" };
 
   function backlogCountText() {
     const total = backlogItems.length;
@@ -1053,7 +1055,11 @@
   function backlogGridHtml() {
     const filtered = filterBacklog(backlogItems);
     if (filtered.length) {
-      return `<div class="${viewMode === "list" ? "list" : "grid"}">${filtered.map(viewMode === "list" ? backlogRow : backlogCard).join("")}</div>`;
+      if (viewMode === "list") {
+        return listTable(applySortDir(filtered, BACKLOG_TABLE, backlogState),
+                         BACKLOG_TABLE, backlogState, "backlog");
+      }
+      return `<div class="grid">${filtered.map(backlogCard).join("")}</div>`;
     }
     return (backlogItems.length && isFilteringBacklog())
       ? `<div class="empty">No films match your filters. <button class="btn-link" id="clear-filters" type="button">Clear filters</button></div>`
@@ -1097,7 +1103,13 @@
       <div id="backlog-results">${backlogResults()}</div>`;
     paintView("backlog", body, preserve);
 
-    $("#sort-sel").onchange = (e) => { backlogState.sort = e.target.value; renderBacklog(true); };
+    // The select and the column headers write the same state, so they can never
+    // disagree; picking from the select resets to that column's natural order.
+    $("#sort-sel").onchange = (e) => {
+      backlogState.sort = e.target.value;
+      backlogState.dir = defaultDirFor(BACKLOG_TABLE, e.target.value);
+      renderBacklog(true);
+    };
     $("#suggester-sel").onchange = (e) => { backlogState.suggester = e.target.value ? parseInt(e.target.value, 10) : null; refreshBacklogResults(); };
     $("#backlog-search").oninput = () => { backlogState.query = $("#backlog-search").value; refreshBacklogResults(); };
     $("#add-btn").onclick = openSearchModal;
@@ -1140,6 +1152,9 @@
   function wireBacklogResults() {
     wireBacklogCards();
     bindClearFilters();
+    // Sorting is server-side for the backlog, so a new key needs a refetch; a
+    // direction flip on the same key is handled locally by applySortDir.
+    wireSortHeaders("backlog", BACKLOG_TABLE, backlogState, () => renderBacklog(true));
     app.querySelectorAll(".filter-chip[data-clear]").forEach(b => b.onclick = () => {
       if (b.dataset.clear === "suggester") backlogState.suggester = null;
       else if (b.dataset.clear === "query") { backlogState.query = ""; const s = $("#backlog-search"); if (s) s.value = ""; }
@@ -1173,6 +1188,164 @@
       : c.not_seen_ids.includes(state.me.id) ? "notseen" : "unknown";
   }
 
+  // ================= SHARED LIST TABLE (backlog + watched) =================
+  // On desktop the list is a real table: aligned, sortable columns let you
+  // compare one attribute down every film at once, which is the one thing the
+  // poster grid structurally cannot do. On phones the same markup collapses to
+  // the stacked rows (CSS, `max-width: 720px`) — columns marked `desktopOnly`
+  // drop out there so the small screen stays uncrowded.
+  //
+  // Columns are data, not markup: one spec drives the header, the cells and the
+  // CSS grid template, which is what keeps the two pages consistent.
+
+  const SORT_CARET = `<svg class="lr-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 15l7-7 7 7"/></svg>`;
+
+  function listHead(columns, st, page) {
+    const cells = columns.map(col => {
+      const cls = `lr-cell lr-head-cell ${col.cls}${col.desktopOnly ? " lr-desk" : ""}`;
+      if (!col.sort) {
+        return `<div class="${cls}" role="columnheader">${esc(col.label || "")}</div>`;
+      }
+      const active = st.sort === col.sort;
+      const aria = active ? (st.dir === "asc" ? "ascending" : "descending") : "none";
+      const hint = active ? "Reverse the order" : `Sort by ${col.label.toLowerCase()}`;
+      return `<div class="${cls}" role="columnheader" aria-sort="${aria}">`
+        + `<button type="button" class="lr-sort${active ? " active" : ""}" data-sort="${col.sort}"`
+        + ` data-page="${page}" data-dir="${active ? st.dir : ""}" title="${hint}">`
+        + `<span>${esc(col.label)}</span>${active ? SORT_CARET : ""}</button></div>`;
+    }).join("");
+    return `<div class="list-head" role="row">${cells}</div>`;
+  }
+
+  function listTable(items, spec, st, page) {
+    // Two track templates. Hiding a cell with `display:none` does NOT remove its
+    // grid track, so every later cell would slide into the wrong column — the
+    // narrow tier therefore needs a template with those tracks actually dropped.
+    const template = spec.columns.map(c => c.width).join(" ");
+    const templateMd = spec.columns.filter(c => !c.desktopOnly).map(c => c.width).join(" ");
+    const rows = items.map(m => {
+      const cells = spec.columns.map(col => {
+        // Cells that hold their own controls must not also navigate.
+        const nav = col.nav === false ? "" : ` data-nav="${m.id}"`;
+        return `<div class="lr-cell ${col.cls}${col.desktopOnly ? " lr-desk" : ""}" role="cell"${nav}>`
+          + `${col.render(m)}</div>`;
+      }).join("");
+      return `<div class="${spec.rowClass(m)}" ${spec.rowAttrs(m)} role="row">${cells}</div>`;
+    }).join("");
+    return `<div class="list" style="--cols:${template};--cols-md:${templateMd}" role="table">`
+      + `${listHead(spec.columns, st, page)}${rows}</div>`;
+  }
+
+  function columnFor(spec, sortKey) {
+    return spec.columns.find(c => c.sort === sortKey) || null;
+  }
+  function defaultDirFor(spec, sortKey) {
+    const col = columnFor(spec, sortKey);
+    return col ? col.dir : "desc";
+  }
+
+  // The backlog is sorted server-side, so a direction flip is just a reversal of
+  // what came back rather than a second round trip.
+  function applySortDir(items, spec, st) {
+    const col = columnFor(spec, st.sort);
+    if (!col || st.dir === col.dir) return items;
+    return items.slice().reverse();
+  }
+
+  // Watched has no server-side sort (`service.watched` is fixed to watched_at
+  // DESC), so its columns sort the fetched array here instead.
+  const WATCHED_SORTS = {
+    title: m => (m.title || "").toLowerCase(),
+    runtime: m => m.runtime || 0,
+    date: m => m.watched_at || "",
+    rating: m => (m.avg_rating == null ? -1 : m.avg_rating),
+  };
+  function sortWatched(items, st) {
+    const pick = WATCHED_SORTS[st.sort] || WATCHED_SORTS.date;
+    const out = items.slice().sort((a, b) => {
+      const x = pick(a), y = pick(b);
+      return x < y ? -1 : x > y ? 1 : 0;
+    });
+    return st.dir === "desc" ? out.reverse() : out;
+  }
+
+  function wireSortHeaders(page, spec, st, rerender) {
+    app.querySelectorAll(`.lr-sort[data-page="${page}"]`).forEach(btn => btn.onclick = (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.sort;
+      if (st.sort === key) st.dir = st.dir === "asc" ? "desc" : "asc";
+      else { st.sort = key; st.dir = defaultDirFor(spec, key); }
+      rerender();
+    });
+  }
+
+  // ---------- cells shared by both tables ----------
+  function cellPoster(m, withStatus) {
+    return (withStatus ? statusIcon(m) : "") + posterEl(m);
+  }
+  function cellFilm(m) {
+    const titleHint = m.year ? `${m.title} (${m.year})` : m.title;
+    const yr = m.year ? ` <span class="yr">${m.year}</span>` : "";
+    return `<span class="lr-title" title="${esc(titleHint)}">${esc(m.title)}${yr}</span>`;
+  }
+  const COL_POSTER = { key: "poster", label: "", cls: "lr-poster", width: "40px" };
+  const COL_RUNTIME = {
+    key: "runtime", label: "Runtime", sort: "runtime", dir: "desc",
+    cls: "lr-runtime", width: "76px", desktopOnly: true,
+    render: m => fmtRuntime(m.runtime) || `<span class="lr-dash">—</span>`,
+  };
+  const COL_SUGGESTER = {
+    key: "suggester", label: "Suggested by", cls: "lr-sugg", width: "140px", nav: false,
+    render: m => suggesterLink(m.suggester),
+  };
+
+  const BACKLOG_TABLE = {
+    columns: [
+      { ...COL_POSTER, render: m => cellPoster(m, true) },
+      { key: "film", label: "Film", sort: "title", dir: "asc", cls: "lr-film",
+        width: "minmax(200px,1fr)", render: cellFilm },
+      COL_RUNTIME,
+      COL_SUGGESTER,
+      { key: "added", label: "Added", sort: "date", dir: "desc", cls: "lr-added",
+        width: "92px", desktopOnly: true,
+        render: m => esc(fmtDate(m.suggested_at)) || `<span class="lr-dash">—</span>` },
+      { key: "seen", label: "Seen", sort: "unseen", dir: "desc", cls: "lr-seen",
+        width: "104px", render: m => coverageMeter(m.coverage) },
+      { key: "keen", label: "Keen", sort: "seconds", dir: "desc", cls: "lr-keen",
+        width: "116px", nav: false, render: m => keenStack(m) },
+      { key: "you", label: "You", cls: "lr-answer", width: "176px", nav: false,
+        render: m => seenControl(m.id, myCovState(m.coverage)) },
+    ],
+    // Deliberately NOT `.card`: that's a flex-column with its own gap, which
+    // outranks the table's on specificity and desynced the header from the rows.
+    rowClass: m => "list-row" + (myCovState(m.coverage) === "unknown" ? " needs-me" : ""),
+    rowAttrs: m => `data-id="${m.id}" data-cov-mode="backlog"`,
+  };
+
+  const WATCHED_TABLE = {
+    columns: [
+      { ...COL_POSTER, render: m => cellPoster(m, false) },
+      { key: "film", label: "Film", sort: "title", dir: "asc", cls: "lr-film",
+        width: "minmax(200px,1fr)", render: cellFilm },
+      COL_RUNTIME,
+      COL_SUGGESTER,
+      { key: "discussed", label: "Discussed", sort: "date", dir: "desc", cls: "lr-disc",
+        width: "120px",
+        render: m => esc(fmtDate(m.watched_at)) || `<span class="lr-dash">—</span>` },
+      { key: "rated", label: "Rated", cls: "lr-rated-col", width: "88px", desktopOnly: true,
+        render: m => `${m.rating_count}/${m.total_members}` },
+      { key: "club", label: "Club", sort: "rating", dir: "desc", cls: "lr-club", width: "96px",
+        render: m => m.avg_rating != null
+          ? `<span class="lr-rating">${starsSvg(m.avg_rating)}<span class="lr-rating-num">${m.avg_rating.toFixed(1)}</span></span>`
+          : `<span class="lr-unrated">Unrated</span>` },
+      { key: "you", label: "You", cls: "lr-you-rating", width: "96px", render: m => m.my_rated
+          ? `<span class="lr-you" title="Your rating">${STAR_ICO} ${m.my_score.toFixed(1)}</span>`
+          : `<span class="lr-you lr-rate" title="You haven't rated this yet">Rate</span>` },
+    ],
+    rowClass: m => "list-row" + (m.my_rated ? "" : " to-rate"),
+    rowAttrs: m => `data-id="${m.id}"`,
+  };
+
   function backlogCard(m) {
     const c = m.coverage;
     const myState = myCovState(c);
@@ -1193,26 +1366,6 @@
           <div class="cov-summary">${backlogSeenSummary(c)}</div>
         </div>
         <div class="card-actions">${seenControl(m.id, myState)}</div>
-      </div>
-    </div>`;
-  }
-
-  function backlogRow(m) {
-    const c = m.coverage;
-    const myState = myCovState(c);
-    const needsMe = myState === "unknown";
-    const cls = "card list-row" + (needsMe ? " needs-me" : "");
-    const titleHint = m.year ? `${m.title} (${m.year})` : m.title;
-    const yr = m.year ? ` <span class="yr">${m.year}</span>` : "";
-    return `<div class="${cls}" data-id="${m.id}" data-cov-mode="backlog">
-      <div class="lr-poster" data-nav="${m.id}">${statusIcon(m)}${posterEl(m)}</div>
-      <div class="lr-content">
-        <div class="lr-body" data-nav="${m.id}">
-          <div class="lr-title" title="${esc(titleHint)}">${esc(m.title)}${yr}</div>
-          <div class="lr-meta">${suggesterLink(m.suggester)}</div>
-        </div>
-        <div class="lr-secondary lr-cov cov-summary" data-nav="${m.id}">${backlogSeenSummary(c, true)}</div>
-        <div class="lr-actions"><span class="lr-vote-slot">${voteControl(m, "list")}</span>${seenControl(m.id, myState)}</div>
       </div>
     </div>`;
   }
@@ -1245,7 +1398,7 @@
   // Shared by the initial render and the post-toggle update, so the two can't
   // drift apart.
   function voteTitle(voted) {
-    return voted ? "You seconded this — click to undo" : "Second this · you'd also watch it";
+    return voted ? "You'd watch this — click to take it back" : "You'd also watch this";
   }
 
   // Small caret marking a chip as a tally rather than an invitation.
@@ -1262,17 +1415,13 @@
       : `<span class="pv-lbl">+1</span>`;
   }
 
-  // A compact seconding chip. Suggesters can't second their own pick: they get a
-  // static tally, or — in list view, where the column would otherwise be a
-  // mystery gap — a dashed placeholder that says why it's empty.
+  // A compact chip for the grid card and the detail page. The list table uses
+  // `keenStack` instead, which shows who is keen rather than just how many.
+  // Suggesters can't add themselves to their own pick, so they get a static tally.
   function voteControl(m, variant = "card") {
     const count = m.vote_count || 0;
     if (!m.can_vote) {
-      if (count <= 0) {
-        if (variant !== "list") return "";
-        const why = "Your suggestion — you can't second your own pick";
-        return `<span class="pv pv-${variant} pv-static pv-none" title="${why}" aria-label="${why}">—</span>`;
-      }
+      if (count <= 0) return "";
       return `<span class="pv pv-${variant} pv-static" title="${secondsCaption(count)}" aria-label="${secondsCaption(count)}">${voteChipInner(count)}</span>`;
     }
     const title = voteTitle(m.voted);
@@ -1282,7 +1431,7 @@
   // Caption shown beside the chip on the movie detail page (which has room).
   function detailCaption(count, canVote) {
     if (count > 0) return secondsCaption(count);
-    return canVote ? "Be the first to +1 this" : "";
+    return canVote ? "Be the first to say you'd watch this" : "";
   }
   function detailVoteBlock(m) {
     if (m.status !== "suggested") return "";
@@ -1294,7 +1443,7 @@
   }
 
   function wireVoteButtons() {
-    app.querySelectorAll(".pv[data-vote]").forEach(bindVoteButton);
+    app.querySelectorAll(".pv[data-vote], .keen-add[data-vote]").forEach(bindVoteButton);
   }
   function bindVoteButton(btn) {
     btn.onclick = (e) => { e.stopPropagation(); toggleVote(btn); };
@@ -1309,8 +1458,16 @@
     } catch (e) { toast("Couldn't save: " + e.message, true); }
   }
 
-  // Re-render every vote chip (and the detail caption) for this movie after a toggle.
+  // Re-render every vote chip, keen stack and detail caption for this movie after
+  // a toggle. The cached backlog item is updated first so a later re-render (a
+  // filter keystroke, a sort) doesn't resurrect the pre-toggle state.
   function updateVoteControl(id, res) {
+    const item = backlogItems.find(m => String(m.id) === String(id));
+    if (item) {
+      item.vote_count = res.vote_count;
+      item.voter_ids = res.voter_ids || item.voter_ids || [];
+      item.voted = res.voted;
+    }
     app.querySelectorAll(`.pv[data-vote="${id}"]`).forEach((btn) => {
       btn.dataset.voted = res.voted ? "1" : "0";
       btn.classList.toggle("voted", res.voted);
@@ -1320,6 +1477,12 @@
       btn.setAttribute("aria-label", title);
       btn.innerHTML = voteChipInner(res.vote_count);
     });
+    app.querySelectorAll(`.keen[data-keen="${id}"]`).forEach((el) => {
+      el.outerHTML = keenStack(item || {
+        id, voter_ids: res.voter_ids || [], voted: res.voted, can_vote: true,
+      });
+    });
+    wireVoteButtons();
     const cap = app.querySelector(`.vote-caption[data-vote-cap="${id}"]`);
     if (cap) cap.textContent = detailCaption(res.vote_count, true);
   }
@@ -1346,16 +1509,70 @@
     return chunk(c.not_seen_ids, "unseen") + chunk(c.unknown_ids, "unknown") + chunk(c.seen_ids, "seen");
   }
 
-  // A bare "1/6" doesn't say six of what. The list has room for the faces, which
-  // answer that without a word; the tight grid card keeps the compact tally.
-  function backlogSeenSummary(c, withAvatars = false) {
-    if (!withAvatars) {
-      return `<span class="cov-sum"><span class="cov-sum-label"><b>${c.seen_ids.length}/${c.total_members}</b> seen</span></span>`;
+  // Above this many members, one segment per person becomes an unreadable comb,
+  // so the meter switches to a single proportional bar. The N/M fraction sits
+  // beside it either way, so exactness never depends on counting pixels.
+  const METER_DISCRETE_MAX = 12;
+
+  // Coverage as a bar you can compare down a column — the table equivalent of
+  // the avatar row used on the detail page and This-week hero. Bucket order
+  // matches `coverageAvatars`: not-seen first (it's what makes a film eligible),
+  // then unknown, then seen.
+  function coverageMeter(c) {
+    const total = c.total_members || 0;
+    const seen = c.seen_ids.length, unseen = c.not_seen_ids.length, unknown = c.unknown_ids.length;
+    const parts = [["unseen", unseen], ["unknown", unknown], ["seen", seen]];
+    let bar;
+    if (total > 0 && total <= METER_DISCRETE_MAX) {
+      bar = parts.map(([k, n]) => `<span class="cm-seg cm-${k}"></span>`.repeat(n)).join("");
+    } else {
+      const pct = n => (total ? (n / total) * 100 : 0).toFixed(3) + "%";
+      bar = parts.map(([k, n]) =>
+        n ? `<span class="cm-fill cm-${k}" style="width:${pct(n)}"></span>` : "").join("");
     }
-    return `<span class="cov-sum">
-      <span class="cov-sum-label"><b>${c.seen_ids.length} of ${c.total_members}</b> seen it</span>
-      <span class="cov-avatars">${coverageAvatars(c)}</span>
-    </span>`;
+    const label = [
+      `${seen} of ${total} have seen it`,
+      unseen ? `${unseen} haven't` : "",
+      unknown ? `${unknown} unknown` : "",
+    ].filter(Boolean).join(" · ");
+    const cls = `cov-meter${total && total > METER_DISCRETE_MAX ? " cov-meter-cont" : ""}`
+      + (c.eligibility === "ineligible" ? " cov-meter-full" : "");
+    return `<span class="cov-cell" title="${esc(label)}" aria-label="${esc(label)}">`
+      + `<span class="${cls}" aria-hidden="true">${bar}</span>`
+      + `<span class="cov-frac"><b>${seen}</b>/${total}</span></span>`;
+  }
+
+  // Show at most this many faces before collapsing the rest into a "+N" chip, so
+  // the column stays a fixed width whether the club is 6 people or 60.
+  const KEEN_MAX_FACES = 3;
+
+  // Who else would watch this, as faces rather than a bare tally — in a club the
+  // useful fact is *who* is keen, not how many. Your own control sits at the end
+  // of the stack: "+" to join, "✓" to drop out.
+  function keenStack(m) {
+    const ids = m.voter_ids || [];
+    const shown = ids.slice(0, KEEN_MAX_FACES);
+    const faces = shown.map(id => {
+      const mem = coverageMemberIndex[id];
+      return `<span class="keen-face">${avatar(mem, "sm")}</span>`;
+    }).join("");
+    const extra = ids.length - shown.length;
+    const more = extra > 0
+      ? `<span class="keen-more" title="${esc(secondsCaption(ids.length))}">+${extra}</span>` : "";
+    let ctrl = "";
+    if (m.can_vote) {
+      const t = voteTitle(m.voted);
+      ctrl = `<button type="button" class="keen-add${m.voted ? " in" : ""}" data-vote="${m.id}"`
+        + ` data-voted="${m.voted ? "1" : "0"}" data-variant="list" aria-pressed="${m.voted}"`
+        + ` title="${esc(t)}" aria-label="${esc(t)}">${m.voted ? "✓" : "+"}</button>`;
+    }
+    const empty = !ids.length && !ctrl ? `<span class="lr-dash">—</span>` : "";
+    return `<span class="keen" data-keen="${m.id}">${faces}${more}${ctrl}${empty}</span>`;
+  }
+
+  // Compact tally for the grid card, which has no room for the meter or faces.
+  function backlogSeenSummary(c) {
+    return `<span class="cov-sum"><span class="cov-sum-label"><b>${c.seen_ids.length}/${c.total_members}</b> seen</span></span>`;
   }
 
   function suggesterName(id) {
@@ -1409,10 +1626,13 @@
       if (avs) avs.innerHTML = coverageAvatars(c);
       return;
     }
-    // Backlog card: refresh the seen tally + attention state. List rows carry
-    // the member faces too, so re-render them in the same shape they started in.
+    // Backlog: refresh the coverage readout + attention state. The two views
+    // render coverage differently — a meter cell in the list table, a compact
+    // tally on the grid card — so update whichever this card has.
+    const meter = $(".lr-seen", card);
+    if (meter) meter.innerHTML = coverageMeter(c);
     const sum = $(".cov-summary", card);
-    if (sum) sum.innerHTML = backlogSeenSummary(c, card.classList.contains("list-row"));
+    if (sum) sum.innerHTML = backlogSeenSummary(c);
     // A film I've now marked (seen or not-seen) no longer needs my attention.
     const needsMe = !c.seen_ids.includes(state.me.id) && !c.not_seen_ids.includes(state.me.id);
     card.classList.toggle("needs-me", needsMe);
@@ -1420,20 +1640,32 @@
   }
 
   // ================= WATCHED =================
+  let watchedItems = [];   // kept module-level so headers can re-sort without refetching
+  const watchedState = { sort: "date", dir: "desc" };
+
   async function renderWatched(preserve = false) {
     if (!preserve) paintView("watched", skeletonGrid());
     let data;
     try { data = await api("/api/watched"); }
     catch (e) { if (e.message !== "unauth") paintError("watched", e, preserve); return; }
-    const items = data.items;
+    watchedItems = data.items;
+    paintWatched(preserve);
+  }
+
+  function paintWatched(preserve = false) {
+    const items = watchedItems;
     const body = `
       <div class="page-head"><h1>Watched</h1><span class="count">${items.length} films</span>
         <div class="controls">${viewToggle()}</div>
       </div>
-      <div class="${viewMode === "list" ? "list" : "grid"}">${items.map(viewMode === "list" ? watchedRow : watchedCard).join("")}</div>
-      ${items.length ? "" : `<div class="empty">No films watched yet.</div>`}`;
+      ${items.length
+        ? (viewMode === "list"
+            ? listTable(sortWatched(items, watchedState), WATCHED_TABLE, watchedState, "watched")
+            : `<div class="grid">${items.map(watchedCard).join("")}</div>`)
+        : `<div class="empty">No films watched yet.</div>`}`;
     paintView("watched", body, preserve);
-    wireViewToggle(() => renderWatched(true));
+    wireViewToggle(() => paintWatched(true));
+    wireSortHeaders("watched", WATCHED_TABLE, watchedState, () => paintWatched(true));
     app.querySelectorAll("[data-nav]").forEach(el =>
       el.onclick = (e) => {
         if (e.target.closest && e.target.closest(".member-link")) return;
@@ -1461,27 +1693,6 @@
       <div class="card-title" title="${esc(titleHint)}"><span class="ct-name">${esc(m.title)}</span>${m.year ? `<span class="yr">${m.year}</span>` : ""}</div>
       <div class="card-meta">${suggesterLink(m.suggester)}
         <span class="rated-count">${m.rating_count}/${m.total_members} rated</span>
-      </div>
-    </div>`;
-  }
-
-  function watchedRow(m) {
-    const club = m.avg_rating != null
-      ? `<span class="lr-rating">${starsSvg(m.avg_rating)}<span class="lr-rating-num">${m.avg_rating.toFixed(1)}</span></span>`
-      : `<span class="lr-rating lr-unrated">Unrated</span>`;
-    const mine = m.my_rated
-      ? `<span class="lr-you" title="Your rating">You ${STAR_ICO} ${m.my_score.toFixed(1)}</span>`
-      : `<span class="lr-you lr-rate" title="You haven't rated this yet">Rate</span>`;
-    const discussed = m.watched_at ? fmtDate(m.watched_at) : "";
-    return `<div class="card list-row${m.my_rated ? "" : " to-rate"}" data-id="${m.id}" data-nav="${m.id}">
-      <div class="lr-poster">${posterEl(m)}</div>
-      <div class="lr-content">
-        <div class="lr-body">
-          <div class="lr-title">${esc(m.title)} <span class="yr">${m.year || ""}</span></div>
-          <div class="lr-meta">${suggesterLink(m.suggester)}</div>
-        </div>
-        <div class="lr-secondary">${discussed ? `<span>Discussed ${esc(discussed)}</span>` : ""}<span>${m.rating_count}/${m.total_members} rated</span></div>
-        <div class="lr-trailing">${club}${mine}</div>
       </div>
     </div>`;
   }
