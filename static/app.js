@@ -837,12 +837,12 @@
   //
   // Once you've answered, the pair collapses (via CSS on `data-state`) to a
   // quiet statement of your answer — a list of 14 already-answered films
-  // shouldn't be 28 live buttons shouting over the titles. Clicking that
-  // statement re-opens the chooser, so changing your mind is still one tap.
+  // shouldn't be 28 live buttons shouting over the titles. That statement is
+  // itself the undo: one click clears the answer and restores the chooser.
   function seenControl(id, myState) {
     const label = myState === "seen" ? "Seen" : "Not seen";
     return `<div class="seen-seg" data-seen="${id}" data-state="${myState}">
-      <button type="button" class="seen-resolved" data-expand title="Change your answer" aria-label="You marked this “${label}” — change your answer">
+      <button type="button" class="seen-resolved" title="Clear your answer" aria-label="You marked this “${label}” — clear your answer">
         <span class="sr-tick" aria-hidden="true">${myState === "seen" ? "✓" : "○"}</span><span class="sr-lbl">${label}</span>
       </button>
       <button type="button" class="seg" data-set="seen">Seen it</button>
@@ -866,7 +866,7 @@
     const label = seen ? "Seen" : "Not seen";
     $(".sr-tick", btn).textContent = seen ? "✓" : "○";
     $(".sr-lbl", btn).textContent = label;
-    btn.setAttribute("aria-label", `You marked this “${label}” — change your answer`);
+    btn.setAttribute("aria-label", `You marked this “${label}” — clear your answer`);
   }
 
   async function setSeen(seg, target) {
@@ -893,9 +893,13 @@
       e.stopPropagation();
       setSeen(btn.closest(".seen-seg"), btn.dataset.set);
     });
+    // The collapsed summary IS the undo: one click clears your answer and puts
+    // the chooser back with neither side picked. Making it merely *reveal* the
+    // chooser meant undoing took two clicks on what looked like one control.
     app.querySelectorAll(".seen-seg .seen-resolved").forEach(btn => btn.onclick = (e) => {
       e.stopPropagation();
-      btn.closest(".seen-seg").classList.add("open");
+      const seg = btn.closest(".seen-seg");
+      setSeen(seg, seg.dataset.state);
     });
   }
 
