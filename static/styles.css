@@ -288,14 +288,17 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 /* Clamp to two lines and always reserve that height so cards with a 1-line and
    a 2-line title stay aligned across a grid row (submitter/coverage/buttons below
    line up regardless of title length). */
+/* One line across every grid, so rows of cards line up and a long title can't
+   push the meta below it out of step with its neighbours. The name truncates;
+   the year is pinned so it survives the ellipsis. Full text is in the tooltip. */
 .card-title {
   font-size: .95rem; font-weight: 600; line-height: 1.25;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; min-height: 2.5em;
+  display: flex; align-items: baseline; gap: .35rem;
+  min-height: 1.25em; overflow: hidden; white-space: nowrap;
 }
-.card-title .yr { color: var(--text-faint); font-weight: 400; }
+.card-title .ct-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.card-title .yr { color: var(--text-faint); font-weight: 400; flex: 0 0 auto; }
 .backlog-card-details { display: flex; flex-direction: column; gap: .42rem; min-width: 0; }
-.card[data-cov-mode="backlog"] .card-title { display: block; min-height: 1.25em; white-space: nowrap; text-overflow: ellipsis; -webkit-line-clamp: unset; -webkit-box-orient: unset; }
 .backlog-card-meta { display: flex; align-items: center; justify-content: space-between; gap: .6rem; min-width: 0; }
 .backlog-card-meta .card-meta { flex: 1 1 auto; }
 .backlog-card-meta .cov-summary { flex: 0 0 auto; }

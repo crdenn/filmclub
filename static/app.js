@@ -1067,7 +1067,7 @@
       </div>
       <div class="accent-bar" style="background:${m.suggester ? m.suggester.color : "var(--line)"}"></div>
       <div class="backlog-card-details">
-        <div class="card-title" title="${esc(titleHint)}">${esc(m.title)}</div>
+        <div class="card-title" title="${esc(titleHint)}"><span class="ct-name">${esc(m.title)}</span></div>
         <div class="backlog-card-meta">
           <div class="card-meta">${suggesterLink(m.suggester)}</div>
           <div class="cov-summary">${backlogSeenSummary(c)}</div>
@@ -1297,6 +1297,7 @@
   // current user's own rating (or a calm "Rate" invite when they haven't).
   const STAR_ICO = `<span class="star-ico">★</span>`;
   function watchedCard(m) {
+    const titleHint = m.year ? `${m.title} (${m.year})` : m.title;
     const club = m.avg_rating != null
       ? `<span class="badge club-rating" title="Club average">${STAR_ICO} ${m.avg_rating.toFixed(1)}</span>`
       : `<span class="badge" title="No ratings yet">Unrated</span>`;
@@ -1309,7 +1310,7 @@
         ${posterEl(m)}
       </div>
       <div class="accent-bar" style="background:${m.suggester ? m.suggester.color : "var(--line)"}"></div>
-      <div class="card-title">${esc(m.title)} <span class="yr">${m.year || ""}</span></div>
+      <div class="card-title" title="${esc(titleHint)}"><span class="ct-name">${esc(m.title)}</span>${m.year ? `<span class="yr">${m.year}</span>` : ""}</div>
       <div class="card-meta">${suggesterLink(m.suggester)}
         <span class="rated-count">${m.rating_count}/${m.total_members} rated</span>
       </div>
