@@ -2084,11 +2084,9 @@
     let configData;
     try { configData = await api("/api/admin/settings"); }
     catch (error) { adminError(error, preserve); return; }
-    const content = `<form class="stat-card wide admin-settings" id="admin-settings">
-      <div class="settings-heading"><div><span class="settings-kicker">Connections</span><h3>Application settings</h3>
-        <p>Configure the services Film Club uses. Test your changes before saving them.</p></div>
-        <div class="settings-heading-actions"><button class="btn" id="refresh-lib" type="button">↻ Refresh Plex library</button>
-          <div class="settings-secret-note"><span aria-hidden="true">●</span> Saved secrets stay hidden and encrypted</div></div></div>
+    const content = `<form class="admin-settings" id="admin-settings">
+      <div class="settings-toolbar"><div class="settings-secret-note"><span aria-hidden="true">●</span> Saved secrets stay hidden and encrypted</div>
+        <button class="btn" id="refresh-lib" type="button">↻ Refresh Plex library</button></div>
       <div class="settings-services">${adminSettingsGroups(configData.settings)}</div>
       <div class="settings-footer"><div class="settings-message" id="settings-message" aria-live="polite">No unsaved changes</div>
         <div class="settings-buttons"><button class="btn" id="test-settings" type="button">Test connections</button><button class="btn btn-primary" type="submit">Validate and save</button></div></div>
