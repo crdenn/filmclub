@@ -98,24 +98,26 @@ html[data-theme="dark"] {
 }
 
 /* html[data-theme] (0,1,1) deliberately outranks :root (0,1,0) so this block
-   wins regardless of source order. Values are tuned in Stage 4. */
+   wins regardless of source order. */
 html[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #0c0c0f;
-  --bg-raise: #16161b;
-  --bg-raise-2: #1d1d24;
-  /* Elevation inverts: the page is a soft off-white and cards lift to pure
-     white, with -2 as the pressed/selected step (darker, not lighter). */
-  --bg: #f4f4f7;
-  --bg-raise: #ffffff;
-  --bg-raise-2: #e9e9f0;
-  --surface-sunk: #e2e2ea;
-  --line: #dcdce4;
+  /* Elevation inverts: the page is a warm grey and surfaces lift toward a soft
+     off-white, with -2 as the pressed/selected step (darker, not lighter).
+     Deliberately NOT pure white on near-white — that glares, and it flattens
+     the card edges into the page. The faint warmth keeps it from reading
+     clinical next to the poster art. */
+  --bg: #eceae6;
+  --bg-raise: #f8f7f4;
+  --bg-raise-2: #e0ded8;
+  --surface-sunk: #dcd9d2;
+  --line: #d6d2ca;
 
-  --text: #17171c;
-  --text-dim: #5b5b68;
-  --text-faint: #6e6e7b;
+  /* Warm-neutral to match the page, and darkened to hold AA against it: a
+     dimmer background lowers contrast for dark text, not raises it. */
+  --text: #1b1a17;
+  --text-dim: #56524b;
+  --text-faint: #696459;
 
   /* Hues are deepened just enough to hold their own against white while
      staying recognisably the same palette. */
@@ -129,7 +131,7 @@ html[data-theme="light"] {
   /* As TEXT on the page these need far more contrast than as a fill: the dark
      original amber sits at roughly 2:1 on white, which is unreadable. */
   --accent-text: #2b58b4;
-  --good-text: #157a4c;
+  --good-text: #116b42;
   --warn-text: #8a5b05;
   --bad-text: #b52a30;
 
