@@ -275,7 +275,6 @@ See `docs/DECISIONS.md` for evidence and confidence levels.
 - `watched_at` represents two related concepts: scheduled discussion date and archive date.
 - The app can hold multiple scheduled movies.
 - Most weekly lifecycle actions require authentication but not admin permission.
-- Member merge drops source votes rather than transferring them.
 - SSE and Plex cache behavior becomes inconsistent with multiple workers or replicas.
 - A slow or offline TMDB prevents search and new suggestions.
 - `/healthz` does not verify the database or external integrations.

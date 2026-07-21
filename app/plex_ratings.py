@@ -76,8 +76,7 @@ def _member_for_webhook(conn: sqlite3.Connection, account: dict) -> sqlite3.Row 
     rows = db.query_all(
         conn,
         """SELECT * FROM members WHERE username = ? COLLATE NOCASE
-           AND plex_id NOT LIKE 'dev:%' AND plex_id NOT LIKE 'seed:%'
-           AND plex_id NOT LIKE 'import:%'""",
+           AND plex_id NOT LIKE 'dev:%' AND plex_id NOT LIKE 'seed:%'""",
         (title,),
     )
     return rows[0] if len(rows) == 1 else None

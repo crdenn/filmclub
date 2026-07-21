@@ -1092,11 +1092,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .admin-muted, .admin-count-note { color: var(--text-faint); font-size: .8rem; }
 .admin-table td { vertical-align: middle; }
 .admin-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.admin-actions .hint { font-size: .72rem; color: var(--good-text); }
-.admin-actions select { padding: .3rem .5rem; font-size: .82rem; }
 .admin-table .btn { padding: .35rem .6rem; font-size: .82rem; }
-.merge-btn { border-color: color-mix(in srgb, var(--accent) 50%, transparent) !important; color: var(--text) !important; }
-.merge-btn:hover { background: var(--accent) !important; color: var(--on-accent) !important; }
 
 /* ---------- login ---------- */
 .login-wrap { display: grid; place-items: center; min-height: 100vh; padding: 2rem; }
@@ -1363,7 +1359,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .hbar-row { grid-template-columns: 96px 1fr 34px; }
 
   /* --- admin tables: stack into one card per member (a sideways-scrolling
-         5-column table with merge controls doesn't fit a phone) --- */
+         5-column table doesn't fit a phone) --- */
   .admin-table thead { display: none; }
   .admin-table, .admin-table tbody, .admin-table tr, .admin-table td { display: block; width: auto; }
   .admin-table tr {

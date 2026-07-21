@@ -233,11 +233,6 @@ class RatingIn(BaseModel):
     note: str | None = None
 
 
-class MergeIn(BaseModel):
-    from_id: int
-    into_id: int
-
-
 class AdminFlagIn(BaseModel):
     is_admin: bool
 
@@ -1249,18 +1244,6 @@ async def api_admin_members(admin=Depends(auth.require_admin)):
     conn = db.connect()
     try:
         return {"members": service.admin_members(conn), "me": admin}
-    finally:
-        conn.close()
-
-
-@app.post("/api/admin/merge")
-async def api_admin_merge(body: MergeIn, admin=Depends(auth.require_admin)):
-    conn = db.connect()
-    try:
-        result = service.merge_members(conn, body.from_id, body.into_id)
-        return {"ok": True, **result}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
 

@@ -73,8 +73,8 @@ scorecards, and genre/decade distributions.
   request to Overseerr/Jellyseerr. Degrades safely when off or unreachable.
 
 **Admin** — member list, local-account invites and password resets,
-placeholder-member merge, admin grants, movie deletion, manual Plex refresh,
-and diagnostics (version, schema, DB health, backups, integration status).
+admin grants, movie deletion, manual Plex refresh, and diagnostics
+(version, schema, DB health, backups, integration status).
 
 ## Stack
 

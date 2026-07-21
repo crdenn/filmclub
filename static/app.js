@@ -782,7 +782,7 @@
     const s = p.stats;
     const isMe = m.id === state.me.id;
     const meta = [
-      p.created_at && !p.is_placeholder ? `Member since ${fmtDate(p.created_at)}` : "",
+      p.created_at ? `Member since ${fmtDate(p.created_at)}` : "",
       m.is_admin ? "Admin" : "",
     ].filter(Boolean).join("  ·  ");
     const fx = (v) => v != null ? v.toFixed(2) : "—";
@@ -2360,23 +2360,10 @@
       try { data = await api("/api/admin/members"); }
       catch (error) { adminError(error, preserve); return; }
       const members = data.members;
-      const reals = members.filter(m => !m.is_placeholder);
-      const placeholders = members.filter(m => m.is_placeholder);
       const typeBadge = (m) => m.is_owner ? `<span class="elig-tag elig-eligible">Owner</span>`
-        : m.is_placeholder ? `<span class="elig-tag elig-unconfirmed">Placeholder</span>`
         : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:var(--accent-soft)">Admin</span>`
         : `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Member</span>`;
-      const realOptions = (selectedId) => reals.map(member =>
-        `<option value="${member.id}" ${selectedId === member.id ? "selected" : ""}>${esc(member.username)}</option>`).join("");
       const rowActions = (member) => {
-        if (member.is_placeholder) {
-          if (!reals.length) return `<span class="admin-muted">no real accounts yet</span>`;
-          const selected = member.suggested_merge ? member.suggested_merge.id : reals[0].id;
-          return `<div class="admin-actions"><span class="admin-muted">Merge into</span>
-            <select class="merge-target" data-from="${member.id}">${realOptions(selected)}</select>
-            <button class="btn merge-btn" data-from="${member.id}">Merge</button>
-            ${member.suggested_merge ? `<span class="hint">matches ${esc(member.suggested_merge.username)}</span>` : ""}</div>`;
-        }
         const adminAction = member.is_owner
           ? `<span class="admin-muted">owner · locked</span>`
           : member.is_admin
@@ -2395,20 +2382,9 @@
           <td class="num" data-label="Ratings">${member.counts.ratings}</td>
           <td class="admin-actions-cell">${rowActions(member)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty admin-empty">${emptyMessage}</div>`;
-      const content = `${placeholders.length ? `<section class="admin-card"><h3>Placeholders to reconcile</h3>
-          <div class="sub">Merge each temporary record after the real person signs in. Their suggestions, ratings, and seen states move to the account.</div>${table(placeholders, "")}</section>` : ""}
-        <section class="admin-card"><h3>Accounts</h3>
-          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(reals, "No one has signed in yet.")}</section>`;
+      const content = `<section class="admin-card"><h3>Accounts</h3>
+          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(members, "No one has signed in yet.")}</section>`;
       paintView("admin", adminLayout("users", content), preserve);
-      app.querySelectorAll(".merge-btn").forEach(button => button.onclick = () => {
-        const fromId = parseInt(button.dataset.from, 10);
-        const select = app.querySelector(`.merge-target[data-from="${fromId}"]`);
-        const intoId = parseInt(select.value, 10);
-        const fromName = placeholders.find(member => member.id === fromId)?.username;
-        const intoName = reals.find(member => member.id === intoId)?.username;
-        if (!confirm(`Merge placeholder "${fromName}" into "${intoName}"?\n\nAll of ${fromName}'s suggestions and ratings will be reassigned to ${intoName}, and the "${fromName}" placeholder will be deleted. This can't be undone.`)) return;
-        mergeMembers(fromId, intoId);
-      });
       app.querySelectorAll(".admin-toggle").forEach(button => button.onclick = () =>
         setAdmin(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
       app.querySelectorAll(".password-reset-btn").forEach(button => button.onclick = () =>
@@ -2677,13 +2653,6 @@
     }
   }
 
-  async function mergeMembers(fromId, intoId) {
-    try {
-      const r = await api("/api/admin/merge", { method: "POST", body: { from_id: fromId, into_id: intoId } });
-      toast(`Merged ${r.merged_from} into ${r.into}`);
-      renderAdmin("users", true);
-    } catch (e) { toast("Merge failed: " + e.message, true); }
-  }
 
   async function setAdmin(id, value) {
     try {

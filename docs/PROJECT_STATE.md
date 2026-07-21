@@ -63,10 +63,8 @@ These are implemented code paths, not claims that each works in the current prod
 
 ## Suspicious behavior and likely bugs
 
-- `service.merge_members()` transfers suggestions, ratings, and prior views but not `votes`. Foreign-key cascade removes the source member's seconds.
 - The server's `eligible_only` filter excludes only films classified `ineligible`; it includes `unconfirmed` films despite the parameter name.
 - Multiple movies can be `scheduled` concurrently.
-- Member merging does not rewrite member IDs embedded in existing `seen_before_snapshot` JSON. For a placeholder member merged after a movie was scheduled, the historical fallback can retain the deleted ID.
 - The login error page interpolates internally supplied strings without HTML escaping. Present callers use fixed strings, so there is no current user-controlled injection path.
 - FastAPI's `on_event("startup")` hook is deprecated in favor of lifespan handlers.
 - Asset version numbers are manually maintained.
@@ -147,14 +145,13 @@ This evidence does not verify OAuth, external integrations, lifecycle edge cases
 
 1. Rotate any credentials present in `.claude/launch.json`, `.env`, or `filmclub-deploy.tar.gz`; remove secrets from generated/distributable artifacts in a separately authorized security cleanup.
 2. Confirm whether multiple simultaneous scheduled films are intended.
-3. Expand regression tests to eligibility, scheduling snapshots, member merge collisions, and authorization.
+3. Expand regression tests to eligibility, scheduling snapshots, and authorization.
 
 ### Near-term
 
-1. Fix member merge to handle votes and snapshot identities deliberately.
-2. Define whether “eligible only” should include or exclude unconfirmed films, then align API naming and UI copy.
-3. Add versioned, transactional migrations and a schema version.
-4. Add linting, formatting, CI, and broader API/browser coverage around the documented test command.
+1. Define whether “eligible only” should include or exclude unconfirmed films, then align API naming and UI copy.
+2. Add versioned, transactional migrations and a schema version.
+3. Add linting, formatting, CI, and broader API/browser coverage around the documented test command.
 5. Make the Unraid deployment script portable by removing site-specific hints and documenting volume/backup requirements.
 6. Add database-aware readiness checks and graceful background-task shutdown.
 

@@ -119,8 +119,8 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Main files:** `service._coverage()`, backlog/detail renderers and CSS.
 - **Status:** Implemented.
 - **Dependencies:** Complete member list and prior-view rows.
-- **Limitations:** Backlog cards intentionally show only an `X/Y seen` tally; the eligibility label and member-level breakdown are on movie detail. Every local member, including placeholders, affects totals and eligibility until merged or removed.
-- **Follow-up:** Test zero-member and placeholder-member behavior explicitly.
+- **Limitations:** Backlog cards intentionally show only an `X/Y seen` tally; the eligibility label and member-level breakdown are on movie detail. Every local member affects totals and eligibility until removed.
+- **Follow-up:** Test zero-member behavior explicitly.
 
 ### Backlog browsing, sorting, and filtering
 
@@ -137,8 +137,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Main files:** `votes`, `service.set_vote()`, `/api/movies/{id}/vote`, vote controls.
 - **Status:** Implemented.
 - **Dependencies:** Backlog movie and authenticated member.
-- **Limitations:** Suggesters cannot second their own film. Member merge currently drops the source member's votes.
-- **Follow-up:** Correct merge behavior and cover unique-collision cases.
+- **Limitations:** Suggesters cannot second their own film.
 
 ### Delete a backlog suggestion
 
@@ -225,8 +224,6 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Main files:** `movies.seen_before_snapshot`, `schedule_movie()`, `default_seen_before()`.
 - **Status:** Implemented.
 - **Dependencies:** Valid snapshot JSON or live prior views fallback.
-- **Limitations:** Member merging does not rewrite IDs inside snapshots.
-- **Follow-up:** Define snapshot migration during member merge.
 
 ### Watched archive
 
@@ -282,8 +279,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Main files:** `_suggestions_per_member()`, `_suggester_scorecard()`, `_genre_decade_runtime()`.
 - **Status:** Implemented.
 - **Dependencies:** Suggester attribution and stored TMDB metadata.
-- **Limitations:** Placeholder membership and missing metadata affect summaries.
-- **Follow-up:** Recalculate expected outcomes after placeholder merges.
+- **Limitations:** Missing metadata affects summaries.
 
 ## Administration
 
@@ -300,15 +296,6 @@ administrative data.
 - **Dependencies:** `ADMIN_PLEX_IDS` for owners.
 - **Limitations:** Admin truth has two sources; changing environment configuration is outside the UI.
 - **Follow-up:** Design precedence carefully if configuration moves into the application.
-
-### Placeholder member merge
-
-- **Purpose:** Fold import/dev/seed identities into real Plex accounts.
-- **Main files:** `service.is_placeholder()`, `admin_members()`, `merge_members()`, admin UI.
-- **Status:** Partial.
-- **Dependencies:** Existing source and target members.
-- **Limitations:** Target rows win rating/prior-view collisions; votes are dropped; snapshots are not rewritten; operation is not reversible.
-- **Follow-up:** Fix vote and snapshot handling and wrap the whole merge in an explicit transaction test.
 
 ### Administrative movie deletion
 

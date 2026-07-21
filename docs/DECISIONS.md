@@ -76,8 +76,8 @@ This file records decisions visible in the current repository. “Confirmed” m
 
 ## Combine declarative owners with database admins
 
-- **Decision:** Effective admin status is the database flag OR membership in `ADMIN_PLEX_IDS`; allowlisted owners cannot be demoted or merged away.
-- **Evidence:** `auth._with_effective_admin()`, `service.set_member_admin()`, and `service.merge_members()`.
+- **Decision:** Effective admin status is the database flag OR membership in `ADMIN_PLEX_IDS`; allowlisted owners cannot be demoted.
+- **Evidence:** `auth._with_effective_admin()` and `service.set_member_admin()`.
 - **Likely reasoning:** Preserve an emergency owner account through database resets while allowing in-app delegation.
 - **Consequences:** Admin state has two sources and environment changes can override what the database appears to say.
 - **Status:** Confirmed by code; historical reasoning inferred.

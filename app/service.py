@@ -18,11 +18,6 @@ from datetime import date, timedelta
 from . import config, db, plex
 
 
-def is_placeholder(plex_id: str) -> bool:
-    """Members created by the importer or dev bypass, not a real Plex login."""
-    return plex_id.startswith("import:") or plex_id.startswith("dev:") or plex_id.startswith("seed:")
-
-
 def all_members(conn: sqlite3.Connection) -> list[dict]:
     rows = db.query_all(conn, "SELECT * FROM members ORDER BY username COLLATE NOCASE")
     return [db.member_public(r) for r in rows]
@@ -280,7 +275,6 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
     return {
         "member": db.member_public(row),
         "created_at": dict(row).get("created_at"),
-        "is_placeholder": is_placeholder(row["plex_id"]),
         "stats": stats,
         "suggestions": suggestions,
         "ratings": ratings,
@@ -670,23 +664,16 @@ def sync_rating_from_plex(conn: sqlite3.Connection, movie_id: int,
 # --- admin -----------------------------------------------------------------
 
 def admin_members(conn: sqlite3.Connection) -> list[dict]:
-    """Members enriched for the admin panel: activity counts, placeholder/owner
-    flags, and a suggested real-account match for each placeholder (by name)."""
+    """Members enriched for the admin panel: activity counts and owner/admin
+    flags."""
     rows = db.query_all(conn, "SELECT * FROM members ORDER BY username COLLATE NOCASE")
     members = [dict(r) for r in rows]
 
     def count(sql, params):
         return db.query_one(conn, sql, params)["c"]
 
-    # Precompute a name -> real member map for merge suggestions.
-    real_by_name: dict[str, dict] = {}
-    for m in members:
-        if not is_placeholder(m["plex_id"]):
-            real_by_name.setdefault(m["username"].lower(), m)
-
     out = []
     for m in members:
-        placeholder = is_placeholder(m["plex_id"])
         owner = bool(m.get("is_owner")) or m["plex_id"] in config.ADMIN_PLEX_IDS
         suggested = count("SELECT COUNT(*) c FROM movies WHERE suggested_by = ?", (m["id"],))
         watched_sug = count(
@@ -699,11 +686,6 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
                 (m["id"],),
             )
         ]
-        match = None
-        if placeholder:
-            cand = real_by_name.get(m["username"].lower())
-            if cand and cand["id"] != m["id"]:
-                match = {"id": cand["id"], "username": cand["username"]}
         out.append({
             "id": m["id"],
             "username": m["username"],
@@ -713,46 +695,11 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
             "plex_id": m["plex_id"],
             "is_admin": bool(m.get("is_admin")) or owner,
             "is_owner": owner,
-            "is_placeholder": placeholder,
             "identity_providers": providers,
             "created_at": m.get("created_at"),
             "counts": {"suggested": suggested, "suggested_watched": watched_sug, "ratings": ratings},
-            "suggested_merge": match,
         })
     return out
-
-
-def merge_members(conn: sqlite3.Connection, from_id: int, into_id: int) -> dict:
-    """Fold `from_id` into `into_id`: reassign all suggestions, ratings, and
-    prior-views, then delete the source member.
-
-    Ratings and prior_views have a UNIQUE(movie_id, member_id) constraint, so on
-    a collision (both members touched the same film) the target's row wins and
-    the source's is dropped."""
-    if from_id == into_id:
-        raise ValueError("Can't merge a member into itself")
-    src = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (from_id,))
-    dst = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (into_id,))
-    if not src or not dst:
-        raise ValueError("Member not found")
-    if src["is_owner"] or src["plex_id"] in config.ADMIN_PLEX_IDS:
-        raise ValueError("Can't merge away the owner account")
-
-    # Suggestions: straightforward reassignment.
-    conn.execute("UPDATE movies SET suggested_by = ? WHERE suggested_by = ?", (into_id, from_id))
-
-    # Ratings / prior_views: drop source rows that would collide, then reassign.
-    for table in ("ratings", "prior_views"):
-        conn.execute(
-            f"""DELETE FROM {table} WHERE member_id = ? AND movie_id IN
-                (SELECT movie_id FROM {table} WHERE member_id = ?)""",
-            (from_id, into_id),
-        )
-        conn.execute(f"UPDATE {table} SET member_id = ? WHERE member_id = ?", (into_id, from_id))
-
-    conn.execute("DELETE FROM members WHERE id = ?", (from_id,))
-    conn.commit()
-    return {"merged_from": src["username"], "into": dst["username"]}
 
 
 def set_member_admin(conn: sqlite3.Connection, member_id: int, value: bool) -> None:
