@@ -643,7 +643,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .profile-theme { align-self: flex-start; }
 
 /* ---------- list view (backlog + watched) ---------- */
-.list { display: flex; flex-direction: column; gap: .55rem; width: 100%; max-width: 1240px; margin-inline: auto; }
+.list { display: flex; flex-direction: column; gap: .55rem; width: 100%; max-width: 980px; margin-inline: auto; }
 .list-row {
   display: flex; flex-direction: row; align-items: center; gap: 1rem;
   background: var(--bg-raise); border: 1px solid var(--line);
@@ -675,6 +675,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .lr-secondary { min-width: 0; display: flex; flex-direction: column; gap: .2rem; color: var(--text-dim); font-size: .8rem; }
 
 .lr-actions { flex: 0 0 auto; display: flex; align-items: center; gap: .5rem; }
+.lr-vote-slot { flex: 0 0 44px; width: 44px; display: inline-flex; justify-content: center; }
 .lr-actions .seen-seg { width: auto; }
 .lr-actions .seg { min-width: 88px; height: 32px; }
 
@@ -1122,6 +1123,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
   .list { max-width: none; }
   .list-row .lr-content { display: flex; flex-direction: column; align-items: stretch; gap: .55rem; }
   .list-row .lr-secondary { flex-direction: row; flex-wrap: wrap; gap: .25rem .7rem; }
+  .lr-vote-slot:empty { display: none; }
   .list-row[data-cov-mode] { align-items: flex-start; }
   .list-row[data-cov-mode] .lr-actions { display: flex; gap: .5rem; }
   .list-row[data-cov-mode] .lr-actions .seen-seg { width: auto; flex: 1 1 auto; }

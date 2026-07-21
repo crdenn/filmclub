@@ -1175,7 +1175,7 @@
           <div class="lr-meta">${suggesterLink(m.suggester)}</div>
         </div>
         <div class="lr-secondary lr-cov cov-summary" data-nav="${m.id}">${backlogSeenSummary(c)}</div>
-        <div class="lr-actions">${voteControl(m, "list")}${seenControl(m.id, myState)}</div>
+        <div class="lr-actions"><span class="lr-vote-slot">${voteControl(m, "list")}</span>${seenControl(m.id, myState)}</div>
       </div>
     </div>`;
   }
