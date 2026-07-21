@@ -834,8 +834,17 @@
 
   // Two-segment control: tap "Seen it" or "Not seen" to set that state directly;
   // tap the already-active one to clear back to unknown. Clearer than a cycle.
+  //
+  // Once you've answered, the pair collapses (via CSS on `data-state`) to a
+  // quiet statement of your answer — a list of 14 already-answered films
+  // shouldn't be 28 live buttons shouting over the titles. Clicking that
+  // statement re-opens the chooser, so changing your mind is still one tap.
   function seenControl(id, myState) {
+    const label = myState === "seen" ? "Seen" : "Not seen";
     return `<div class="seen-seg" data-seen="${id}" data-state="${myState}">
+      <button type="button" class="seen-resolved" data-expand title="Change your answer" aria-label="You marked this “${label}” — change your answer">
+        <span class="sr-tick" aria-hidden="true">${myState === "seen" ? "✓" : "○"}</span><span class="sr-lbl">${label}</span>
+      </button>
       <button type="button" class="seg" data-set="seen">Seen it</button>
       <button type="button" class="seg" data-set="notseen">Not seen</button>
     </div>`;
@@ -849,21 +858,44 @@
     return `<b>${c.unseen_count} of ${total}</b> haven't seen this${c.unknown_count ? ` · <span style="color:var(--text-faint)">${c.unknown_count} unknown</span>` : ""}`;
   }
 
+  // Keep the collapsed summary in step with the control's state.
+  function syncResolvedLabel(seg) {
+    const btn = $(".seen-resolved", seg);
+    if (!btn) return;
+    const seen = seg.dataset.state === "seen";
+    const label = seen ? "Seen" : "Not seen";
+    $(".sr-tick", btn).textContent = seen ? "✓" : "○";
+    $(".sr-lbl", btn).textContent = label;
+    btn.setAttribute("aria-label", `You marked this “${label}” — change your answer`);
+  }
+
   async function setSeen(seg, target) {
     const id = seg.dataset.seen;
     const cur = seg.dataset.state;
     const next = cur === target ? "unknown" : target;
     seg.dataset.state = next; // optimistic highlight
+    syncResolvedLabel(seg);
+    // Answering collapses the chooser back to its quiet resolved state; clearing
+    // to "unknown" leaves the buttons up, since that's now the open question.
+    seg.classList.toggle("open", next === "unknown");
     try {
       const res = await api(`/api/movies/${id}/prior_view`, { method: "POST", body: { seen: STATE_TO_SEEN[next] } });
       updateCardCoverage(id, res.coverage);
-    } catch (e) { seg.dataset.state = cur; toast("Couldn't save: " + e.message, true); }
+    } catch (e) {
+      seg.dataset.state = cur;
+      syncResolvedLabel(seg);
+      toast("Couldn't save: " + e.message, true);
+    }
   }
 
   function wireSeenControls() {
     app.querySelectorAll(".seen-seg .seg").forEach(btn => btn.onclick = (e) => {
       e.stopPropagation();
       setSeen(btn.closest(".seen-seg"), btn.dataset.set);
+    });
+    app.querySelectorAll(".seen-seg .seen-resolved").forEach(btn => btn.onclick = (e) => {
+      e.stopPropagation();
+      btn.closest(".seen-seg").classList.add("open");
     });
   }
 
@@ -1167,14 +1199,15 @@
     const needsMe = myState === "unknown";
     const cls = "card list-row" + (needsMe ? " needs-me" : "");
     const titleHint = m.year ? `${m.title} (${m.year})` : m.title;
+    const yr = m.year ? ` <span class="yr">${m.year}</span>` : "";
     return `<div class="${cls}" data-id="${m.id}" data-cov-mode="backlog">
       <div class="lr-poster" data-nav="${m.id}">${statusIcon(m)}${posterEl(m)}</div>
       <div class="lr-content">
         <div class="lr-body" data-nav="${m.id}">
-          <div class="lr-title" title="${esc(titleHint)}">${esc(m.title)}</div>
+          <div class="lr-title" title="${esc(titleHint)}">${esc(m.title)}${yr}</div>
           <div class="lr-meta">${suggesterLink(m.suggester)}</div>
         </div>
-        <div class="lr-secondary lr-cov cov-summary" data-nav="${m.id}">${backlogSeenSummary(c)}</div>
+        <div class="lr-secondary lr-cov cov-summary" data-nav="${m.id}">${backlogSeenSummary(c, true)}</div>
         <div class="lr-actions"><span class="lr-vote-slot">${voteControl(m, "list")}</span>${seenControl(m.id, myState)}</div>
       </div>
     </div>`;
@@ -1205,23 +1238,41 @@
     return count === 1 ? "1 person wants to watch this" : `${count} people want to watch this`;
   }
 
-  // Visible content of a clickable +1 chip. Once votes exist, keep the plus
-  // prefix so the tally still reads as an upvote count in every visual state.
-  function voteChipInner(count, variant) {
-    return `<span class="pv-lbl">${count > 0 ? `+${count}` : "+1"}</span>`;
+  // Shared by the initial render and the post-toggle update, so the two can't
+  // drift apart.
+  function voteTitle(voted) {
+    return voted ? "You seconded this — click to undo" : "Second this · you'd also watch it";
   }
 
-  // A compact +1 chip. Returns "" when there's nothing to show (suggester of a
-  // film with no seconds). Suggesters can't vote their own pick — they get a
-  // static count (no "+1"); everyone else gets a clickable chip.
+  // Small caret marking a chip as a tally rather than an invitation.
+  const ICON_SECOND = `<svg class="pv-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 15l7-7 7 7"/></svg>`;
+
+  // Visible content of a +1 chip. A tally and an invitation must never look the
+  // same: "+1" previously meant BOTH "one person seconded this" and "click to
+  // add one", so a film with no seconds was indistinguishable from a film with
+  // one. Counts now read as a caret plus the number; only the empty, clickable
+  // invite says "+1".
+  function voteChipInner(count) {
+    return count > 0
+      ? `${ICON_SECOND}<span class="pv-lbl">${count}</span>`
+      : `<span class="pv-lbl">+1</span>`;
+  }
+
+  // A compact seconding chip. Suggesters can't second their own pick: they get a
+  // static tally, or — in list view, where the column would otherwise be a
+  // mystery gap — a dashed placeholder that says why it's empty.
   function voteControl(m, variant = "card") {
     const count = m.vote_count || 0;
     if (!m.can_vote) {
-      if (count <= 0) return "";
-      return `<span class="pv pv-${variant} pv-static" title="${secondsCaption(count)}" aria-label="${secondsCaption(count)}"><span class="pv-lbl">+${count}</span></span>`;
+      if (count <= 0) {
+        if (variant !== "list") return "";
+        const why = "Your suggestion — you can't second your own pick";
+        return `<span class="pv pv-${variant} pv-static pv-none" title="${why}" aria-label="${why}">—</span>`;
+      }
+      return `<span class="pv pv-${variant} pv-static" title="${secondsCaption(count)}" aria-label="${secondsCaption(count)}">${voteChipInner(count)}</span>`;
     }
-    const title = m.voted ? "You +1'd this — click to undo" : "+1 · you'd also watch this";
-    return `<button type="button" class="pv pv-${variant} ${m.voted ? "voted" : ""}" data-vote="${m.id}" data-voted="${m.voted ? "1" : "0"}" data-variant="${variant}" aria-pressed="${m.voted}" title="${title}" aria-label="${title}">${voteChipInner(count, variant)}</button>`;
+    const title = voteTitle(m.voted);
+    return `<button type="button" class="pv pv-${variant} ${m.voted ? "voted" : ""}" data-vote="${m.id}" data-voted="${m.voted ? "1" : "0"}" data-variant="${variant}" aria-pressed="${m.voted}" title="${title}" aria-label="${title}">${voteChipInner(count)}</button>`;
   }
 
   // Caption shown beside the chip on the movie detail page (which has room).
@@ -1260,10 +1311,10 @@
       btn.dataset.voted = res.voted ? "1" : "0";
       btn.classList.toggle("voted", res.voted);
       btn.setAttribute("aria-pressed", String(res.voted));
-      const title = res.voted ? "You +1'd this — click to undo" : "+1 · you'd also watch this";
+      const title = voteTitle(res.voted);
       btn.title = title;
       btn.setAttribute("aria-label", title);
-      btn.innerHTML = voteChipInner(res.vote_count, btn.dataset.variant || "card");
+      btn.innerHTML = voteChipInner(res.vote_count);
     });
     const cap = app.querySelector(`.vote-caption[data-vote-cap="${id}"]`);
     if (cap) cap.textContent = detailCaption(res.vote_count, true);
@@ -1291,8 +1342,16 @@
     return chunk(c.not_seen_ids, "unseen") + chunk(c.unknown_ids, "unknown") + chunk(c.seen_ids, "seen");
   }
 
-  function backlogSeenSummary(c) {
-    return `<span class="cov-sum"><span class="cov-sum-label"><b>${c.seen_ids.length}/${c.total_members}</b> seen</span></span>`;
+  // A bare "1/6" doesn't say six of what. The list has room for the faces, which
+  // answer that without a word; the tight grid card keeps the compact tally.
+  function backlogSeenSummary(c, withAvatars = false) {
+    if (!withAvatars) {
+      return `<span class="cov-sum"><span class="cov-sum-label"><b>${c.seen_ids.length}/${c.total_members}</b> seen</span></span>`;
+    }
+    return `<span class="cov-sum">
+      <span class="cov-sum-label"><b>${c.seen_ids.length} of ${c.total_members}</b> seen it</span>
+      <span class="cov-avatars">${coverageAvatars(c)}</span>
+    </span>`;
   }
 
   function suggesterName(id) {
@@ -1346,9 +1405,10 @@
       if (avs) avs.innerHTML = coverageAvatars(c);
       return;
     }
-    // Backlog card: refresh the simple seen tally + attention state.
+    // Backlog card: refresh the seen tally + attention state. List rows carry
+    // the member faces too, so re-render them in the same shape they started in.
     const sum = $(".cov-summary", card);
-    if (sum) sum.innerHTML = backlogSeenSummary(c);
+    if (sum) sum.innerHTML = backlogSeenSummary(c, card.classList.contains("list-row"));
     // A film I've now marked (seen or not-seen) no longer needs my attention.
     const needsMe = !c.seen_ids.includes(state.me.id) && !c.not_seen_ids.includes(state.me.id);
     card.classList.toggle("needs-me", needsMe);

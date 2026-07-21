@@ -391,7 +391,19 @@ select, .btn {
   background: var(--bg-raise); color: var(--text); border: 1px solid var(--line);
   border-radius: 9px; padding: .45rem .7rem; font-size: .88rem;
 }
+/* Drop the native control chrome so selects sit at the same height and weight
+   as the search field and buttons beside them. */
+select {
+  appearance: none; -webkit-appearance: none;
+  padding-right: 1.85rem; line-height: 1.35; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 1.05rem center, right .75rem center;
+  background-size: .3rem .3rem, .3rem .3rem;
+  background-repeat: no-repeat;
+}
 select:hover, .btn:hover { border-color: var(--text-faint); }
+select:focus-visible { outline: none; border-color: var(--accent); }
 .ctl-search {
   background: var(--bg-raise); color: var(--text); border: 1px solid var(--line);
   border-radius: 9px; padding: .45rem .7rem; font-size: .88rem; width: 160px;
@@ -413,6 +425,11 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .backlog-head .ph-title { display: flex; align-items: baseline; gap: .7rem; }
 .toolbar { display: flex; gap: .55rem; align-items: center; flex-wrap: wrap; margin-left: auto; }
 .toolbar .ctl-search.grow { width: 220px; }
+/* Search, selects, toggle and button were landing at 32/35/33/37px. One height
+   for the whole row so it reads as a single strip of controls. */
+.toolbar .ctl-search, .toolbar select, .toolbar .btn, .toolbar .view-toggle { height: 36px; }
+.toolbar .ctl-search, .toolbar select, .toolbar .btn { padding-block: 0; }
+.toolbar .vt-btn { height: 100%; }
 .add-short { display: none; }
 
 /* filterbar: an inline control group on desktop, a popover panel on mobile */
@@ -549,6 +566,11 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .pv.pv-static { cursor: default; }
 .pv.pv-static:hover { color: var(--text-dim); border-color: var(--line); }
 .pv-lbl { font-size: .8rem; }
+.pv-caret { width: 9px; height: 9px; display: block; flex: 0 0 auto; }
+/* "You suggested this, so you can't second it" — an explicit placeholder, since
+   an empty slot just looks like the chip failed to render. */
+.pv-none { color: var(--text-faint); border-style: dashed; }
+.pv-none:hover { color: var(--text-faint); border-color: var(--line); }
 .pv-count { font-size: .78rem; color: var(--text-faint); }
 .pv.voted .pv-count { color: inherit; }
 
@@ -586,7 +608,9 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
    (not a poster-covering pill) so you know exactly what to do. Kept faint so a
    grid of unanswered cards reads as a gentle prompt, not a wall of warnings. */
 .card.needs-me .seen-seg .seg { border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
-.list-row.needs-me { border-left: 3px solid var(--warn); }
+/* Inset rather than a real border, so the marker doesn't shift a flush row's
+   content sideways relative to its neighbours. */
+.list-row.needs-me { box-shadow: inset 3px 0 0 var(--warn); }
 .seen-seg .seg {
   flex: 1 1 0; min-width: 0; height: 34px; padding: 0 .5rem;
   border-radius: 8px; border: 1px solid var(--line); background: var(--bg-raise);
@@ -594,13 +618,34 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
   cursor: pointer; transition: background .1s, color .1s, border-color .1s;
 }
 .seen-seg .seg:hover { color: var(--text); border-color: var(--text-faint); }
-/* Your answer gets colour-filled; the inactive one stays muted. Both answers use
-   the same accent: "seen" and "not seen" are two sides of one question, not a
-   good/bad pair, so giving them different hues only added noise to the grid. */
+/* Your answer reads as filled-and-settled; the inactive one stays muted. Both
+   answers share one treatment: "seen" and "not seen" are two sides of one
+   question, not a good/bad pair. Deliberately NOT accent-coloured — blue is
+   reserved for the page's one real call to action ("+ Add suggestion"), and a
+   screenful of blue-outlined toggles was drowning it out. */
 .seen-seg[data-state="seen"] .seg[data-set="seen"],
 .seen-seg[data-state="notseen"] .seg[data-set="notseen"] {
-  background: var(--accent-soft-strong); border-color: var(--accent); color: var(--accent-text);
+  background: var(--bg-raise-2); border-color: var(--text-faint); color: var(--text);
 }
+
+/* --- collapsed "already answered" state --- */
+.seen-resolved {
+  display: none; align-items: center; gap: .32rem;
+  height: 30px; padding: 0 .5rem; border-radius: 8px;
+  border: 1px solid transparent; background: none;
+  color: var(--text-dim); font: inherit; font-size: .8rem; font-weight: 600;
+  white-space: nowrap; cursor: pointer;
+  transition: color .1s, border-color .1s, background .1s;
+}
+.seen-resolved:hover { color: var(--text); border-color: var(--line); background: var(--bg-raise); }
+.seen-resolved .sr-tick { color: var(--good-text); font-weight: 700; }
+.seen-seg[data-state="notseen"] .sr-tick { color: var(--text-faint); }
+/* Answered and idle: show the summary, hide the chooser. `.open` (set when you
+   click the summary, or when you clear back to unknown) flips it back. */
+.seen-seg[data-state="seen"]:not(.open) .seg,
+.seen-seg[data-state="notseen"]:not(.open) .seg { display: none; }
+.seen-seg[data-state="seen"]:not(.open) .seen-resolved,
+.seen-seg[data-state="notseen"]:not(.open) .seen-resolved { display: inline-flex; }
 
 /* this-week discussion date chip */
 .discuss-date { margin-left: auto; font-size: .74rem; color: var(--text-dim); white-space: nowrap; }
@@ -643,17 +688,29 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .profile-theme { align-self: flex-start; }
 
 /* ---------- list view (backlog + watched) ---------- */
-.list { display: flex; flex-direction: column; gap: .55rem; width: 100%; max-width: 980px; margin-inline: auto; }
-.list-row {
-  display: flex; flex-direction: row; align-items: center; gap: 1rem;
-  background: var(--bg-raise); border: 1px solid var(--line);
-  border-radius: 12px; padding: .6rem .8rem; cursor: pointer;
-  transition: border-color .12s ease, background .12s ease;
+/* One bordered table rather than a ladder of floating cards: hairline dividers
+   between flush rows scan far better down a long backlog, and drop ~14 borders
+   and 14 gaps' worth of vertical space. */
+.list {
+  display: flex; flex-direction: column; width: 100%; max-width: 880px; margin-inline: auto;
+  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
 }
-.list-row:hover { border-color: var(--text-faint); background: var(--bg-raise-2); }
+.list-row {
+  display: flex; flex-direction: row; align-items: center;
+  background: transparent; border: 0; border-radius: 0;
+  padding: .4rem .75rem; cursor: pointer;
+  transition: background .12s ease;
+}
+/* Beats `.card[data-cov-mode="backlog"]`'s column gap on specificity. */
+.list > .list-row { gap: .85rem; }
+.list-row + .list-row { border-top: 1px solid var(--line); }
+.list-row:hover { background: var(--bg-raise-2); }
+/* The row navigates; the controls at its end do not. */
+.list-row:hover .lr-title { text-decoration: underline; text-underline-offset: 2px; }
+.lr-actions { cursor: default; }
 .lr-poster {
-  position: relative; flex: 0 0 auto; width: 48px; aspect-ratio: 2/3;
-  border-radius: 6px; overflow: hidden;
+  position: relative; flex: 0 0 auto; width: 40px; aspect-ratio: 2/3;
+  border-radius: 5px; overflow: hidden;
   background: var(--grad-poster);
 }
 .lr-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -661,23 +718,31 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .lr-poster .status-icon { top: 3px; right: 3px; width: 15px; height: 15px; border-width: 1px; }
 .lr-poster .status-icon svg { width: 9px; height: 9px; }
 
-.lr-content { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(240px,1fr) minmax(150px,220px) auto; align-items: center; gap: clamp(1rem,2.5vw,2.5rem); }
-.lr-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .25rem; }
-.lr-title { font-weight: 600; font-size: 1.08rem; line-height: 1.22; }
-.list-row[data-cov-mode="backlog"] .lr-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* A fixed coverage column and a modest gap: letting the title track 1fr with a
+   2.5vw gap stranded the title and its tally ~700px apart on a wide screen,
+   with nothing to carry the eye across. */
+.lr-content { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) 210px auto; align-items: center; gap: 1.25rem; }
+.lr-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
+.lr-title { font-weight: 600; font-size: 1rem; line-height: 1.25; }
+.list-row[data-cov-mode="backlog"] .lr-title { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .lr-title .yr { color: var(--text-faint); font-weight: 400; }
 .lr-meta { display: flex; align-items: center; gap: .45rem; font-size: .8rem; color: var(--text-dim); flex-wrap: wrap; }
 .lr-meta .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12ch; }
 .lr-cov { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .8rem; color: var(--text-dim); }
 .lr-cov .coverage-line b { color: var(--text); }
-.lr-cov .cov-avatars { gap: .2rem; }
-.lr-cov .cov-avatars .avatar { width: 20px; height: 20px; font-size: .55rem; }
+/* Tally over faces: the fraction stays scannable, the faces say who "of 6" is. */
+.lr-secondary.lr-cov { align-items: flex-start; }
+.lr-cov .cov-sum { flex-direction: column; align-items: flex-start; gap: .2rem; min-height: 0; }
+.lr-cov .cov-avatars { gap: .15rem; flex-wrap: nowrap; }
+.lr-cov .cov-avatars .avatar { width: 18px; height: 18px; font-size: .5rem; }
 .lr-secondary { min-width: 0; display: flex; flex-direction: column; gap: .2rem; color: var(--text-dim); font-size: .8rem; }
 
 .lr-actions { flex: 0 0 auto; display: flex; align-items: center; gap: .5rem; }
 .lr-vote-slot { flex: 0 0 44px; width: 44px; display: inline-flex; justify-content: center; }
-.lr-actions .seen-seg { width: auto; }
-.lr-actions .seg { min-width: 88px; height: 32px; }
+/* Reserve the expanded chooser's width even while collapsed, so opening a row
+   doesn't shove that row's own coverage column sideways. */
+.lr-actions .seen-seg { width: auto; min-width: 172px; justify-content: flex-end; }
+.lr-actions .seg { min-width: 82px; height: 30px; }
 
 .lr-trailing { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; text-align: right; }
 .lr-rating { display: inline-flex; align-items: center; gap: .35rem; }
@@ -1121,9 +1186,14 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 
   /* --- list view: stack the backlog seen-control below the body --- */
   .list { max-width: none; }
+  .list > .list-row { gap: .7rem; }
+  .list-row { padding: .6rem .75rem; }
   .list-row .lr-content { display: flex; flex-direction: column; align-items: stretch; gap: .55rem; }
   .list-row .lr-secondary { flex-direction: row; flex-wrap: wrap; gap: .25rem .7rem; }
+  .list-row .lr-secondary.lr-cov .cov-sum { flex-direction: row; align-items: center; gap: .5rem; }
   .lr-vote-slot:empty { display: none; }
+  /* No room to explain an empty seconding slot here; just omit it. */
+  .lr-vote-slot:has(.pv-none) { display: none; }
   .list-row[data-cov-mode] { align-items: flex-start; }
   .list-row[data-cov-mode] .lr-actions { display: flex; gap: .5rem; }
   .list-row[data-cov-mode] .lr-actions .seen-seg { width: auto; flex: 1 1 auto; }
