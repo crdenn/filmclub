@@ -734,7 +734,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 }
 .list-row + .list-row { border-top: 1px solid var(--line); }
 .list-row:hover { background: var(--bg-raise-2); }
-.list-row:hover .lr-title { text-decoration: underline; text-underline-offset: 2px; }
+.list-row:hover .lr-name { text-decoration: underline; text-underline-offset: 2px; }
 .lr-cell { min-width: 0; }
 /* Cells holding their own controls don't navigate, so they shouldn't claim to. */
 .lr-cell:not([data-nav]) { cursor: default; }
@@ -822,10 +822,11 @@ select:focus-visible { outline: none; border-color: var(--accent); }
    tell there was a button. Solid border, raised fill and a legible glyph. */
 .keen-add {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; margin-left: .35rem; padding: 0;
-  border: 1px solid var(--text-faint); border-radius: 50%;
+  min-width: 34px; height: 22px; margin-left: .35rem; padding: 0 .4rem;
+  border: 1px solid var(--text-faint); border-radius: 999px;
   background: var(--bg-raise-2); color: var(--text);
-  font: inherit; font-size: .9rem; font-weight: 700; line-height: 1; cursor: pointer;
+  font: inherit; font-size: .74rem; font-weight: 700; line-height: 1; cursor: pointer;
+  font-variant-numeric: tabular-nums;
   transition: color .1s, border-color .1s, background .1s;
 }
 .keen-add:hover {
@@ -840,7 +841,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
    button's centre line rather than floating as loose text. Not interactive. */
 .keen-na {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; color: var(--text-faint); cursor: default;
+  min-width: 34px; height: 22px; color: var(--text-faint); cursor: default;
 }
 
 /* --- watched trailing columns --- */

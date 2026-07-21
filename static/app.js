@@ -1286,7 +1286,10 @@
   function cellFilm(m) {
     const titleHint = m.year ? `${m.title} (${m.year})` : m.title;
     const yr = m.year ? ` <span class="yr">${m.year}</span>` : "";
-    return `<span class="lr-title" title="${esc(titleHint)}">${esc(m.title)}${yr}</span>`;
+    // The title is wrapped separately so the row-hover underline can stop at the
+    // end of the name rather than dragging through the year.
+    return `<span class="lr-title" title="${esc(titleHint)}">`
+      + `<span class="lr-name">${esc(m.title)}</span>${yr}</span>`;
   }
   const COL_POSTER = { key: "poster", label: "", cls: "lr-poster", width: "40px" };
   const COL_RUNTIME = {
@@ -1312,7 +1315,7 @@
       { key: "seen", label: "Unseen", sort: "unseen", dir: "desc", cls: "lr-seen",
         width: "120px", render: m => coverageMeter(m.coverage) },
       { key: "keen", label: "Keen", sort: "seconds", dir: "desc", cls: "lr-keen",
-        width: "136px", nav: false, render: m => keenStack(m) },
+        width: "148px", nav: false, render: m => keenStack(m) },
       { key: "you", label: "You", cls: "lr-answer", width: "176px", nav: false,
         render: m => seenControl(m.id, myCovState(m.coverage)) },
     ],
@@ -1549,7 +1552,7 @@
     // contradict each other — a filled bar beside "0 seen" is unreadable.
     const caption = allSeen
       ? `<span class="cov-all">All seen</span>`
-      : `<b>${unseen}</b> not seen`;
+      : `<b>${unseen}</b> ${unseen === 1 ? "hasn't" : "haven't"} seen`;
     return `<span class="cov-cell" title="${esc(label)}" aria-label="${esc(label)}">`
       + `<span class="${cls}" aria-hidden="true">${bar}</span>`
       + `<span class="cov-frac">${caption}</span></span>`;
@@ -1577,9 +1580,12 @@
     let ctrl = "";
     if (m.can_vote) {
       const t = voteTitle(m.voted);
+      // "+1" reads as the action it is. It was ambiguous back when the same chip
+      // also had to display the tally; the faces beside it now carry the count,
+      // so this can just be the invitation.
       ctrl = `<button type="button" class="keen-add${m.voted ? " in" : ""}" data-vote="${m.id}"`
         + ` data-voted="${m.voted ? "1" : "0"}" data-variant="list" aria-pressed="${m.voted}"`
-        + ` title="${esc(t)}" aria-label="${esc(t)}">${m.voted ? "✓" : "+"}</button>`;
+        + ` title="${esc(t)}" aria-label="${esc(t)}">${m.voted ? "✓" : "+1"}</button>`;
     }
     // Same 22px box as the button it stands in for, so it lands on the button's
     // centre line instead of floating as loose text.
