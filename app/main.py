@@ -87,12 +87,11 @@ class BroadcastMiddleware:
 app.add_middleware(BroadcastMiddleware)
 
 
-async def _backfill_movie_languages() -> None:
-    """Populate the new language field for existing TMDB-backed movies.
+async def _backfill_movie_metadata() -> None:
+    """Populate additive TMDB metadata for existing movie snapshots.
 
-    This runs once in the background after startup and only selects rows still
-    missing a language, so normal restarts do no external work after the first
-    successful pass.
+    Successful lookups store an empty content rating when TMDB has none, which
+    distinguishes an unrated film from one that still needs a retry.
     """
     if not config.TMDB_API_KEY:
         return
@@ -100,7 +99,9 @@ async def _backfill_movie_languages() -> None:
     try:
         rows = db.query_all(
             conn,
-            "SELECT id, tmdb_id FROM movies WHERE language IS NULL AND tmdb_id IS NOT NULL",
+            """SELECT id, tmdb_id, language, content_rating FROM movies
+               WHERE (language IS NULL OR content_rating IS NULL)
+                 AND tmdb_id IS NOT NULL""",
         )
     finally:
         conn.close()
@@ -113,23 +114,32 @@ async def _backfill_movie_languages() -> None:
         async with semaphore:
             try:
                 meta = await tmdb.details(row["tmdb_id"])
-                return row["id"], meta.get("language")
+                language = (row["language"] if row["language"] is not None
+                            else meta.get("language") or "")
+                content_rating = (
+                    row["content_rating"] if row["content_rating"] is not None
+                    else meta.get("content_rating") or ""
+                )
+                return row["id"], language, content_rating
             except Exception as exc:  # noqa: BLE001 — retry on next restart
-                log.warning("Language backfill failed for movie %s: %s", row["id"], exc)
-                return row["id"], None
+                log.warning("Metadata backfill failed for movie %s: %s", row["id"], exc)
+                return None
 
     results = await asyncio.gather(*(fetch(row) for row in rows))
-    updates = [(language, movie_id) for movie_id, language in results if language]
+    updates = [(result[1], result[2], result[0]) for result in results if result]
     if not updates:
         return
     conn = db.connect()
     try:
-        conn.executemany("UPDATE movies SET language = ? WHERE id = ?", updates)
+        conn.executemany(
+            "UPDATE movies SET language = ?, content_rating = ? WHERE id = ?",
+            updates,
+        )
         conn.commit()
     finally:
         conn.close()
-    log.info("Backfilled language for %d movies", len(updates))
-    events.broadcast({"path": "/api/metadata/languages", "client": None})
+    log.info("Backfilled TMDB metadata for %d movies", len(updates))
+    events.broadcast({"path": "/api/metadata/movies", "client": None})
 
 
 @app.on_event("startup")
@@ -183,7 +193,7 @@ async def _startup() -> None:
         log.info("PLEX_WEBHOOK_SECRET not set — Plex-to-Film-Club rating sync is disabled")
     # Kick off Plex library enrichment in the background.
     asyncio.create_task(plex.refresh_loop())
-    asyncio.create_task(_backfill_movie_languages())
+    asyncio.create_task(_backfill_movie_metadata())
 
 
 # --- request models --------------------------------------------------------

@@ -140,6 +140,10 @@ def _m5_password_resets(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m6_movie_content_rating(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(conn, "movies", "content_rating", "content_rating TEXT")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -147,6 +151,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (3, "sessions", _m3_sessions),
     (4, "identities", _m4_identities),
     (5, "password-resets", _m5_password_resets),
+    (6, "movie-content-rating", _m6_movie_content_rating),
 ]
 
 

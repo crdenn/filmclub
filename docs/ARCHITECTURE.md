@@ -132,6 +132,7 @@ erDiagram
       text status
       integer suggested_by FK
       text watched_at
+      text content_rating
       text seen_before_snapshot
       text seerr_status
     }
@@ -193,7 +194,7 @@ The Plex token is encrypted before it is stored in the member row so the app can
 1. The search modal calls `GET /api/tmdb/search?q=...`.
 2. `tmdb.search()` returns capped results and performs parallel director lookups.
 3. Selection posts a TMDB ID to `POST /api/movies`.
-4. `tmdb.details()` fetches full metadata, including credits, original language, and external IDs.
+4. `tmdb.details()` fetches full metadata, including credits, original language, U.S. certification from appended release-date data, and external IDs.
 5. The route rejects an existing TMDB ID, then `service.add_suggestion()` snapshots metadata into SQLite.
 6. If Seerr is configured, the app checks the Plex cache, performs a targeted live Plex lookup on a miss, and otherwise calls Seerr.
 7. Seerr outcome is stored as `movies.seerr_status`. Failure does not undo the inserted suggestion.

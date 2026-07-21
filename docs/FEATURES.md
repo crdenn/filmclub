@@ -76,11 +76,12 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 ### Add suggestion and metadata snapshot
 
-- **Purpose:** Add a selected film to the backlog with durable metadata, original language, and suggester attribution.
+- **Purpose:** Add a selected film to the backlog with durable metadata, original language, U.S. content rating, and suggester attribution.
 - **Main files:** `api_add_movie()`, `tmdb.details()`, `service.add_suggestion()`, `movies` table.
 - **Status:** Implemented.
-- **Dependencies:** TMDB details endpoint.
-- **Limitations:** Duplicate detection is in application code by TMDB ID; the database has no unique constraint. Existing metadata is not refreshed.
+- **Dependencies:** TMDB details and appended release-dates data.
+- **Behavior:** Existing TMDB-backed rows missing the additive language or content-rating fields are backfilled in the background once; an empty stored rating records that TMDB supplied no U.S. certification.
+- **Limitations:** Duplicate detection is in application code by TMDB ID; the database has no unique constraint. Other existing metadata is not refreshed.
 - **Follow-up:** Add database-level duplicate protection if concurrent adds become possible.
 
 ### Rotten Tomatoes enrichment
@@ -242,7 +243,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Main files:** `service.movie_detail()`, `/api/movies/{id}`, `renderDetail()`.
 - **Status:** Implemented.
 - **Dependencies:** Movie, members, ratings, prior views/snapshot, Plex cache.
-- **Behavior:** Scheduled details return only the requesting member's rating and no rating aggregates. Watched details return the complete group ratings.
+- **Behavior:** Scheduled details return only the requesting member's rating and no rating aggregates. Watched details return the complete group ratings. The metadata line shows the snapshotted U.S. content rating when available, omits the suggestion date, and labels a watched film's retained discussion date as **Discussed**.
 - **Limitations:** Behavior and actions vary by status within one large render function.
 - **Follow-up:** Add end-to-end coverage for each status rather than refactoring preemptively.
 

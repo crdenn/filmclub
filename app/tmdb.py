@@ -39,6 +39,27 @@ def language_name(movie: dict) -> str | None:
     return str(code).upper()
 
 
+def us_content_rating(movie: dict) -> str | None:
+    """Return the preferred US movie certification from TMDB release data."""
+    results = movie.get("release_dates", {}).get("results", []) or []
+    us = next((result for result in results if result.get("iso_3166_1") == "US"), None)
+    if not us:
+        return None
+    # Prefer a wide theatrical certification, then limited theatrical and
+    # home-release records. TMDB may include several US dates with the same
+    # certification, so the release date provides a stable tie-breaker.
+    type_order = {3: 0, 2: 1, 4: 2, 5: 3, 6: 4, 1: 5}
+    rated = [release for release in us.get("release_dates", [])
+             if str(release.get("certification") or "").strip()]
+    if not rated:
+        return None
+    rated.sort(key=lambda release: (
+        type_order.get(release.get("type"), 99),
+        str(release.get("release_date") or ""),
+    ))
+    return str(rated[0]["certification"]).strip()
+
+
 async def _director(client: httpx.AsyncClient, tmdb_id: int) -> str | None:
     """Look up a film's director. Degrades to None on any failure."""
     try:
@@ -90,11 +111,11 @@ async def search(query: str, limit: int = 6) -> list[dict]:
 
 
 async def details(tmdb_id: int) -> dict:
-    """Full metadata snapshot for a chosen film, including director and genres."""
+    """Full metadata snapshot, including credits and US content rating."""
     async with httpx.AsyncClient(timeout=8.0) as client:
         resp = await client.get(
             f"{BASE}/movie/{tmdb_id}",
-            params=_params({"append_to_response": "credits"}),
+            params=_params({"append_to_response": "credits,release_dates"}),
         )
         resp.raise_for_status()
         d = resp.json()
@@ -115,6 +136,7 @@ async def details(tmdb_id: int) -> dict:
         "runtime": d.get("runtime"),
         "director": director,
         "language": language_name(d),
+        "content_rating": us_content_rating(d),
         "overview": d.get("overview"),
         "genres": [g["name"] for g in d.get("genres", [])],
         "imdb_id": d.get("imdb_id"),

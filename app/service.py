@@ -455,8 +455,8 @@ def add_suggestion(conn: sqlite3.Connection, meta: dict, member_id: int) -> int:
         conn,
         """INSERT INTO movies
            (tmdb_id, title, year, poster_url, backdrop_url, runtime, director,
-            language, overview, genres, imdb_id, suggested_by, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested')""",
+            language, content_rating, overview, genres, imdb_id, suggested_by, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested')""",
         (
             meta.get("tmdb_id"),
             meta.get("title"),
@@ -466,6 +466,7 @@ def add_suggestion(conn: sqlite3.Connection, meta: dict, member_id: int) -> int:
             meta.get("runtime"),
             meta.get("director"),
             meta.get("language"),
+            meta.get("content_rating") or "",
             meta.get("overview"),
             json.dumps(meta.get("genres") or []),
             meta.get("imdb_id"),

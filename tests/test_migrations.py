@@ -26,7 +26,7 @@ def _backup_files(db_path):
 # Columns the baseline migration must guarantee on an upgraded database.
 _MEMBER_COLS = ("is_admin", "display_name", "plex_account_id",
                 "plex_token_encrypted", "plex_rating_sync_enabled", "is_owner")
-_MOVIE_COLS = ("language", "seerr_status")
+_MOVIE_COLS = ("language", "seerr_status", "content_rating")
 
 
 class MigrationRunnerTests(unittest.TestCase):
@@ -75,7 +75,8 @@ class MigrationRunnerTests(unittest.TestCase):
         c.close()
         self.assertEqual(rows, [(1, "baseline"), (2, "app-settings"),
                                 (3, "sessions"), (4, "identities"),
-                                (5, "password-resets")])
+                                (5, "password-resets"),
+                                (6, "movie-content-rating")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
         self.assertIn("provider_uid", _columns(self.db_path, "identities"))

@@ -44,8 +44,9 @@ The app never blocks a pick, but it keeps the signal honest:
   "Rate" prompt for anything you haven't scored yet.
 
 **Movie detail**
-- Metadata header (poster/backdrop, director, runtime, discussion date, genres,
-  synopsis, suggester, Plex "Watch" link when available).
+- Metadata header (poster/backdrop, director, U.S. content rating, runtime,
+  discussion date for scheduled/watched films, genres, synopsis, suggester,
+  and a Plex "Watch" link when available).
 - A rating input during the scheduled week (0.5–5 in half-steps, an optional
   note, and a "had you seen this before?" toggle), then all ratings grouped by
   **first watch vs rewatch** with per-group averages.
@@ -64,7 +65,7 @@ scorecards, and genre/decade distributions.
 
 **Integrations**
 - **TMDB** — search and a local metadata snapshot on selection (no re-fetch per
-  load); original language captured.
+  load); original language and U.S. movie certification captured.
 - **Plex** — OAuth login restricted to accounts with access to *your* server;
   "In Library" badges with deep links; Rotten Tomatoes critic/audience scores for
   matched films; and optional **two-way rating sync** (future changes only).

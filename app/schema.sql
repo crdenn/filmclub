@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS movies (
     runtime       INTEGER,          -- minutes
     director      TEXT,
     language      TEXT,             -- human-readable original language from TMDB
+    content_rating TEXT,            -- US movie certification from TMDB (G, PG, etc.)
     overview      TEXT,
     genres        TEXT,             -- JSON array of strings
     suggested_by  INTEGER REFERENCES members(id) ON DELETE SET NULL,

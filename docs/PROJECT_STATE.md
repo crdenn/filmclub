@@ -24,7 +24,7 @@ The scheduling workflow in the code and README is authoritative.
 - Plex PIN login, server-access authorization, member auto-provisioning, signed sessions, and logout.
 - Development authentication bypass for local work.
 - User display-name editing and public member activity profiles, with member links across film, coverage, rating, and statistics views.
-- TMDB search and full metadata snapshot, including original language, when adding a suggestion; existing rows are backfilled once in the background.
+- TMDB search and full metadata snapshot, including original language and U.S. content rating, when adding a suggestion; additive metadata fields on existing rows are backfilled once in the background.
 - Backlog grid/list views, sorting, client filters, coverage display, and seen/unseen/unknown cycling.
 - Eligibility classification with unknown kept separate from unseen.
 - Suggestion seconding with suggester self-votes blocked.
