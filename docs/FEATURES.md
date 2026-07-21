@@ -287,6 +287,11 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 ## Administration
 
+The Admin area uses dedicated hash-routed subpages for **Users**, **Invites**,
+**Application settings**, and **Backup & restore**. The Admin item stays active
+in the primary navigation while these focused sections avoid loading unrelated
+administrative data.
+
 ### Admin and owner roles
 
 - **Purpose:** Combine durable database admins with environment-defined owner accounts.

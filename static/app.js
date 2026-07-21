@@ -1934,165 +1934,172 @@
   }
 
   // ================= ADMIN =================
-  async function renderAdmin(preserve = false) {
+  const ADMIN_SECTIONS = {
+    users: { label: "Users", description: "Manage accounts, permissions, password resets, and placeholder reconciliation." },
+    invites: { label: "Invites", description: "Create and review single-use invitations for local accounts." },
+    settings: { label: "Application settings", description: "Configure and test Film Club's external services and public address." },
+    backups: { label: "Backup & restore", description: "Download a portable backup or restore the complete application state." },
+  };
+
+  function adminLayout(section, content, meta = "") {
+    const links = Object.entries(ADMIN_SECTIONS).map(([key, item]) =>
+      `<a href="#/admin/${key}" class="admin-subnav-link ${section === key ? "active" : ""}" ${section === key ? 'aria-current="page"' : ""}>${esc(item.label)}</a>`).join("");
+    const current = ADMIN_SECTIONS[section];
+    return `<div class="page-head admin-page-head"><div><h1>Admin</h1><p>Manage your Film Club installation.</p></div>${meta ? `<span class="count">${meta}</span>` : ""}</div>
+      <nav class="admin-subnav" aria-label="Admin sections">${links}</nav>
+      <div class="admin-section-head"><h2>${esc(current.label)}</h2><p>${esc(current.description)}</p></div>
+      <div class="admin-section">${content}</div>`;
+  }
+
+  function adminError(error, preserve) {
+    if (error.message === "unauth") return;
+    if (preserve) toast("Couldn't refresh: " + error.message, true);
+    else paintView("admin", `<div class="empty">${error.message === "Admin access required" ? "You don't have admin access." : "Error: " + esc(error.message)}</div>`);
+  }
+
+  async function renderAdmin(section = "users", preserve = false) {
+    if (!ADMIN_SECTIONS[section]) section = "users";
     if (!preserve) paintView("admin", `<div class="empty">Loading…</div>`);
-    let data, configData, invitesData;
-    try { [data, configData, invitesData] = await Promise.all([
-      api("/api/admin/members"), api("/api/admin/settings"), api("/api/admin/invites"),
-    ]); }
-    catch (e) {
-      if (e.message === "unauth") return;
-      if (preserve) toast("Couldn't refresh: " + e.message, true);
-      else paintView("admin", `<div class="empty">${e.message === "Admin access required" ? "You don't have admin access." : "Error: " + esc(e.message)}</div>`);
+    if (!state.me || !state.me.is_admin) {
+      paintView("admin", `<div class="empty">You don't have admin access.</div>`, preserve);
       return;
     }
-    const members = data.members;
-    const invites = invitesData.invites;
-    const reals = members.filter(m => !m.is_placeholder);
-    const placeholders = members.filter(m => m.is_placeholder);
 
-    const typeBadge = (m) => m.is_owner ? `<span class="elig-tag elig-eligible">Owner</span>`
-      : m.is_placeholder ? `<span class="elig-tag elig-unconfirmed">Placeholder</span>`
-      : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:rgba(91,141,239,.12)">Admin</span>`
-      : `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Member</span>`;
+    if (section === "users") {
+      let data;
+      try { data = await api("/api/admin/members"); }
+      catch (error) { adminError(error, preserve); return; }
+      const members = data.members;
+      const reals = members.filter(m => !m.is_placeholder);
+      const placeholders = members.filter(m => m.is_placeholder);
+      const typeBadge = (m) => m.is_owner ? `<span class="elig-tag elig-eligible">Owner</span>`
+        : m.is_placeholder ? `<span class="elig-tag elig-unconfirmed">Placeholder</span>`
+        : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:rgba(91,141,239,.12)">Admin</span>`
+        : `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Member</span>`;
+      const realOptions = (selectedId) => reals.map(member =>
+        `<option value="${member.id}" ${selectedId === member.id ? "selected" : ""}>${esc(member.username)}</option>`).join("");
+      const rowActions = (member) => {
+        if (member.is_placeholder) {
+          if (!reals.length) return `<span class="admin-muted">no real accounts yet</span>`;
+          const selected = member.suggested_merge ? member.suggested_merge.id : reals[0].id;
+          return `<div class="admin-actions"><span class="admin-muted">Merge into</span>
+            <select class="merge-target" data-from="${member.id}">${realOptions(selected)}</select>
+            <button class="btn merge-btn" data-from="${member.id}">Merge</button>
+            ${member.suggested_merge ? `<span class="hint">matches ${esc(member.suggested_merge.username)}</span>` : ""}</div>`;
+        }
+        const adminAction = member.is_owner
+          ? `<span class="admin-muted">owner · locked</span>`
+          : member.is_admin
+            ? `<button class="btn admin-toggle" data-id="${member.id}" data-val="0">Remove admin</button>`
+            : `<button class="btn admin-toggle" data-id="${member.id}" data-val="1">Make admin</button>`;
+        const resetAction = (member.identity_providers || []).includes("local")
+          ? `<button class="btn password-reset-btn" data-id="${member.id}">Reset password</button>` : "";
+        return `<div class="admin-actions">${adminAction}${resetAction}</div>`;
+      };
+      const table = (list, emptyMessage) => list.length ? `<table class="stat-table admin-table"><thead><tr>
+          <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Actions</th>
+        </tr></thead><tbody>${list.map(member => `<tr>
+          <td class="admin-member-cell"><div class="member-cell">${avatar(member, "sm")}<span>${esc(member.username)}<small class="identity-label">${esc((member.identity_providers || []).join(" + ") || "record only")}</small></span></div></td>
+          <td class="admin-type-cell">${typeBadge(member)}</td>
+          <td class="num" data-label="Suggested">${member.counts.suggested}${member.counts.suggested_watched ? ` <span class="admin-count-note">(${member.counts.suggested_watched} watched)</span>` : ""}</td>
+          <td class="num" data-label="Ratings">${member.counts.ratings}</td>
+          <td class="admin-actions-cell">${rowActions(member)}</td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty admin-empty">${emptyMessage}</div>`;
+      const content = `${placeholders.length ? `<section class="stat-card wide admin-card"><h3>Placeholders to reconcile</h3>
+          <div class="sub">Merge each temporary record after the real person signs in. Their suggestions, ratings, and seen states move to the account.</div>${table(placeholders, "")}</section>` : ""}
+        <section class="stat-card wide admin-card"><h3>Accounts</h3>
+          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(reals, "No one has signed in yet.")}</section>`;
+      paintView("admin", adminLayout("users", content, `${reals.length} accounts · ${placeholders.length} placeholders`), preserve);
+      app.querySelectorAll(".merge-btn").forEach(button => button.onclick = () => {
+        const fromId = parseInt(button.dataset.from, 10);
+        const select = app.querySelector(`.merge-target[data-from="${fromId}"]`);
+        const intoId = parseInt(select.value, 10);
+        const fromName = placeholders.find(member => member.id === fromId)?.username;
+        const intoName = reals.find(member => member.id === intoId)?.username;
+        if (!confirm(`Merge placeholder "${fromName}" into "${intoName}"?\n\nAll of ${fromName}'s suggestions and ratings will be reassigned to ${intoName}, and the "${fromName}" placeholder will be deleted. This can't be undone.`)) return;
+        mergeMembers(fromId, intoId);
+      });
+      app.querySelectorAll(".admin-toggle").forEach(button => button.onclick = () =>
+        setAdmin(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
+      app.querySelectorAll(".password-reset-btn").forEach(button => button.onclick = () =>
+        createPasswordReset(parseInt(button.dataset.id, 10), members.find(member => member.id === parseInt(button.dataset.id, 10))?.username));
+      return;
+    }
 
-    const realOptions = (selId) => reals.map(r =>
-      `<option value="${r.id}" ${selId === r.id ? "selected" : ""}>${esc(r.username)}</option>`).join("");
-
-    const rowActions = (m) => {
-      if (m.is_placeholder) {
-        if (!reals.length) return `<span style="color:var(--text-faint);font-size:.8rem">no real accounts yet</span>`;
-        const sel = m.suggested_merge ? m.suggested_merge.id : reals[0].id;
-        return `<div class="admin-actions">
-          <span style="color:var(--text-dim);font-size:.82rem">Merge into</span>
-          <select class="merge-target" data-from="${m.id}">${realOptions(sel)}</select>
-          <button class="btn merge-btn" data-from="${m.id}">Merge</button>
-          ${m.suggested_merge ? `<span class="hint">matches ${esc(m.suggested_merge.username)}</span>` : ""}
-        </div>`;
-      }
-      const adminAction = m.is_owner
-        ? `<span style="color:var(--text-faint);font-size:.8rem">owner · locked</span>`
-        : m.is_admin
-          ? `<button class="btn admin-toggle" data-id="${m.id}" data-val="0">Remove admin</button>`
-          : `<button class="btn admin-toggle" data-id="${m.id}" data-val="1">Make admin</button>`;
-      const resetAction = (m.identity_providers || []).includes("local")
-        ? `<button class="btn password-reset-btn" data-id="${m.id}">Reset password</button>` : "";
-      return `<div class="admin-actions">${adminAction}${resetAction}</div>`;
-    };
-
-    const table = (list, emptyMsg) => list.length ? `
-      <table class="stat-table admin-table"><thead><tr>
-        <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Actions</th>
-      </tr></thead><tbody>
-      ${list.map(m => `<tr>
-        <td class="admin-member-cell"><div class="member-cell">${avatar(m, "sm")}<span>${esc(m.username)}<small class="identity-label">${esc((m.identity_providers || []).join(" + ") || "record only")}</small></span></div></td>
-        <td class="admin-type-cell">${typeBadge(m)}</td>
-        <td class="num" data-label="Suggested">${m.counts.suggested}${m.counts.suggested_watched ? ` <span style="color:var(--text-faint)">(${m.counts.suggested_watched} watched)</span>` : ""}</td>
-        <td class="num" data-label="Ratings">${m.counts.ratings}</td>
-        <td class="admin-actions-cell">${rowActions(m)}</td>
-      </tr>`).join("")}
-      </tbody></table>` : `<div class="empty" style="padding:2rem">${emptyMsg}</div>`;
-
-    const inviteTable = invites.length ? `<div class="invite-list">${invites.map(invite => {
-      const knownUrl = state.inviteUrls[invite.id];
-      const who = invite.redeemed_by ? ` · ${esc(invite.redeemed_by)}` : "";
-      return `<div class="invite-row"><div><strong>${esc(invite.email || "General invite")}</strong>
-        <span>${esc(invite.status)}${who} · expires ${esc(fmtDate(invite.expires_at))}</span></div>
-        ${knownUrl ? `<button class="btn copy-invite" data-id="${invite.id}">Copy link</button>` : ""}</div>`;
-    }).join("")}</div>` : `<div class="empty" style="padding:1.2rem">No invites yet.</div>`;
-
-    const body = `
-      <div class="page-head"><h1>Admin</h1>
-        <span class="count">${reals.length} accounts · ${placeholders.length} placeholders</span>
-        <div class="controls"><button class="btn" id="refresh-lib">↻ Refresh Plex library</button></div>
-      </div>
-
-      ${placeholders.length ? `<div class="stat-card wide" style="margin-bottom:1.3rem">
-        <h3>Placeholders to reconcile</h3>
-        <div class="sub">Temporary member records. Once the real person signs in with Plex, merge their placeholder into that account — all their suggestions, ratings, and seen-states move over, and the placeholder is removed.</div>
-        ${table(placeholders, "")}
-      </div>` : ""}
-
-      <div class="stat-card wide">
-        <h3>Accounts</h3>
-        <div class="sub">Local and Plex identities resolve to these member records. Grant admin to give someone access to this panel.</div>
-        ${table(reals, "No one has signed in yet.")}
-      </div>
-      <section class="stat-card wide admin-invites">
-        <h3>Invites</h3>
-        <div class="sub">Create a single-use local-account link. For security, a link can only be copied during the browser session that created it.</div>
+    if (section === "invites") {
+      let data;
+      try { data = await api("/api/admin/invites"); }
+      catch (error) { adminError(error, preserve); return; }
+      const invites = data.invites;
+      const inviteTable = invites.length ? `<div class="invite-list">${invites.map(invite => {
+        const knownUrl = state.inviteUrls[invite.id];
+        const who = invite.redeemed_by ? ` · ${esc(invite.redeemed_by)}` : "";
+        return `<div class="invite-row"><div><strong>${esc(invite.email || "General invite")}</strong>
+          <span>${esc(invite.status)}${who} · expires ${esc(fmtDate(invite.expires_at))}</span></div>
+          ${knownUrl ? `<button class="btn copy-invite" data-id="${invite.id}">Copy link</button>` : ""}</div>`;
+      }).join("")}</div>` : `<div class="empty admin-empty">No invites yet.</div>`;
+      const content = `<section class="stat-card wide admin-card"><h3>Create invite</h3>
+        <div class="sub">Create a single-use local-account link. A link can only be copied during the browser session that created it.</div>
         <form class="invite-create" id="invite-create-form">
           <input class="search-input" name="email" type="email" placeholder="Email label (optional)" autocomplete="off">
           <label>Expires in <input class="search-input" name="ttl_hours" type="number" min="1" max="720" value="72"> hours</label>
           <button class="btn btn-primary" type="submit">Create invite</button>
-        </form>
-        ${inviteTable}
-      </section>
-      <section class="stat-card wide admin-backups">
-        <h3>Backup & restore</h3>
-        <div class="sub">Download one portable file containing the database and the key required to recover encrypted settings. Store it securely: it contains account data and credentials.</div>
-        <div class="backup-actions">
-          <button class="btn btn-primary" id="download-backup" type="button">Download backup</button>
-          <button class="btn" id="restore-backup" type="button">Restore from file…</button>
-        </div>
-        <div class="backup-note">Restore verifies the file first, saves a pre-restore safety copy on the server, replaces all current data, and signs everyone out.</div>
-      </section>
-      <form class="stat-card wide admin-settings" id="admin-settings">
-        <div class="settings-heading">
-          <div><span class="settings-kicker">Connections</span><h3>Application settings</h3>
-            <p>Configure the services Film Club uses. Test your changes before saving them.</p></div>
-          <div class="settings-secret-note"><span aria-hidden="true">●</span> Saved secrets stay hidden and encrypted</div>
-        </div>
-        <div class="settings-services">${adminSettingsGroups(configData.settings)}</div>
-        <div class="settings-footer">
-          <div class="settings-message" id="settings-message" aria-live="polite">No unsaved changes</div>
-          <div class="settings-buttons"><button class="btn" id="test-settings" type="button">Test connections</button><button class="btn btn-primary" type="submit">Validate and save</button></div>
-        </div>
+        </form>${inviteTable}</section>`;
+      paintView("admin", adminLayout("invites", content, `${invites.length} total`), preserve);
+      app.querySelectorAll(".copy-invite").forEach(button => button.onclick = () =>
+        copyText(state.inviteUrls[parseInt(button.dataset.id, 10)], "Invite link copied"));
+      const inviteForm = $("#invite-create-form");
+      inviteForm.onsubmit = async (event) => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(inviteForm));
+        const button = inviteForm.querySelector("button[type=submit]");
+        button.disabled = true; button.textContent = "Creating…";
+        try {
+          const invite = await api("/api/admin/invites", { method: "POST", body: {
+            email: values.email.trim() || null, ttl_hours: Number(values.ttl_hours),
+          }});
+          state.inviteUrls[invite.id] = invite.invite_url;
+          await copyText(invite.invite_url, "Invite created and copied");
+          renderAdmin("invites", true);
+        } catch (error) {
+          toast("Couldn't create invite: " + error.message, true);
+          button.disabled = false; button.textContent = "Create invite";
+        }
+      };
+      return;
+    }
+
+    if (section === "backups") {
+      const content = `<section class="stat-card wide admin-card admin-backups"><h3>Portable application backup</h3>
+        <div class="sub">Download one file containing the database and the key required to recover encrypted settings. Store it securely: it contains account data and credentials.</div>
+        <div class="backup-actions"><button class="btn btn-primary" id="download-backup" type="button">Download backup</button>
+          <button class="btn" id="restore-backup" type="button">Restore from file…</button></div>
+        <div class="backup-note">Restore verifies the file first, saves a pre-restore safety copy on the server, replaces all current data, and signs everyone out.</div></section>`;
+      paintView("admin", adminLayout("backups", content), preserve);
+      $("#download-backup").onclick = (event) => downloadBackup(event.currentTarget);
+      $("#restore-backup").onclick = showRestoreBackup;
+      return;
+    }
+
+    let configData;
+    try { configData = await api("/api/admin/settings"); }
+    catch (error) { adminError(error, preserve); return; }
+    const content = `<form class="stat-card wide admin-settings" id="admin-settings">
+      <div class="settings-heading"><div><span class="settings-kicker">Connections</span><h3>Application settings</h3>
+        <p>Configure the services Film Club uses. Test your changes before saving them.</p></div>
+        <div class="settings-heading-actions"><button class="btn" id="refresh-lib" type="button">↻ Refresh Plex library</button>
+          <div class="settings-secret-note"><span aria-hidden="true">●</span> Saved secrets stay hidden and encrypted</div></div></div>
+      <div class="settings-services">${adminSettingsGroups(configData.settings)}</div>
+      <div class="settings-footer"><div class="settings-message" id="settings-message" aria-live="polite">No unsaved changes</div>
+        <div class="settings-buttons"><button class="btn" id="test-settings" type="button">Test connections</button><button class="btn btn-primary" type="submit">Validate and save</button></div></div>
       </form>`;
-    paintView("admin", body, preserve);
-
-    $("#refresh-lib").onclick = async (e) => {
-      e.target.disabled = true; e.target.textContent = "Refreshing…";
+    paintView("admin", adminLayout("settings", content), preserve);
+    $("#refresh-lib").onclick = async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true; button.textContent = "Refreshing…";
       try { await api("/api/admin/refresh_library", { method: "POST" }); toast("Plex library refreshed"); }
-      catch (err) { toast("Refresh failed: " + err.message, true); }
-      e.target.disabled = false; e.target.textContent = "↻ Refresh Plex library";
-    };
-
-    app.querySelectorAll(".merge-btn").forEach(btn => btn.onclick = () => {
-      const fromId = parseInt(btn.dataset.from, 10);
-      const sel = app.querySelector(`.merge-target[data-from="${fromId}"]`);
-      const intoId = parseInt(sel.value, 10);
-      const fromName = placeholders.find(p => p.id === fromId)?.username;
-      const intoName = reals.find(r => r.id === intoId)?.username;
-      if (!confirm(`Merge placeholder "${fromName}" into "${intoName}"?\n\nAll of ${fromName}'s suggestions and ratings will be reassigned to ${intoName}, and the "${fromName}" placeholder will be deleted. This can't be undone.`)) return;
-      mergeMembers(fromId, intoId);
-    });
-
-    app.querySelectorAll(".admin-toggle").forEach(btn => btn.onclick = () =>
-      setAdmin(parseInt(btn.dataset.id, 10), btn.dataset.val === "1"));
-    app.querySelectorAll(".password-reset-btn").forEach(btn => btn.onclick = () =>
-      createPasswordReset(parseInt(btn.dataset.id, 10), members.find(m => m.id === parseInt(btn.dataset.id, 10))?.username));
-    app.querySelectorAll(".copy-invite").forEach(btn => btn.onclick = () =>
-      copyText(state.inviteUrls[parseInt(btn.dataset.id, 10)], "Invite link copied"));
-    $("#download-backup").onclick = (event) => downloadBackup(event.currentTarget);
-    $("#restore-backup").onclick = showRestoreBackup;
-    const inviteForm = $("#invite-create-form");
-    inviteForm.onsubmit = async (event) => {
-      event.preventDefault();
-      const values = Object.fromEntries(new FormData(inviteForm));
-      const button = inviteForm.querySelector("button[type=submit]");
-      button.disabled = true; button.textContent = "Creating…";
-      try {
-        const invite = await api("/api/admin/invites", { method: "POST", body: {
-          email: values.email.trim() || null, ttl_hours: Number(values.ttl_hours),
-        }});
-        state.inviteUrls[invite.id] = invite.invite_url;
-        await copyText(invite.invite_url, "Invite created and copied");
-        renderAdmin(true);
-      } catch (e) {
-        toast("Couldn't create invite: " + e.message, true);
-        button.disabled = false; button.textContent = "Create invite";
-      }
+      catch (error) { toast("Refresh failed: " + error.message, true); }
+      button.disabled = false; button.textContent = "↻ Refresh Plex library";
     };
     const settingsForm = $("#admin-settings");
     const settingsMessage = $("#settings-message");
@@ -2143,7 +2150,7 @@
       button.disabled = true; button.textContent = "Validating…";
       try {
         await api("/api/admin/settings", { method: "PUT", body: collectSettings(settingsForm) });
-        toast("Settings saved"); renderAdmin(true);
+        toast("Settings saved"); renderAdmin("settings", true);
       } catch (e) {
         showSettingsErrors(settingsForm, (e.data && e.data.errors) || {});
         setSettingsMessage(e.message, "error");
@@ -2287,7 +2294,7 @@
     try {
       const r = await api("/api/admin/merge", { method: "POST", body: { from_id: fromId, into_id: intoId } });
       toast(`Merged ${r.merged_from} into ${r.into}`);
-      renderAdmin(true);
+      renderAdmin("users", true);
     } catch (e) { toast("Merge failed: " + e.message, true); }
   }
 
@@ -2295,7 +2302,7 @@
     try {
       await api(`/api/admin/members/${id}/admin`, { method: "POST", body: { is_admin: value } });
       toast(value ? "Admin granted" : "Admin removed");
-      renderAdmin(true);
+      renderAdmin("users", true);
     } catch (e) { toast(e.message, true); }
   }
 
@@ -2323,7 +2330,7 @@
     if (view === "backlog") return renderBacklog(preserve);
     if (view === "watched") return renderWatched(preserve);
     if (view === "stats") return renderStats(preserve);
-    if (view === "admin") return renderAdmin(preserve);
+    if (view === "admin") return renderAdmin(arg || "users", preserve);
     if (view === "profile") return renderProfile(preserve);
     if (view === "member" && arg) return renderMemberProfile(arg, preserve);
     if (view === "movie" && arg) return renderDetail(arg, preserve);
