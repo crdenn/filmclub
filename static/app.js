@@ -2005,9 +2005,9 @@
           <td class="num" data-label="Ratings">${member.counts.ratings}</td>
           <td class="admin-actions-cell">${rowActions(member)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty admin-empty">${emptyMessage}</div>`;
-      const content = `${placeholders.length ? `<section class="stat-card wide admin-card"><h3>Placeholders to reconcile</h3>
+      const content = `${placeholders.length ? `<section class="admin-card"><h3>Placeholders to reconcile</h3>
           <div class="sub">Merge each temporary record after the real person signs in. Their suggestions, ratings, and seen states move to the account.</div>${table(placeholders, "")}</section>` : ""}
-        <section class="stat-card wide admin-card"><h3>Accounts</h3>
+        <section class="admin-card"><h3>Accounts</h3>
           <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(reals, "No one has signed in yet.")}</section>`;
       paintView("admin", adminLayout("users", content, `${reals.length} accounts · ${placeholders.length} placeholders`), preserve);
       app.querySelectorAll(".merge-btn").forEach(button => button.onclick = () => {
@@ -2038,7 +2038,7 @@
           <span>${esc(invite.status)}${who} · expires ${esc(fmtDate(invite.expires_at))}</span></div>
           ${knownUrl ? `<button class="btn copy-invite" data-id="${invite.id}">Copy link</button>` : ""}</div>`;
       }).join("")}</div>` : `<div class="empty admin-empty">No invites yet.</div>`;
-      const content = `<section class="stat-card wide admin-card"><h3>Create invite</h3>
+      const content = `<section class="admin-card"><h3>Create invite</h3>
         <div class="sub">Create a single-use local-account link. A link can only be copied during the browser session that created it.</div>
         <form class="invite-create" id="invite-create-form">
           <input class="search-input" name="email" type="email" placeholder="Email label (optional)" autocomplete="off">
@@ -2070,7 +2070,7 @@
     }
 
     if (section === "backups") {
-      const content = `<section class="stat-card wide admin-card admin-backups"><h3>Portable application backup</h3>
+      const content = `<section class="admin-card admin-backups"><h3>Portable application backup</h3>
         <div class="sub">Download one file containing the database and the key required to recover encrypted settings. Store it securely: it contains account data and credentials.</div>
         <div class="backup-actions"><button class="btn btn-primary" id="download-backup" type="button">Download backup</button>
           <button class="btn" id="restore-backup" type="button">Restore from file…</button></div>
