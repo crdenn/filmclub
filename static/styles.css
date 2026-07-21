@@ -765,32 +765,49 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .lr-sugg .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* --- coverage meter: how much of the club still hasn't seen it ---
-   A bar compares far better down a column than a row of faces does, and it
-   answers the app's core question at a glance — a film is pickable while
-   somebody hasn't seen it, so "unseen" is the emphasised bucket. Bucket order
-   matches `coverageAvatars`: not-seen, unknown, seen. */
-.cov-cell { display: flex; flex-direction: column; gap: .28rem; }
-.cov-meter { display: flex; gap: 2px; height: 6px; width: 100%; max-width: 84px; }
-.cov-meter .cm-seg { flex: 1 1 0; min-width: 0; border-radius: 1px; }
+   One slot per member, filled for people who HAVEN'T seen it — a film is
+   pickable while somebody hasn't, so a full bar honestly means "plenty of
+   people could still watch this fresh". The caption counts the same thing.
+
+   The three states are deliberately different SHAPES, not three shades of the
+   same grey: solid (hasn't seen it), hollow outline (unknown), flat track
+   (has seen it). Shade alone was invisible — the seen segments read as just
+   more of the unknown ones. Order matches `coverageAvatars`. */
+.cov-cell { display: flex; flex-direction: column; gap: .3rem; }
+.cov-meter { display: flex; gap: 2px; height: 9px; width: 100%; max-width: 100px; }
+.cov-meter .cm-seg { flex: 1 1 0; min-width: 0; border-radius: 2px; }
 /* Past ~12 members one segment per person is an unreadable comb, so the JS
-   switches to a single proportional bar and these take over. */
+   switches to a single proportional bar and these take over. Outlines can't
+   survive that, so unknown becomes a hatch instead. */
 .cov-meter-cont { gap: 0; border-radius: 3px; overflow: hidden; }
 .cov-meter-cont .cm-fill { height: 100%; }
 .cm-unseen { background: var(--good); }
-.cm-unknown { background: var(--text-faint); }
-.cm-seen { background: color-mix(in srgb, var(--text-faint) 38%, transparent); }
+.cm-unknown {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text-faint) 75%, transparent);
+}
+.cov-meter-cont .cm-unknown {
+  box-shadow: none;
+  background: repeating-linear-gradient(45deg,
+    color-mix(in srgb, var(--text-faint) 75%, transparent) 0 2px, transparent 2px 4px);
+}
+.cm-seen { background: color-mix(in srgb, var(--text-faint) 20%, transparent); }
 /* Everyone has seen it: not pickable, so stop it reading as available. */
 .cov-meter-full .cm-seg, .cov-meter-full .cm-fill {
-  background: color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 35%, transparent); box-shadow: none;
 }
-.cov-frac { font-size: .76rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.cov-frac b { color: var(--text); font-weight: 700; }
+.cov-frac { font-size: .76rem; color: var(--text-dim); white-space: nowrap; }
+.cov-frac b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.cov-all { color: var(--warn-text); font-weight: 600; }
 
 /* --- keen: who else would watch this ---
    Faces, not a tally: in a club the useful fact is *who* is in. Capped at three
    with a "+N" overflow so the column keeps a fixed width however big the club
    gets. The ring matches the row background so the overlap reads cleanly. */
-.keen { display: inline-flex; align-items: center; }
+/* Block-level, not inline-flex: as an inline box it sat on the text baseline,
+   so descender space nudged it off the row's centre line by an amount that
+   varied with its own contents. */
+.keen { display: flex; align-items: center; }
 .keen-face { display: inline-flex; }
 .keen-face + .keen-face, .keen-more { margin-left: -6px; }
 .keen .avatar.sm { width: 20px; height: 20px; font-size: .56rem; box-shadow: 0 0 0 2px var(--bg-raise); }
@@ -801,20 +818,30 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   font-size: .6rem; font-weight: 700; box-shadow: 0 0 0 2px var(--bg-raise);
 }
 .list-row:hover .keen .avatar.sm, .list-row:hover .keen-more { box-shadow: 0 0 0 2px var(--bg-raise-2); }
+/* A dashed hairline on the row background was near-invisible — people couldn't
+   tell there was a button. Solid border, raised fill and a legible glyph. */
 .keen-add {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; margin-left: .35rem; padding: 0;
-  border: 1px dashed var(--line); border-radius: 50%;
-  background: var(--bg-raise); color: var(--text-faint);
-  font: inherit; font-size: .82rem; font-weight: 700; line-height: 1; cursor: pointer;
+  border: 1px solid var(--text-faint); border-radius: 50%;
+  background: var(--bg-raise-2); color: var(--text);
+  font: inherit; font-size: .9rem; font-weight: 700; line-height: 1; cursor: pointer;
   transition: color .1s, border-color .1s, background .1s;
 }
-.keen-add:hover { color: var(--text); border-color: var(--text-faint); }
+.keen-add:hover {
+  color: var(--accent-text); border-color: var(--accent); background: var(--accent-soft);
+}
+.keen-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .keen-add.in {
-  border-style: solid; border-color: var(--accent);
-  background: var(--accent-soft-strong); color: var(--accent-text);
+  border-color: var(--accent); background: var(--accent-soft-strong); color: var(--accent-text);
 }
 .keen .keen-face + .keen-add { margin-left: .45rem; }
+/* Stands in for the button on your own suggestion: same box, so it sits on the
+   button's centre line rather than floating as loose text. Not interactive. */
+.keen-na {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; color: var(--text-faint); cursor: default;
+}
 
 /* --- watched trailing columns --- */
 .lr-rating { display: inline-flex; align-items: center; gap: .3rem; }

@@ -1309,8 +1309,8 @@
       { key: "added", label: "Added", sort: "date", dir: "desc", cls: "lr-added",
         width: "92px", desktopOnly: true,
         render: m => esc(fmtDate(m.suggested_at)) || `<span class="lr-dash">—</span>` },
-      { key: "seen", label: "Seen", sort: "unseen", dir: "desc", cls: "lr-seen",
-        width: "104px", render: m => coverageMeter(m.coverage) },
+      { key: "seen", label: "Unseen", sort: "unseen", dir: "desc", cls: "lr-seen",
+        width: "120px", render: m => coverageMeter(m.coverage) },
       { key: "keen", label: "Keen", sort: "seconds", dir: "desc", cls: "lr-keen",
         width: "136px", nav: false, render: m => keenStack(m) },
       { key: "you", label: "You", cls: "lr-answer", width: "176px", nav: false,
@@ -1518,6 +1518,13 @@
   // the avatar row used on the detail page and This-week hero. Bucket order
   // matches `coverageAvatars`: not-seen first (it's what makes a film eligible),
   // then unknown, then seen.
+  //
+  // The column counts UNSEEN, not seen. It sorts by `unseen`, the bar fills for
+  // people who haven't seen it, and the detail page already says "N of M haven't
+  // seen this" — labelling it "Seen" made the number contradict the bar beside
+  // it (0/7 seen next to three filled segments). Everything now measures the
+  // same direction, and a filled bar honestly means "lots of people could still
+  // watch this fresh".
   function coverageMeter(c) {
     const total = c.total_members || 0;
     const seen = c.seen_ids.length, unseen = c.not_seen_ids.length, unknown = c.unknown_ids.length;
@@ -1531,15 +1538,21 @@
         n ? `<span class="cm-fill cm-${k}" style="width:${pct(n)}"></span>` : "").join("");
     }
     const label = [
-      `${seen} of ${total} have seen it`,
-      unseen ? `${unseen} haven't` : "",
+      `${unseen} of ${total} ${unseen === 1 ? "hasn't" : "haven't"} seen it`,
+      seen ? `${seen} ${seen === 1 ? "has" : "have"}` : "",
       unknown ? `${unknown} unknown` : "",
     ].filter(Boolean).join(" · ");
+    const allSeen = total > 0 && seen === total;
     const cls = `cov-meter${total && total > METER_DISCRETE_MAX ? " cov-meter-cont" : ""}`
-      + (c.eligibility === "ineligible" ? " cov-meter-full" : "");
+      + (allSeen ? " cov-meter-full" : "");
+    // The caption must count the same thing the bar fills for, or the two
+    // contradict each other — a filled bar beside "0 seen" is unreadable.
+    const caption = allSeen
+      ? `<span class="cov-all">All seen</span>`
+      : `<b>${unseen}</b> not seen`;
     return `<span class="cov-cell" title="${esc(label)}" aria-label="${esc(label)}">`
       + `<span class="${cls}" aria-hidden="true">${bar}</span>`
-      + `<span class="cov-frac"><b>${seen}</b>/${total}</span></span>`;
+      + `<span class="cov-frac">${caption}</span></span>`;
   }
 
   // Show at most this many faces before collapsing the rest into a "+N" chip, so
@@ -1568,7 +1581,11 @@
         + ` data-voted="${m.voted ? "1" : "0"}" data-variant="list" aria-pressed="${m.voted}"`
         + ` title="${esc(t)}" aria-label="${esc(t)}">${m.voted ? "✓" : "+"}</button>`;
     }
-    const empty = !ids.length && !ctrl ? `<span class="lr-dash">—</span>` : "";
+    // Same 22px box as the button it stands in for, so it lands on the button's
+    // centre line instead of floating as loose text.
+    const why = "Your suggestion — you can't add yourself to your own pick";
+    const empty = !ids.length && !ctrl
+      ? `<span class="keen-na" title="${esc(why)}" aria-label="${esc(why)}">—</span>` : "";
     return `<span class="keen" data-keen="${m.id}">${faces}${more}${ctrl}${empty}</span>`;
   }
 
