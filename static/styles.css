@@ -643,7 +643,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .profile-theme { align-self: flex-start; }
 
 /* ---------- list view (backlog + watched) ---------- */
-.list { display: flex; flex-direction: column; gap: .55rem; }
+.list { display: flex; flex-direction: column; gap: .55rem; width: 100%; max-width: 1240px; margin-inline: auto; }
 .list-row {
   display: flex; flex-direction: row; align-items: center; gap: 1rem;
   background: var(--bg-raise); border: 1px solid var(--line);
@@ -661,7 +661,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .lr-poster .status-icon { top: 3px; right: 3px; width: 15px; height: 15px; border-width: 1px; }
 .lr-poster .status-icon svg { width: 9px; height: 9px; }
 
-.lr-content { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 1rem; }
+.lr-content { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(240px,1fr) minmax(150px,220px) auto; align-items: center; gap: clamp(1rem,2.5vw,2.5rem); }
 .lr-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .25rem; }
 .lr-title { font-weight: 600; font-size: 1.08rem; line-height: 1.22; }
 .list-row[data-cov-mode="backlog"] .lr-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -672,6 +672,7 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
 .lr-cov .coverage-line b { color: var(--text); }
 .lr-cov .cov-avatars { gap: .2rem; }
 .lr-cov .cov-avatars .avatar { width: 20px; height: 20px; font-size: .55rem; }
+.lr-secondary { min-width: 0; display: flex; flex-direction: column; gap: .2rem; color: var(--text-dim); font-size: .8rem; }
 
 .lr-actions { flex: 0 0 auto; display: flex; align-items: center; gap: .5rem; }
 .lr-actions .seen-seg { width: auto; }
@@ -1118,8 +1119,10 @@ select:hover, .btn:hover { border-color: var(--text-faint); }
   .grid .card-meta { flex-wrap: wrap; row-gap: .3rem; }
 
   /* --- list view: stack the backlog seen-control below the body --- */
+  .list { max-width: none; }
+  .list-row .lr-content { display: flex; flex-direction: column; align-items: stretch; gap: .55rem; }
+  .list-row .lr-secondary { flex-direction: row; flex-wrap: wrap; gap: .25rem .7rem; }
   .list-row[data-cov-mode] { align-items: flex-start; }
-  .list-row[data-cov-mode] .lr-content { flex-direction: column; align-items: stretch; gap: .65rem; }
   .list-row[data-cov-mode] .lr-actions { display: flex; gap: .5rem; }
   .list-row[data-cov-mode] .lr-actions .seen-seg { width: auto; flex: 1 1 auto; }
   .list-row[data-cov-mode] .lr-actions .seg { flex: 1 1 0; min-width: 0; }

@@ -1173,8 +1173,8 @@
         <div class="lr-body" data-nav="${m.id}">
           <div class="lr-title" title="${esc(titleHint)}">${esc(m.title)}</div>
           <div class="lr-meta">${suggesterLink(m.suggester)}</div>
-          <div class="lr-cov cov-summary">${backlogSeenSummary(c)}</div>
         </div>
+        <div class="lr-secondary lr-cov cov-summary" data-nav="${m.id}">${backlogSeenSummary(c)}</div>
         <div class="lr-actions">${voteControl(m, "list")}${seenControl(m.id, myState)}</div>
       </div>
     </div>`;
@@ -1408,13 +1408,15 @@
     const mine = m.my_rated
       ? `<span class="lr-you" title="Your rating">You ${STAR_ICO} ${m.my_score.toFixed(1)}</span>`
       : `<span class="lr-you lr-rate" title="You haven't rated this yet">Rate</span>`;
+    const discussed = m.watched_at ? fmtDate(m.watched_at) : "";
     return `<div class="card list-row${m.my_rated ? "" : " to-rate"}" data-id="${m.id}" data-nav="${m.id}">
       <div class="lr-poster">${posterEl(m)}</div>
       <div class="lr-content">
         <div class="lr-body">
           <div class="lr-title">${esc(m.title)} <span class="yr">${m.year || ""}</span></div>
-          <div class="lr-meta">${suggesterLink(m.suggester)}<span class="rated-count">${m.rating_count}/${m.total_members} rated</span></div>
+          <div class="lr-meta">${suggesterLink(m.suggester)}</div>
         </div>
+        <div class="lr-secondary">${discussed ? `<span>Discussed ${esc(discussed)}</span>` : ""}<span>${m.rating_count}/${m.total_members} rated</span></div>
         <div class="lr-trailing">${club}${mine}</div>
       </div>
     </div>`;
