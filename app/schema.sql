@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS movies (
     genres        TEXT,             -- JSON array of strings
     suggested_by  INTEGER REFERENCES members(id) ON DELETE SET NULL,
     suggested_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    -- Suggester's optional "elevator pitch" for why the club should watch it.
+    -- Shown only on the film's detail page, never on the backlog grid.
+    pitch         TEXT,
     status        TEXT NOT NULL DEFAULT 'suggested',  -- 'suggested' | 'scheduled' | 'watched'
     watched_at    TEXT,
     imdb_id       TEXT,             -- external id for Plex in-library matching

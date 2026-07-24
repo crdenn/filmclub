@@ -202,6 +202,8 @@ async def _startup() -> None:
 
 class AddMovie(BaseModel):
     tmdb_id: int
+    # Optional elevator pitch from the suggester, shown only on the detail page.
+    pitch: str | None = Field(default=None, max_length=500)
 
 
 class ProfileIn(BaseModel):
@@ -892,7 +894,7 @@ async def api_add_movie(body: AddMovie, member=Depends(auth.current_member)):
         if existing:
             raise HTTPException(status_code=409,
                                 detail="That film is already on the list")
-        movie_id = service.add_suggestion(conn, meta, member["id"])
+        movie_id = service.add_suggestion(conn, meta, member["id"], body.pitch)
         # Auto-request from Seerr if the film isn't already on Plex. This runs
         # AFTER the insert and never raises, so the add itself can't be broken by
         # a Seerr/Plex hiccup — worst case the film is added with status 'failed'.

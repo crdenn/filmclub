@@ -214,8 +214,14 @@ def seed(force: bool = False):
         set_prior(b2, carol, False)
         # dave, erin, frank: no row -> unknown
 
-        # C) Clearly eligible: several haven't seen it.
+        # C) Clearly eligible: several haven't seen it. Carries an elevator pitch
+        # so the detail page's pitch treatment is exercised by the seed data.
         b3 = insert_movie(FILMS[17], "suggested", carol, week); week += 1
+        conn.execute(
+            "UPDATE movies SET pitch = ? WHERE id = ?",
+            ("Trust me on this one — it's the rare crowd-pleaser that's also "
+             "genuinely clever, and it's short enough for a school night.", b3))
+        conn.commit()
         for mid, seen in [(alice, True), (bob, False), (carol, False),
                           (dave, False), (erin, True), (frank, False)]:
             set_prior(b3, mid, seen)

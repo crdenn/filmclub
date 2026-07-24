@@ -106,6 +106,22 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(row["language"], "French")
         self.assertEqual(row["content_rating"], "PG-13")
 
+    def test_new_suggestion_stores_and_normalises_pitch(self):
+        member_id = self.conn.execute(
+            "INSERT INTO members (plex_id, username, color) VALUES ('dev:b', 'B', '#123456')"
+        ).lastrowid
+        self.conn.commit()
+        meta = {"tmdb_id": 100, "title": "Pitched", "genres": []}
+        # A real pitch is stored verbatim (after trimming); a blank one is NULL.
+        with_pitch = service.add_suggestion(self.conn, meta, member_id, "  Watch it. ")
+        meta_blank = {"tmdb_id": 101, "title": "Unpitched", "genres": []}
+        without_pitch = service.add_suggestion(self.conn, meta_blank, member_id, "   ")
+        self.assertEqual(
+            db.query_one(self.conn, "SELECT pitch FROM movies WHERE id = ?", (with_pitch,))["pitch"],
+            "Watch it.")
+        self.assertIsNone(
+            db.query_one(self.conn, "SELECT pitch FROM movies WHERE id = ?", (without_pitch,))["pitch"])
+
 
 class MetadataBackfillTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

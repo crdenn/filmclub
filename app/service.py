@@ -464,14 +464,21 @@ def todo_counts(conn: sqlite3.Connection, member_id: int) -> dict:
     return {"backlog": backlog_unmarked, "watched": watched_unrated}
 
 
-def add_suggestion(conn: sqlite3.Connection, meta: dict, member_id: int) -> int:
-    """Snapshot TMDB metadata into a new suggested movie. Returns movie id."""
+def add_suggestion(conn: sqlite3.Connection, meta: dict, member_id: int,
+                   pitch: str | None = None) -> int:
+    """Snapshot TMDB metadata into a new suggested movie. Returns movie id.
+
+    `pitch` is the suggester's optional elevator pitch; blank/whitespace stores
+    NULL so "no pitch" and "empty pitch" are the same thing downstream.
+    """
+    pitch = (pitch or "").strip() or None
     cur = db.execute(
         conn,
         """INSERT INTO movies
            (tmdb_id, title, year, poster_url, backdrop_url, runtime, director,
-            language, content_rating, overview, genres, imdb_id, suggested_by, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested')""",
+            language, content_rating, overview, genres, imdb_id, suggested_by,
+            pitch, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested')""",
         (
             meta.get("tmdb_id"),
             meta.get("title"),
@@ -486,6 +493,7 @@ def add_suggestion(conn: sqlite3.Connection, meta: dict, member_id: int) -> int:
             json.dumps(meta.get("genres") or []),
             meta.get("imdb_id"),
             member_id,
+            pitch,
         ),
     )
     return cur.lastrowid

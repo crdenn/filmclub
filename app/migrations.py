@@ -151,6 +151,12 @@ def _m7_member_theme(conn: sqlite3.Connection) -> None:
                            "theme TEXT NOT NULL DEFAULT 'system'")
 
 
+def _m8_movie_pitch(conn: sqlite3.Connection) -> None:
+    # Suggester's optional "elevator pitch", shown only on a film's detail page.
+    # Existing films simply have no pitch (NULL).
+    _add_column_if_missing(conn, "movies", "pitch", "pitch TEXT")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -160,6 +166,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (5, "password-resets", _m5_password_resets),
     (6, "movie-content-rating", _m6_movie_content_rating),
     (7, "member-theme", _m7_member_theme),
+    (8, "movie-pitch", _m8_movie_pitch),
 ]
 
 

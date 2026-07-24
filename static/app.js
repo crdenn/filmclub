@@ -1785,6 +1785,7 @@
             <div class="detail-facts">${facts}</div>
             ${rottenTomatoes(m, "detail-rt")}
             <div class="card-meta detail-suggester">Suggested by ${m.suggester ? `<a class="member-link inline" href="#/member/${m.suggester.id}">${avatar(m.suggester, "sm")}${esc(m.suggester.username)}</a>` : "—"}</div>
+            ${m.pitch ? `<blockquote class="detail-pitch"><span class="detail-pitch-label">${m.suggester ? esc(m.suggester.username) + "’s pitch" : "The pitch"}</span>${esc(m.pitch)}</blockquote>` : ""}
             ${detailVoteBlock(m)}
             ${(m.genres || []).length ? `<div class="genre-chips">${m.genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
             ${m.overview ? `<p class="overview">${esc(m.overview)}</p>` : ""}
@@ -1812,6 +1813,34 @@
     if (returnThisWeekBtn) returnThisWeekBtn.onclick = () => returnToThisWeek(m.id, m.title);
     const unwatchBtn = $("#detail-unwatch");
     if (unwatchBtn) unwatchBtn.onclick = () => backToBacklog(m.id, m.title, "unwatch");
+    sizeDetailPoster();
+  }
+
+  // On desktop the poster grows to match the height of the text column beside it
+  // (down to the last action), reading as one piece of the hero rather than a
+  // small tile with dead space below. It keeps its 2:3 shape: we set an explicit
+  // height and let `width:auto` + `aspect-ratio` derive the width. The text
+  // column's width is unaffected by the poster (it flexes independently), so
+  // there's no size feedback loop; a small tolerance and a cap keep the
+  // ResizeObserver from thrashing. Stacked mobile layout keeps the CSS default.
+  let detailPosterObserver = null;
+  function sizeDetailPoster() {
+    if (detailPosterObserver) { detailPosterObserver.disconnect(); detailPosterObserver = null; }
+    const box = $(".detail-poster"), col = $(".detail-main");
+    if (!box || !col) return;
+    const fit = () => {
+      if (window.innerWidth <= 720) {   // stacked layout: hand back to CSS
+        box.style.removeProperty("height");
+        box.style.removeProperty("width");
+        return;
+      }
+      box.style.width = "auto";
+      const target = Math.min(Math.round(col.offsetHeight), 640);
+      if (Math.abs(Math.round(box.offsetHeight) - target) > 2) box.style.height = target + "px";
+    };
+    fit();
+    detailPosterObserver = new ResizeObserver(fit);
+    detailPosterObserver.observe(col);
   }
 
   const ICON_MORE = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`;
@@ -2029,6 +2058,10 @@
     input.focus();
     let timer = null, seq = 0, results = [], expandedId = null;
     const previews = new Map();
+    // Elevator-pitch drafts, keyed by tmdb_id, kept alive across the re-renders
+    // that happen when the user expands/collapses or a preview finishes loading.
+    const pitchDrafts = new Map();
+    const pitchDraft = (tmdbId) => pitchDrafts.get(String(tmdbId)) || "";
 
     const renderPreview = (movie) => {
       if (!movie) return `<div class="sr-preview-status">Loading film details…</div>`;
@@ -2044,6 +2077,11 @@
         ${facts ? `<div class="sr-preview-facts">${facts}</div>` : ""}
         ${(movie.genres || []).length ? `<div class="genre-chips">${movie.genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
         ${movie.overview ? `<p class="sr-overview">${esc(movie.overview)}</p>` : `<p class="sr-overview muted">No synopsis available.</p>`}
+        <label class="sr-pitch-field">
+          <span class="sr-pitch-label">Elevator pitch <span class="muted">(optional)</span></span>
+          <textarea class="sr-pitch" id="sr-pitch-${movie.tmdb_id}" data-tmdb="${movie.tmdb_id}" rows="2" maxlength="500"
+            placeholder="Why should the club watch this?">${esc(pitchDraft(movie.tmdb_id))}</textarea>
+        </label>
         <div class="sr-preview-actions"><button type="button" class="btn btn-primary sr-add" data-add-tmdb="${movie.tmdb_id}">Add to backlog</button></div>
       </div>`;
     };
@@ -2070,7 +2108,7 @@
         </div>`;
       }).join("");
 
-      container.querySelectorAll("[data-tmdb]").forEach(el => {
+      container.querySelectorAll(".sr-summary").forEach(el => {
         el.onclick = async () => {
           const tmdbId = parseInt(el.dataset.tmdb, 10);
           if (expandedId === tmdbId) {
@@ -2090,8 +2128,14 @@
           if (expandedId === tmdbId) renderResults();
         };
       });
+      container.querySelectorAll(".sr-pitch").forEach(field => {
+        field.oninput = () => pitchDrafts.set(String(field.dataset.tmdb ?? expandedId), field.value);
+      });
       container.querySelectorAll("[data-add-tmdb]").forEach(button => {
-        button.onclick = () => addSuggestion(button.dataset.addTmdb, close, button);
+        button.onclick = () => {
+          const field = container.querySelector(`#sr-pitch-${button.dataset.addTmdb}`);
+          addSuggestion(button.dataset.addTmdb, close, button, field ? field.value : "");
+        };
       });
     };
 
@@ -2128,13 +2172,16 @@
     failed: "Added — Seerr request failed (added anyway)",
   };
 
-  async function addSuggestion(tmdbId, close, button = null) {
+  async function addSuggestion(tmdbId, close, button = null, pitch = "") {
     if (button) {
       button.disabled = true;
       button.textContent = "Adding…";
     }
     try {
-      const res = await api("/api/movies", { method: "POST", body: { tmdb_id: parseInt(tmdbId, 10) } });
+      const trimmed = (pitch || "").trim();
+      const body = { tmdb_id: parseInt(tmdbId, 10) };
+      if (trimmed) body.pitch = trimmed;
+      const res = await api("/api/movies", { method: "POST", body });
       const status = res && res.seerr && res.seerr.status;
       toast(SEERR_TOAST[status] || "Added to backlog");
       close();
