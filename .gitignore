@@ -8,6 +8,10 @@
 # .claude/ holds launch.json with real API keys/tokens.
 .claude/
 
+# Machine-specific deploy config (real host, SSH port, public URL).
+# The tracked deploy.env.example is the template.
+deploy.env
+
 # Future /data master key for encrypted settings.
 filmclub-master.key
 *.key

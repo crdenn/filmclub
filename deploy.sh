@@ -16,4 +16,4 @@ docker run -d --name filmclub \
   filmclub:latest
 echo ""
 echo ">> Done. FilmClub is live on this box at port 8000."
-echo ">> Point your Cloudflare tunnel hostname at:  http://your-unraid-host.local:8000"
+echo ">> Point your Cloudflare tunnel hostname at this box on port 8000 (http://<server-ip>:8000)."

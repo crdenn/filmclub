@@ -4,12 +4,20 @@
 set -Eeuo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Machine-specific settings — host, SSH port, paths, public URL — live in an
+# untracked deploy.env so this script stays generic in git. Copy
+# deploy.env.example to deploy.env and fill in your values. Any of these can
+# also be provided as environment variables, which take precedence.
+[[ -f "$PROJECT_DIR/deploy.env" ]] && source "$PROJECT_DIR/deploy.env"
+
 UNRAID_HOST="${UNRAID_HOST:-your-unraid-host.local}"
 UNRAID_USER="${UNRAID_USER:-root}"
 UNRAID_SSH_PORT="${UNRAID_SSH_PORT:-22}"
 REMOTE_DIR="${FILMCLUB_REMOTE_DIR:-/mnt/user/appdata/filmclub}"
 HTTP_PORT="${FILMCLUB_HTTP_PORT:-8888}"
 MAC_IP="${FILMCLUB_MAC_IP:-}"
+PUBLIC_URL="${FILMCLUB_PUBLIC_URL:-https://your-filmclub.example.com}"
 SSH_TARGET="${UNRAID_USER}@${UNRAID_HOST}"
 BUNDLE="filmclub-deploy.tar.gz"
 SERVER_PID=""
@@ -145,4 +153,4 @@ docker logs --tail 50 filmclub
 exit 1
 REMOTE
 
-echo ">> Deployment complete: https://your-filmclub.example.com"
+echo ">> Deployment complete: $PUBLIC_URL"
