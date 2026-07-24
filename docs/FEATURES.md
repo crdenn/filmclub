@@ -340,7 +340,7 @@ administrative data.
 
 - **Purpose:** Build and replace the production container with persistent SQLite storage.
 - **Main files:** `deploy-from-mac.sh`, `Dockerfile`, `deploy.sh`, `.env.example`.
-- **Status:** Implemented and readiness-checked against the current installation on SSH port 22.
+- **Status:** Implemented and readiness-checked against a live Unraid deployment.
 - **Dependencies:** Mac SSH client/Python, LAN reachability, Unraid SSH key access, Docker, Unraid path layout, populated `.env`.
 - **Limitations:** Defaults contain installation-specific addresses and the Unraid-side script replaces the running container directly.
 - **Follow-up:** Keep this as maintainer-only automation; public installs use Docker Compose and the browser wizard.
