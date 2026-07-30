@@ -1059,14 +1059,22 @@
 
   const ICON_FILTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4"/></svg>`;
 
+  // Everyone's already seen these, so they're not really pickable — still fully
+  // usable (clickable, schedulable), just sorted below the rest and dimmed. A
+  // stable sort keeps whatever ordering was already chosen within each group.
+  function sinkIneligible(items) {
+    return items.slice().sort((a, b) =>
+      (a.coverage.eligibility === "ineligible" ? 1 : 0) - (b.coverage.eligibility === "ineligible" ? 1 : 0));
+  }
+
   function backlogGridHtml() {
     const filtered = filterBacklog(backlogItems);
     if (filtered.length) {
       if (getViewMode("backlog") === "list") {
-        return listTable(applySortDir(filtered, BACKLOG_TABLE, backlogState),
+        return listTable(sinkIneligible(applySortDir(filtered, BACKLOG_TABLE, backlogState)),
                          BACKLOG_TABLE, backlogState, "backlog");
       }
-      return `<div class="grid">${filtered.map(backlogCard).join("")}</div>`;
+      return `<div class="grid">${sinkIneligible(filtered).map(backlogCard).join("")}</div>`;
     }
     return (backlogItems.length && isFilteringBacklog())
       ? `<div class="empty">No films match your filters. <button class="btn-link" id="clear-filters" type="button">Clear filters</button></div>`
@@ -1328,7 +1336,8 @@
     ],
     // Deliberately NOT `.card`: that's a flex-column with its own gap, which
     // outranks the table's on specificity and desynced the header from the rows.
-    rowClass: m => "list-row" + (myCovState(m.coverage) === "unknown" ? " needs-me" : ""),
+    rowClass: m => "list-row" + (myCovState(m.coverage) === "unknown" ? " needs-me" : "")
+      + (m.coverage.eligibility === "ineligible" ? " lowconf" : ""),
     rowAttrs: m => `data-id="${m.id}" data-cov-mode="backlog"`,
   };
 
@@ -1360,7 +1369,7 @@
     const c = m.coverage;
     const myState = myCovState(c);
     const needsMe = myState === "unknown";
-    const cls = "card" + (needsMe ? " needs-me" : "");
+    const cls = "card" + (needsMe ? " needs-me" : "") + (c.eligibility === "ineligible" ? " lowconf" : "");
     const titleHint = m.year ? `${m.title} (${m.year})` : m.title;
     return `<div class="${cls}" data-id="${m.id}" data-cov-mode="backlog">
       <div class="poster-wrap" data-nav="${m.id}">
