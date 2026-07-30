@@ -260,19 +260,26 @@
     grid: `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg>`,
     list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8.5 6h12M8.5 12h12M8.5 18h12"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>`,
   };
-  const VIEW_KEY = "fc_view";
-  let viewMode = localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
-  function setViewMode(v) {
-    viewMode = v === "list" ? "list" : "grid";
-    try { localStorage.setItem(VIEW_KEY, viewMode); } catch (e) {}
+  // Each page (backlog / watched) remembers its own view choice, with its own
+  // default — backlog defaults to list, watched to grid.
+  const VIEW_KEY_PREFIX = "fc_view_";
+  const VIEW_DEFAULTS = { backlog: "list", watched: "grid" };
+  function getViewMode(page) {
+    let v;
+    try { v = localStorage.getItem(VIEW_KEY_PREFIX + page); } catch (e) { v = null; }
+    return v === "grid" || v === "list" ? v : VIEW_DEFAULTS[page];
   }
-  function viewToggle() {
+  function setViewMode(page, v) {
+    try { localStorage.setItem(VIEW_KEY_PREFIX + page, v === "list" ? "list" : "grid"); } catch (e) {}
+  }
+  function viewToggle(page) {
+    const viewMode = getViewMode(page);
     return `<div class="view-toggle" role="group" aria-label="View mode">${["grid", "list"].map(v =>
       `<button type="button" class="vt-btn ${viewMode === v ? "active" : ""}" data-view="${v}" aria-pressed="${viewMode === v}" title="${v === "grid" ? "Grid view" : "List view"}" aria-label="${v === "grid" ? "Grid view" : "List view"}">${VIEW_ICONS[v]}</button>`).join("")}</div>`;
   }
-  function wireViewToggle(rerender) {
+  function wireViewToggle(page, rerender) {
     app.querySelectorAll(".vt-btn").forEach(b => b.onclick = () => {
-      if (b.dataset.view !== viewMode) { setViewMode(b.dataset.view); rerender(); }
+      if (b.dataset.view !== getViewMode(page)) { setViewMode(page, b.dataset.view); rerender(); }
     });
   }
 
@@ -1055,7 +1062,7 @@
   function backlogGridHtml() {
     const filtered = filterBacklog(backlogItems);
     if (filtered.length) {
-      if (viewMode === "list") {
+      if (getViewMode("backlog") === "list") {
         return listTable(applySortDir(filtered, BACKLOG_TABLE, backlogState),
                          BACKLOG_TABLE, backlogState, "backlog");
       }
@@ -1092,7 +1099,7 @@
           <div class="filterbar">
             <button type="button" class="filterbar-toggle btn ${backlogState.suggester != null ? "has-active" : ""}" id="filter-toggle" aria-expanded="false" aria-controls="filter-panel">${ICON_FILTER}<span>Filters</span></button>
             <div class="filterbar-body" id="filter-panel">
-              ${viewToggle()}
+              ${viewToggle("backlog")}
               <label><span class="ctl-label">Sort</span> <select id="sort-sel" aria-label="Sort films">${sortOpts}</select></label>
               <label><span class="ctl-label">By</span> <select id="suggester-sel" aria-label="Filter by suggester">${backlogSuggesterOptions()}</select></label>
             </div>
@@ -1113,7 +1120,7 @@
     $("#suggester-sel").onchange = (e) => { backlogState.suggester = e.target.value ? parseInt(e.target.value, 10) : null; refreshBacklogResults(); };
     $("#backlog-search").oninput = () => { backlogState.query = $("#backlog-search").value; refreshBacklogResults(); };
     $("#add-btn").onclick = openSearchModal;
-    wireViewToggle(() => renderBacklog(true));
+    wireViewToggle("backlog", () => renderBacklog(true));
     wireFilterPanel();
     wireBacklogResults();
   }
@@ -1681,15 +1688,15 @@
     const items = watchedItems;
     const body = `
       <div class="page-head"><h1>Watched</h1><span class="count">${items.length} films</span>
-        <div class="controls">${viewToggle()}</div>
+        <div class="controls">${viewToggle("watched")}</div>
       </div>
       ${items.length
-        ? (viewMode === "list"
+        ? (getViewMode("watched") === "list"
             ? listTable(sortWatched(items, watchedState), WATCHED_TABLE, watchedState, "watched")
             : `<div class="grid">${items.map(watchedCard).join("")}</div>`)
         : `<div class="empty">No films watched yet.</div>`}`;
     paintView("watched", body, preserve);
-    wireViewToggle(() => paintWatched(true));
+    wireViewToggle("watched", () => paintWatched(true));
     wireSortHeaders("watched", WATCHED_TABLE, watchedState, () => paintWatched(true));
     app.querySelectorAll("[data-nav]").forEach(el =>
       el.onclick = (e) => {
@@ -2765,7 +2772,10 @@
     }
   });
 
-  window.addEventListener("hashchange", () => render({ preserve: true }));
+  // Every hashchange here is a real page switch (movie detail, back, nav links) —
+  // remote-refresh re-renders go through scheduleRemoteRefresh instead, which
+  // restores scroll deliberately. So it's safe to always land at the top here.
+  window.addEventListener("hashchange", () => { window.scrollTo(0, 0); render({ preserve: true }); });
 
   // ---------- boot ----------
   (async function boot() {
