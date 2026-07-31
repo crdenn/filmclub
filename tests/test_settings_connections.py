@@ -76,7 +76,7 @@ class SettingsConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(errors, {})
         self.assertEqual(
             {check["id"]: check["status"] for check in checks},
-            {"app_url": "ok", "tmdb": "ok", "plex": "ok", "seerr": "ok"},
+            {"app_url": "ok", "tmdb": "ok", "plex": "ok", "seerr": "ok", "discord": "skipped"},
         )
         self.assertEqual(len(calls), 3)
 
@@ -97,6 +97,7 @@ class SettingsConnectionTests(unittest.IsolatedAsyncioTestCase):
         statuses = {check["id"]: check["status"] for check in checks}
         self.assertEqual(statuses, {
             "app_url": "error", "tmdb": "error", "plex": "error", "seerr": "error",
+            "discord": "skipped",
         })
         self.assertIn("APP_URL", errors)
         self.assertIn("TMDB_API_KEY", errors)
@@ -106,6 +107,48 @@ class SettingsConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("tmdb-key", response_text)
         self.assertNotIn("plex-token", response_text)
         self.assertNotIn("seerr-key", response_text)
+
+    async def test_discord_webhook_check_ok(self):
+        values = dict(self.values, DISCORD_WEBHOOK_URL="https://discord.test/api/webhooks/123/abc")
+
+        def handler(url, kwargs):
+            if url.endswith("/identity"):
+                return _Response({"MediaContainer": {"machineIdentifier": "machine-1"}})
+            if "themoviedb.org" in url:
+                return _Response()
+            if url.endswith("/api/v1/settings/main"):
+                return _Response({"applicationTitle": "Seerr"})
+            if "discord.test" in url:
+                return _Response({"id": "123", "name": "Film Club Reminders"})
+            raise AssertionError(f"Unexpected URL: {url}")
+
+        with patch.object(main.httpx, "AsyncClient",
+                          side_effect=lambda **kwargs: _Client(handler)):
+            errors, checks = await main._test_settings_connections(values, require_all=True)
+
+        self.assertEqual(errors, {})
+        self.assertEqual({check["id"]: check["status"] for check in checks}["discord"], "ok")
+
+    async def test_discord_webhook_check_failure_maps_to_field(self):
+        values = dict(self.values, DISCORD_WEBHOOK_URL="https://discord.test/api/webhooks/123/abc")
+
+        def handler(url, kwargs):
+            if url.endswith("/identity"):
+                return _Response({"MediaContainer": {"machineIdentifier": "machine-1"}})
+            if "themoviedb.org" in url:
+                return _Response()
+            if url.endswith("/api/v1/settings/main"):
+                return _Response({"applicationTitle": "Seerr"})
+            if "discord.test" in url:
+                return _Response(status=401)
+            raise AssertionError(f"Unexpected URL: {url}")
+
+        with patch.object(main.httpx, "AsyncClient",
+                          side_effect=lambda **kwargs: _Client(handler)):
+            errors, checks = await main._test_settings_connections(values, require_all=True)
+
+        self.assertEqual({check["id"]: check["status"] for check in checks}["discord"], "error")
+        self.assertIn("DISCORD_WEBHOOK_URL", errors)
 
     def test_blank_secret_fields_keep_current_values_for_testing(self):
         old_tmdb = config.TMDB_API_KEY

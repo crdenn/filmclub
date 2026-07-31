@@ -307,7 +307,7 @@ async def _test_settings_connections(
         for key, meta in app_settings.FIELDS.items():
             if meta["required"] and not str(merged.get(key) or "").strip():
                 errors[key] = "Required"
-    for key in ("PLEX_URL", "APP_URL", "SEERR_URL"):
+    for key in ("PLEX_URL", "APP_URL", "SEERR_URL", "DISCORD_WEBHOOK_URL"):
         value = str(merged.get(key) or "").strip()
         if value and not re.match(r"^https?://[^\s]+$", value):
             errors[key] = "Enter a complete http:// or https:// URL"
@@ -399,7 +399,28 @@ async def _test_settings_connections(
             return {"id": "seerr", "label": "Seerr", "status": "error",
                     "detail": "API key rejected or service unreachable"}
 
-    integration_checks = await asyncio.gather(test_tmdb(), test_plex(), test_seerr())
+    discord_url = str(merged.get("DISCORD_WEBHOOK_URL") or "").strip()
+
+    async def test_discord() -> dict:
+        if not discord_url:
+            return {"id": "discord", "label": "Discord", "status": "skipped",
+                    "detail": "Not configured"}
+        if "DISCORD_WEBHOOK_URL" in errors:
+            return {"id": "discord", "label": "Discord", "status": "error",
+                    "detail": errors["DISCORD_WEBHOOK_URL"]}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                # A GET on the webhook URL returns its metadata without posting
+                # a message — a quiet way to confirm it's valid and reachable.
+                response = await client.get(discord_url)
+                response.raise_for_status()
+            return {"id": "discord", "label": "Discord", "status": "ok",
+                    "detail": "Webhook found and reachable"}
+        except Exception:
+            return {"id": "discord", "label": "Discord", "status": "error",
+                    "detail": "Webhook URL rejected or unreachable"}
+
+    integration_checks = await asyncio.gather(test_tmdb(), test_plex(), test_seerr(), test_discord())
     checks.extend(integration_checks)
     for check in integration_checks:
         if check["status"] != "error":
@@ -411,6 +432,8 @@ async def _test_settings_connections(
             errors.setdefault(field, check["detail"])
         elif check["id"] == "seerr":
             errors.setdefault("SEERR_URL", check["detail"])
+        elif check["id"] == "discord":
+            errors.setdefault("DISCORD_WEBHOOK_URL", check["detail"])
     return errors, checks
 
 
