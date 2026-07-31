@@ -1170,6 +1170,9 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .service-test-detail:empty { display: none; }
 .settings-extra { margin-top: .9rem; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .settings-extra .service-test-detail { margin: 0; }
+.schedule-inputs { display: flex; gap: .5rem; }
+.schedule-inputs select { flex: 0 1 130px; }
+.schedule-inputs input[type="time"] { flex: 0 1 100px; }
 .settings-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.1rem 0 0; border-top: 1px solid var(--line); }
 .settings-message { color: var(--text-dim); font-size: .8rem; }
 .settings-message.success { color: var(--good-text); }

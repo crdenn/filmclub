@@ -375,8 +375,8 @@
     ["SEERR_API_KEY", "Seerr API key", "Optional; required when a Seerr URL is set."],
     ["SEERR_TIMEOUT", "Seerr timeout (seconds)", "Request timeout in seconds."],
     ["DISCORD_WEBHOOK_URL", "Discord webhook URL", "Posts the weekly reminder digest to this channel."],
-    ["DISCORD_REMINDER_WEEKDAY", "Digest day", "Which day of the week the digest goes out."],
-    ["DISCORD_REMINDER_HOUR", "Digest hour", "Hour of day (0–23, server's local time) it goes out on that day."],
+    ["DISCORD_REMINDER_WEEKDAY", "Digest sends", "Which day and time of week the digest goes out (server's local time)."],
+    ["DISCORD_REMINDER_HOUR", "Digest hour", "Hour of day (server's local time) it goes out on that day."],
   ];
 
   const SETTING_GROUPS = [
@@ -416,26 +416,33 @@
       const locked = meta.locked ? "disabled" : "";
       const source = meta.locked ? (setup ? ` <small>environment override</small>` : ` <small class="setting-locked" title="Managed by an environment variable" aria-label="Managed by an environment variable">●</small>`) : "";
       if (key === "DISCORD_REMINDER_WEEKDAY") {
-        const current = meta.value !== "" && meta.value != null ? parseInt(meta.value, 10) : 0;
-        const options = WEEKDAY_NAMES.map((day, i) =>
-          `<option value="${i}" ${i === current ? "selected" : ""}>${day}</option>`).join("");
-        return `<label class="setup-field" data-setting="${key}">
+        const dayMeta = meta, hourMeta = settings.DISCORD_REMINDER_HOUR || {};
+        const currentDay = dayMeta.value !== "" && dayMeta.value != null ? parseInt(dayMeta.value, 10) : 0;
+        const currentHour = hourMeta.value !== "" && hourMeta.value != null ? parseInt(hourMeta.value, 10) : 9;
+        const dayOptions = WEEKDAY_NAMES.map((day, i) =>
+          `<option value="${i}" ${i === currentDay ? "selected" : ""}>${day}</option>`).join("");
+        const timeValue = `${String(currentHour).padStart(2, "0")}:00`;
+        const hourLocked = hourMeta.locked ? "disabled" : "";
+        return `<div class="setup-field schedule-field" data-setting="${key}">
           <span>${esc(label)}${source}</span>
-          <select class="search-input" name="${key}" ${locked}>${options}</select>
+          <div class="schedule-inputs">
+            <select class="search-input" name="DISCORD_REMINDER_WEEKDAY" ${locked}>${dayOptions}</select>
+            <input class="search-input" name="DISCORD_REMINDER_HOUR" type="time" step="3600" value="${timeValue}" ${hourLocked}>
+          </div>
           ${setup ? `<span class="setup-hint">${esc(hint)}</span>` : ""}<span class="setup-error"></span>
-        </label>`;
+        </div>`;
       }
+      if (key === "DISCORD_REMINDER_HOUR") return ""; // rendered together with the weekday, above
       const isNumber = meta.secret ? false
-        : key.includes("TIMEOUT") || key.includes("INTERVAL") || key.includes("HOUR");
+        : key.includes("TIMEOUT") || key.includes("INTERVAL");
       const type = meta.secret ? "password" : isNumber ? "number" : "text";
-      const bounds = key === "DISCORD_REMINDER_HOUR" ? `min="0" max="23"` : "";
       const required = meta.required ? "required" : "";
       const placeholder = meta.secret && meta.configured ? "Saved — leave blank to keep" : "";
       const clear = !setup && meta.secret && meta.configured && !meta.required
         ? `<span class="setup-clear"><input type="checkbox" name="clear:${key}"> Clear saved value</span>` : "";
       return `<label class="setup-field" data-setting="${key}">
         <span>${esc(label)}${meta.required ? " *" : ""}${source}</span>
-        <input class="search-input" name="${key}" type="${type}" value="${esc(meta.value || "")}" placeholder="${placeholder}" ${bounds} ${required} ${locked} autocomplete="off">
+        <input class="search-input" name="${key}" type="${type}" value="${esc(meta.value || "")}" placeholder="${placeholder}" ${required} ${locked} autocomplete="off">
         ${setup ? `<span class="setup-hint">${esc(hint)}</span>` : ""}${clear}<span class="setup-error"></span>
       </label>`;
   }
@@ -469,7 +476,11 @@
       else values[key] = value;
     });
     if (clear.length) values.clear_secrets = clear;
-    ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT", "DISCORD_REMINDER_WEEKDAY", "DISCORD_REMINDER_HOUR"].forEach(key => {
+    // The time picker submits "HH:MM"; the backend only stores the hour.
+    if (values.DISCORD_REMINDER_HOUR) {
+      values.DISCORD_REMINDER_HOUR = parseInt(values.DISCORD_REMINDER_HOUR.split(":")[0], 10);
+    }
+    ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT", "DISCORD_REMINDER_WEEKDAY"].forEach(key => {
       if (values[key] === "") delete values[key];
       else values[key] = Number(values[key]);
     });
