@@ -75,6 +75,14 @@ SEERR_URL = os.environ.get("SEERR_URL", "").rstrip("/")
 SEERR_API_KEY = os.environ.get("SEERR_API_KEY", "")
 SEERR_TIMEOUT = float(os.environ.get("SEERR_TIMEOUT", "10"))
 
+# --- Discord weekly reminder digest -----------------------------------------
+# Optional. When set, a weekly Monday digest (this week's film, who still needs
+# to mark backlog films seen/unseen, who still needs to rate watched films) is
+# posted to this incoming webhook URL. Unset means the feature is inert.
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+DISCORD_TIMEOUT = float(os.environ.get("DISCORD_TIMEOUT", "10"))
+DISCORD_REMINDER_INTERVAL = int(os.environ.get("DISCORD_REMINDER_INTERVAL", "2700"))
+
 # --- Auth ------------------------------------------------------------------
 APP_URL = os.environ.get("APP_URL", "http://localhost:8000").rstrip("/")
 

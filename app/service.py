@@ -395,6 +395,14 @@ def set_display_name(conn: sqlite3.Connection, member_id: int, name: str | None)
                (cleaned, member_id))
 
 
+def set_discord_user_id(conn: sqlite3.Connection, member_id: int, value: str | None) -> None:
+    """Set (or clear) a member's Discord user id, admin-entered for @mentions
+    in the weekly reminder digest."""
+    cleaned = (value or "").strip() or None
+    db.execute(conn, "UPDATE members SET discord_user_id = ? WHERE id = ?",
+               (cleaned, member_id))
+
+
 THEMES = ("system", "dark", "light")
 
 
@@ -462,6 +470,35 @@ def todo_counts(conn: sqlite3.Connection, member_id: int) -> dict:
                            WHERE r.movie_id = m.id AND r.member_id = ?)""",
         (member_id,))["c"]
     return {"backlog": backlog_unmarked, "watched": watched_unrated}
+
+
+def todo_details(conn: sqlite3.Connection, member_id: int, *, cap: int = 5) -> dict:
+    """Per-member reminder detail: which specific films are outstanding.
+
+    Same eligibility rules as todo_counts, but returns titles (oldest first,
+    capped) instead of a bare count, for surfaces that need to say *what* is
+    outstanding, not just *how many* (e.g. the Discord reminder digest).
+    """
+    backlog_rows = db.query_all(
+        conn,
+        """SELECT m.title FROM movies m WHERE m.status = 'suggested'
+           AND NOT EXISTS (SELECT 1 FROM prior_views p
+                           WHERE p.movie_id = m.id AND p.member_id = ?)
+           ORDER BY m.suggested_at, m.id""",
+        (member_id,))
+    watched_rows = db.query_all(
+        conn,
+        """SELECT m.title FROM movies m WHERE m.status = 'watched'
+           AND NOT EXISTS (SELECT 1 FROM ratings r
+                           WHERE r.movie_id = m.id AND r.member_id = ?)
+           ORDER BY m.watched_at, m.id""",
+        (member_id,))
+
+    def _shape(rows):
+        titles = [r["title"] for r in rows]
+        return {"count": len(titles), "titles": titles[:cap], "overflow": max(0, len(titles) - cap)}
+
+    return {"backlog": _shape(backlog_rows), "watched": _shape(watched_rows)}
 
 
 def add_suggestion(conn: sqlite3.Connection, meta: dict, member_id: int,
@@ -699,6 +736,7 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
             "username": m["username"],
             "email": m.get("email"),
             "thumb": m.get("thumb"),
+            "discord_user_id": m.get("discord_user_id"),
             "color": m["color"],
             "plex_id": m["plex_id"],
             "is_admin": bool(m.get("is_admin")) or owner,

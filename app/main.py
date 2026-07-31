@@ -20,8 +20,8 @@ from itsdangerous.url_safe import URLSafeTimedSerializer
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from . import (accounts, auth, backups, colors, config, db, events, logsafe,
-               migrations, plex, plex_ratings, seerr, service, stats, tmdb)
+from . import (accounts, auth, backups, colors, config, db, discord, events,
+               logsafe, migrations, plex, plex_ratings, seerr, service, stats, tmdb)
 from . import settings as app_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -196,6 +196,7 @@ async def _startup() -> None:
     # Kick off Plex library enrichment in the background.
     asyncio.create_task(plex.refresh_loop())
     asyncio.create_task(_backfill_movie_metadata())
+    asyncio.create_task(discord.reminder_loop())
 
 
 # --- request models --------------------------------------------------------
@@ -239,6 +240,11 @@ class AdminFlagIn(BaseModel):
     is_admin: bool
 
 
+class DiscordIdIn(BaseModel):
+    # Discord snowflake ids are numeric strings; blank clears it.
+    discord_user_id: str | None = Field(default=None, max_length=32, pattern=r"^\d*$")
+
+
 class DiscussDate(BaseModel):
     date: str  # ISO 'YYYY-MM-DD'
 
@@ -256,6 +262,7 @@ class SettingsIn(BaseModel):
     SEERR_URL: str | None = None
     SEERR_API_KEY: str | None = None
     SEERR_TIMEOUT: float | None = Field(default=None, ge=1, le=120)
+    DISCORD_WEBHOOK_URL: str | None = None
 
 
 class SetupOwnerIn(BaseModel):
@@ -1258,6 +1265,18 @@ async def api_admin_set_admin(member_id: int, body: AdminFlagIn, admin=Depends(a
         return {"ok": True}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/members/{member_id}/discord")
+async def api_admin_set_discord_id(member_id: int, body: DiscordIdIn, admin=Depends(auth.require_admin)):
+    """Set (or clear) a member's Discord id, used to @mention them in the
+    weekly reminder digest. Admin-entered — members never set this themselves."""
+    conn = db.connect()
+    try:
+        service.set_discord_user_id(conn, member_id, body.discord_user_id)
+        return {"ok": True}
     finally:
         conn.close()
 

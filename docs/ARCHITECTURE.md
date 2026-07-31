@@ -2,7 +2,7 @@
 
 ## System overview
 
-Film Club Tracker is a single-process FastAPI application that serves both a JSON API and a build-free JavaScript SPA. SQLite is the durable store. TMDB supplies movie metadata, Plex provides authentication, library enrichment, and two-way rating synchronization, and Seerr can optionally request suggested films.
+Film Club Tracker is a single-process FastAPI application that serves both a JSON API and a build-free JavaScript SPA. SQLite is the durable store. TMDB supplies movie metadata, Plex provides authentication, library enrichment, and two-way rating synchronization, Seerr can optionally request suggested films, and Discord can optionally receive a weekly reminder digest.
 
 The application is designed for one small club and one Uvicorn worker. Its in-memory Plex cache and SSE subscriber registry are not shared across processes.
 
@@ -16,6 +16,7 @@ flowchart LR
     F --> T[TMDB API]
     F --> P[Plex APIs / server]
     F --> E[Seerr API]
+    F --> DC[Discord webhook]
     P --> C[In-process library cache]
     C --> S
 ```
@@ -199,6 +200,10 @@ The Plex token is encrypted before it is stored in the member row so the app can
 6. If Seerr is configured, the app checks the Plex cache, performs a targeted live Plex lookup on a miss, and otherwise calls Seerr.
 7. Seerr outcome is stored as `movies.seerr_status`. Failure does not undo the inserted suggestion.
 8. Middleware broadcasts a change ping to connected clients.
+
+### Discord reminder loop
+
+`discord.reminder_loop()` is a background `asyncio` task started at app startup, alongside the Plex refresh loop — the same single-process, in-memory scheduling pattern, not a separate cron process. On each tick (`DISCORD_REMINDER_INTERVAL`, default ~45 min) it checks whether it's Monday (server-local date) and whether this week's digest has already gone out, tracked via an `app_settings` bookkeeping key (`_discord_digest_last_sent_week`, an ISO week string) rather than a dedicated table. If due, it assembles the digest (`service.this_week()` plus a per-member `service.todo_details()` pass) and posts it to `DISCORD_WEBHOOK_URL`. A failed post does not mark the week as sent, so the next tick retries; the loop itself never raises, matching the Seerr/Plex integration convention of degrading to a logged warning rather than affecting the rest of the app.
 
 ### Weekly lifecycle
 

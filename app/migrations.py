@@ -157,6 +157,13 @@ def _m8_movie_pitch(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "movies", "pitch", "pitch TEXT")
 
 
+def _m9_member_discord_id(conn: sqlite3.Connection) -> None:
+    # Admin-entered Discord user id, used to @mention members in the weekly
+    # reminder digest. Existing members simply have none (NULL) until an
+    # admin fills it in.
+    _add_column_if_missing(conn, "members", "discord_user_id", "discord_user_id TEXT")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -167,6 +174,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (6, "movie-content-rating", _m6_movie_content_rating),
     (7, "member-theme", _m7_member_theme),
     (8, "movie-pitch", _m8_movie_pitch),
+    (9, "member-discord-id", _m9_member_discord_id),
 ]
 
 
