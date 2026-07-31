@@ -2440,7 +2440,8 @@
             : `<button class="btn admin-toggle" data-id="${member.id}" data-val="1">Make admin</button>`;
         const resetAction = (member.identity_providers || []).includes("local")
           ? `<button class="btn password-reset-btn" data-id="${member.id}">Reset password</button>` : "";
-        return `<div class="admin-actions">${adminAction}${resetAction}</div>`;
+        const discordAction = `<button class="btn discord-id-btn" data-id="${member.id}">${member.discord_user_id ? "Edit Discord ID" : "Set Discord ID"}</button>`;
+        return `<div class="admin-actions">${adminAction}${resetAction}${discordAction}</div>`;
       };
       // "Plex" gets the actual Plex username alongside it (the effective name
       // above may be a chosen display name instead); "local" has no separate
@@ -2451,31 +2452,23 @@
         return labels.join(" + ") || "record only";
       };
       const table = (list, emptyMessage) => list.length ? `<table class="stat-table admin-table"><thead><tr>
-          <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Discord ID</th><th>Actions</th>
+          <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Actions</th>
         </tr></thead><tbody>${list.map(member => `<tr>
           <td class="admin-member-cell"><div class="member-cell">${avatar(member, "sm")}<span>${esc(member.username)}<small class="identity-label">${esc(identityLabel(member))}</small></span></div></td>
           <td class="admin-type-cell">${typeBadge(member)}</td>
           <td class="num" data-label="Suggested">${member.counts.suggested}${member.counts.suggested_watched ? ` <span class="admin-count-note">(${member.counts.suggested_watched} watched)</span>` : ""}</td>
           <td class="num" data-label="Ratings">${member.counts.ratings}</td>
-          <td class="admin-discord-cell" data-label="Discord ID">
-            <input type="text" class="search-input discord-id-input" data-id="${member.id}"
-              value="${esc(member.discord_user_id || "")}" placeholder="Discord user ID"
-              maxlength="32" pattern="\\d*" inputmode="numeric" autocomplete="off">
-          </td>
           <td class="admin-actions-cell">${rowActions(member)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty admin-empty">${emptyMessage}</div>`;
       const content = `<section class="admin-card"><h3>Accounts</h3>
-          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area. Discord ID lets the weekly reminder digest @mention someone directly — right-click their name in Discord with Developer Mode on, then “Copy User ID”.</div>${table(members, "No one has signed in yet.")}</section>`;
+          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(members, "No one has signed in yet.")}</section>`;
       paintView("admin", adminLayout("users", content), preserve);
       app.querySelectorAll(".admin-toggle").forEach(button => button.onclick = () =>
         setAdmin(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
       app.querySelectorAll(".password-reset-btn").forEach(button => button.onclick = () =>
         createPasswordReset(parseInt(button.dataset.id, 10), members.find(member => member.id === parseInt(button.dataset.id, 10))?.username));
-      app.querySelectorAll(".discord-id-input").forEach(input => {
-        const save = () => saveDiscordId(parseInt(input.dataset.id, 10), input);
-        input.addEventListener("blur", save);
-        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } });
-      });
+      app.querySelectorAll(".discord-id-btn").forEach(button => button.onclick = () =>
+        showDiscordIdModal(members.find(member => member.id === parseInt(button.dataset.id, 10))));
       return;
     }
 
@@ -2749,19 +2742,42 @@
     } catch (e) { toast(e.message, true); }
   }
 
-  // Saves on blur/Enter rather than a separate button — a single free-text
-  // field per row doesn't need its own explicit save step. Skips a no-op save
-  // (field blurred without changes) and reverts the input on failure.
-  async function saveDiscordId(id, input) {
-    const value = input.value.trim();
-    if (value === input.defaultValue.trim()) return;
-    try {
-      await api(`/api/admin/members/${id}/discord`, { method: "POST", body: { discord_user_id: value || null } });
-      toast("Discord ID saved");
-    } catch (e) {
-      input.value = input.defaultValue;
-      toast(e.message, true);
-    }
+  function showDiscordIdModal(member) {
+    if (!member) return;
+    const root = $("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="discord-id-backdrop"><div class="modal">
+      <div class="modal-head"><h2>Discord ID — ${esc(member.username)}</h2><button class="modal-close" id="discord-id-close" type="button">×</button></div>
+      <form class="modal-body" id="discord-id-form">
+        <label><span>Discord user ID</span>
+          <input class="search-input" id="discord-id-value" value="${esc(member.discord_user_id || "")}"
+            placeholder="e.g. 123456789012345678" maxlength="32" pattern="\\d*" inputmode="numeric" autocomplete="off">
+        </label>
+        <p class="profile-hint">Lets the weekly reminder digest @mention them directly. In Discord: turn on Developer Mode (Settings → Advanced), then right-click their name → “Copy User ID”. Leave blank to just show their name instead.</p>
+        <div class="setup-actions"><span id="discord-id-message"></span><button class="btn btn-primary" type="submit">Save</button></div>
+      </form>
+    </div></div>`;
+    const close = () => { root.innerHTML = ""; };
+    $("#discord-id-close").onclick = close;
+    $("#discord-id-backdrop").onclick = (event) => {
+      if (event.target.id === "discord-id-backdrop") close();
+    };
+    const form = $("#discord-id-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button[type=submit]");
+      const message = $("#discord-id-message");
+      const value = $("#discord-id-value").value.trim();
+      button.disabled = true; button.textContent = "Saving…";
+      try {
+        await api(`/api/admin/members/${member.id}/discord`, { method: "POST", body: { discord_user_id: value || null } });
+        close();
+        toast("Discord ID saved");
+        renderAdmin("users", true);
+      } catch (e) {
+        message.textContent = e.message;
+        button.disabled = false; button.textContent = "Save";
+      }
+    };
   }
 
   // ---------- misc ----------
