@@ -78,7 +78,8 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (5, "password-resets"),
                                 (6, "movie-content-rating"),
                                 (7, "member-theme"),
-                                (8, "movie-pitch")])
+                                (8, "movie-pitch"),
+                                (9, "member-discord-id")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))

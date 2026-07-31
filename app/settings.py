@@ -25,6 +25,7 @@ FIELDS = {
     "SEERR_URL": {"secret": False, "required": False},
     "SEERR_API_KEY": {"secret": True, "required": False},
     "SEERR_TIMEOUT": {"secret": False, "required": False},
+    "DISCORD_WEBHOOK_URL": {"secret": True, "required": False},
 }
 SETUP_COMPLETE = "_setup_complete"
 

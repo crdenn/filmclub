@@ -374,6 +374,7 @@
     ["SEERR_URL", "Seerr URL", "Optional Overseerr/Jellyseerr server address."],
     ["SEERR_API_KEY", "Seerr API key", "Optional; required when a Seerr URL is set."],
     ["SEERR_TIMEOUT", "Seerr timeout (seconds)", "Request timeout in seconds."],
+    ["DISCORD_WEBHOOK_URL", "Discord webhook URL", "Posts the weekly reminder digest to this channel."],
   ];
 
   const SETTING_GROUPS = [
@@ -397,6 +398,11 @@
       id: "seerr", eyebrow: "Requests", title: "Seerr",
       description: "Optionally sends new film suggestions to Overseerr or Jellyseerr.",
       keys: ["SEERR_URL", "SEERR_API_KEY", "SEERR_TIMEOUT"], required: false,
+    },
+    {
+      id: "discord", eyebrow: "Notifications", title: "Discord reminders",
+      description: "Optional weekly Monday digest of this week's film and outstanding backlog/rating gaps, posted to a Discord channel via webhook.",
+      keys: ["DISCORD_WEBHOOK_URL"], required: false,
     },
   ];
 
@@ -2437,21 +2443,31 @@
         return `<div class="admin-actions">${adminAction}${resetAction}</div>`;
       };
       const table = (list, emptyMessage) => list.length ? `<table class="stat-table admin-table"><thead><tr>
-          <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Actions</th>
+          <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Discord ID</th><th>Actions</th>
         </tr></thead><tbody>${list.map(member => `<tr>
           <td class="admin-member-cell"><div class="member-cell">${avatar(member, "sm")}<span>${esc(member.username)}<small class="identity-label">${esc((member.identity_providers || []).join(" + ") || "record only")}</small></span></div></td>
           <td class="admin-type-cell">${typeBadge(member)}</td>
           <td class="num" data-label="Suggested">${member.counts.suggested}${member.counts.suggested_watched ? ` <span class="admin-count-note">(${member.counts.suggested_watched} watched)</span>` : ""}</td>
           <td class="num" data-label="Ratings">${member.counts.ratings}</td>
+          <td class="admin-discord-cell" data-label="Discord ID">
+            <input type="text" class="search-input discord-id-input" data-id="${member.id}"
+              value="${esc(member.discord_user_id || "")}" placeholder="Discord user ID"
+              maxlength="32" pattern="\\d*" inputmode="numeric" autocomplete="off">
+          </td>
           <td class="admin-actions-cell">${rowActions(member)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty admin-empty">${emptyMessage}</div>`;
       const content = `<section class="admin-card"><h3>Accounts</h3>
-          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(members, "No one has signed in yet.")}</section>`;
+          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area. Discord ID lets the weekly reminder digest @mention someone directly — right-click their name in Discord with Developer Mode on, then “Copy User ID”.</div>${table(members, "No one has signed in yet.")}</section>`;
       paintView("admin", adminLayout("users", content), preserve);
       app.querySelectorAll(".admin-toggle").forEach(button => button.onclick = () =>
         setAdmin(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
       app.querySelectorAll(".password-reset-btn").forEach(button => button.onclick = () =>
         createPasswordReset(parseInt(button.dataset.id, 10), members.find(member => member.id === parseInt(button.dataset.id, 10))?.username));
+      app.querySelectorAll(".discord-id-input").forEach(input => {
+        const save = () => saveDiscordId(parseInt(input.dataset.id, 10), input);
+        input.addEventListener("blur", save);
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } });
+      });
       return;
     }
 
@@ -2723,6 +2739,21 @@
       toast(value ? "Admin granted" : "Admin removed");
       renderAdmin("users", true);
     } catch (e) { toast(e.message, true); }
+  }
+
+  // Saves on blur/Enter rather than a separate button — a single free-text
+  // field per row doesn't need its own explicit save step. Skips a no-op save
+  // (field blurred without changes) and reverts the input on failure.
+  async function saveDiscordId(id, input) {
+    const value = input.value.trim();
+    if (value === input.defaultValue.trim()) return;
+    try {
+      await api(`/api/admin/members/${id}/discord`, { method: "POST", body: { discord_user_id: value || null } });
+      toast("Discord ID saved");
+    } catch (e) {
+      input.value = input.defaultValue;
+      toast(e.message, true);
+    }
   }
 
   // ---------- misc ----------

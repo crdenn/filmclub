@@ -71,6 +71,10 @@ scorecards, and genre/decade distributions.
   matched films; and optional **two-way rating sync** (future changes only).
 - **Seerr** *(optional)* — adding a film that isn't already on Plex submits a
   request to Overseerr/Jellyseerr. Degrades safely when off or unreachable.
+- **Discord reminders** *(optional)* — a weekly Monday digest of this week's
+  film, who still needs to mark backlog films seen/unseen, and who still needs
+  to rate watched films, posted to a Discord channel via webhook. Members are
+  @mentioned when an admin has entered their Discord id in the Admin panel.
 
 **Admin** — member list, local-account invites and password resets,
 admin grants, movie deletion, manual Plex refresh, and diagnostics
@@ -199,6 +203,7 @@ The setup wizard and Admin screen manage normal application configuration:
 | `PLEX_REFRESH_INTERVAL` | — | Seconds between library refreshes (default 3600) |
 | `SEERR_URL`, `SEERR_API_KEY` | — | Enable Seerr auto-request when both are set |
 | `SEERR_TIMEOUT` | — | Per-request Seerr timeout (default 10s) |
+| `DISCORD_WEBHOOK_URL` | — | Enables the weekly Monday reminder digest |
 
 For automated or legacy deployments, environment variables override values
 saved through the UI. [`.env.example`](.env.example) documents those advanced

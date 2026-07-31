@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS members (
     is_admin     INTEGER NOT NULL DEFAULT 0,  -- can access the admin panel
     is_owner     INTEGER NOT NULL DEFAULT 0,  -- first setup owner; cannot be demoted
     theme        TEXT NOT NULL DEFAULT 'system', -- 'system' | 'dark' | 'light'
+    discord_user_id TEXT,             -- admin-entered, for @mentions in reminder digests
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
