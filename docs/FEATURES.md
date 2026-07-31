@@ -113,6 +113,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Failure behavior:** If the webhook post fails, the week is not marked sent, so the next tick (same Monday) retries automatically; a Discord outage can't silently skip a week.
 - **Limitations:** Cadence (Monday) is hardcoded for v1, not admin-configurable. No per-user timezone handling — "Monday" is the server's local date.
 - **Follow-up:** A `DISCORD_REMINDER_WEEKDAY` override, or a second cadence for the backlog/rating check-ins independent of the meeting reminder, if weekly turns out to be too infrequent or too noisy in practice.
+- **Discussion-date-changed notice:** A separate, immediate (not weekly-scheduled) Discord post fires whenever someone edits This Week's discussion date (`POST /api/movies/{id}/discuss_date` → `service.set_discuss_date()` → `discord.notify_date_changed()`), e.g. "📅 **Discussion date changed** — we're meeting to discuss *Title* (Year) on **Weekday, Mon D**." No `@mention`s or channel-wide ping. Same never-raise/status-dict discipline as the rest of `app/discord.py` — a failed post here does not undo or fail the date-change request itself.
 
 ## Backlog triage and eligibility
 

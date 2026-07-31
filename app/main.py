@@ -1001,9 +1001,10 @@ async def api_discuss_date(movie_id: int, body: DiscussDate, member=Depends(auth
         if not service.set_discuss_date(conn, movie_id, d.isoformat()):
             raise HTTPException(status_code=400,
                                 detail="Only this week's pick has a discussion date")
-        return {"ok": True, "date": d.isoformat()}
     finally:
         conn.close()
+    await discord.notify_date_changed(movie_id)
+    return {"ok": True, "date": d.isoformat()}
 
 
 @app.post("/api/movies/{movie_id}/watch")

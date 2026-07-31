@@ -119,6 +119,40 @@ def _format_message(digest: dict) -> dict:
     }
 
 
+def _format_date_changed_message(title: str, year: int | None, iso_date: str) -> dict:
+    """Pure formatting: an immediate, one-off notice that This Week's
+    discussion date moved. No I/O."""
+    year_str = f" ({year})" if year else ""
+    content = (f"\U0001F4C5 **Discussion date changed** — we're meeting to discuss "
+               f"*{title}*{year_str} on **{_fmt_date(iso_date)}**.")
+    return {"content": content, "allowed_mentions": {"parse": [], "users": []}}
+
+
+async def notify_date_changed(movie_id: int) -> dict:
+    """Post an immediate notice when This Week's discussion date moves.
+
+    Separate from the weekly digest — fires right away, not on the Monday
+    schedule. Never raises: a Discord failure must never break the
+    date-change request itself.
+    """
+    if not is_configured():
+        return {"status": "disabled", "detail": None}
+    try:
+        conn = db.connect()
+        try:
+            row = db.query_one(
+                conn, "SELECT title, year, watched_at FROM movies WHERE id = ?", (movie_id,))
+        finally:
+            conn.close()
+        if not row:
+            return {"status": "failed", "detail": "movie not found"}
+        payload = _format_date_changed_message(row["title"], row["year"], row["watched_at"])
+        return await _post(payload)
+    except Exception as e:  # noqa: BLE001 — must never break the date-change request
+        log.warning("Discord date-changed notice failed: %s", e)
+        return {"status": "failed", "detail": str(e)}
+
+
 # --- sending -----------------------------------------------------------------
 
 async def _post(payload: dict) -> dict:

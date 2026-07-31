@@ -179,6 +179,45 @@ class DiscordReminderTests(unittest.TestCase):
         self.assertIn("Everyone's caught up.", payload["content"])
         self.assertEqual(payload["allowed_mentions"]["users"], [])
 
+    # --- _format_date_changed_message ----------------------------------------
+
+    def test_format_date_changed_message_content(self):
+        payload = discord._format_date_changed_message("The Thing", 1982, "2026-08-13")
+
+        self.assertEqual(
+            payload["content"],
+            "\U0001F4C5 **Discussion date changed** — we're meeting to discuss "
+            "*The Thing* (1982) on **Thursday, Aug 13**.",
+        )
+        self.assertEqual(payload["allowed_mentions"], {"parse": [], "users": []})
+
+    def test_format_date_changed_message_no_year(self):
+        payload = discord._format_date_changed_message("Untitled", None, "2026-08-13")
+        self.assertIn("*Untitled* on", payload["content"])
+
+    # --- notify_date_changed --------------------------------------------------
+
+    def test_notify_date_changed_posts_formatted_message(self):
+        movie_id = self.add_movie(title="The Thing", status="scheduled",
+                                  watched_at="2026-08-13", year=1982)
+        _Client.response = _Response(204)
+        with patch("app.discord.httpx.AsyncClient", _Client):
+            result = asyncio.run(discord.notify_date_changed(movie_id))
+
+        self.assertEqual(result["status"], "sent")
+        url, kwargs = _Client.last_post
+        self.assertIn("The Thing", kwargs["json"]["content"])
+        self.assertIn("Thursday, Aug 13", kwargs["json"]["content"])
+
+    def test_notify_date_changed_missing_movie(self):
+        result = asyncio.run(discord.notify_date_changed(999999))
+        self.assertEqual(result["status"], "failed")
+
+    def test_notify_date_changed_disabled_when_unconfigured(self):
+        config.DISCORD_WEBHOOK_URL = ""
+        result = asyncio.run(discord.notify_date_changed(1))
+        self.assertEqual(result["status"], "disabled")
+
     # --- weekly send tracking --------------------------------------------------
 
     def test_mark_sent_then_already_sent_this_week(self):
