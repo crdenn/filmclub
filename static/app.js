@@ -2442,10 +2442,18 @@
           ? `<button class="btn password-reset-btn" data-id="${member.id}">Reset password</button>` : "";
         return `<div class="admin-actions">${adminAction}${resetAction}</div>`;
       };
+      // "Plex" gets the actual Plex username alongside it (the effective name
+      // above may be a chosen display name instead); "local" has no separate
+      // login-provider identity to show beyond the name already shown.
+      const identityLabel = (member) => {
+        const labels = (member.identity_providers || []).map(p =>
+          p === "plex" ? `Plex ${member.plex_username}` : p === "local" ? "Local" : p);
+        return labels.join(" + ") || "record only";
+      };
       const table = (list, emptyMessage) => list.length ? `<table class="stat-table admin-table"><thead><tr>
           <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Discord ID</th><th>Actions</th>
         </tr></thead><tbody>${list.map(member => `<tr>
-          <td class="admin-member-cell"><div class="member-cell">${avatar(member, "sm")}<span>${esc(member.username)}<small class="identity-label">${esc((member.identity_providers || []).join(" + ") || "record only")}</small></span></div></td>
+          <td class="admin-member-cell"><div class="member-cell">${avatar(member, "sm")}<span>${esc(member.username)}<small class="identity-label">${esc(identityLabel(member))}</small></span></div></td>
           <td class="admin-type-cell">${typeBadge(member)}</td>
           <td class="num" data-label="Suggested">${member.counts.suggested}${member.counts.suggested_watched ? ` <span class="admin-count-note">(${member.counts.suggested_watched} watched)</span>` : ""}</td>
           <td class="num" data-label="Ratings">${member.counts.ratings}</td>

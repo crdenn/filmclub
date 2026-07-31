@@ -731,9 +731,13 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
                 (m["id"],),
             )
         ]
+        display = (m.get("display_name") or "").strip() or None
         out.append({
             "id": m["id"],
-            "username": m["username"],
+            # Same "effective name" convention as db.member_public(): the
+            # chosen display name if set, otherwise the raw Plex username.
+            "username": display or m["username"],
+            "plex_username": m["username"],
             "email": m.get("email"),
             "thumb": m.get("thumb"),
             "discord_user_id": m.get("discord_user_id"),
