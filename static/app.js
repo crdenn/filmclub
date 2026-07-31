@@ -1776,17 +1776,17 @@
     const menuItems = [];
     if (m.status === "suggested") {
       primaryBtn = `<button class="btn btn-primary" id="detail-pick">▶ Pick for this week</button>`;
-      if (canDelete) menuItems.push(`<button type="button" class="detail-menu-item danger" id="detail-del">Delete film…</button>`);
+      if (canDelete) menuItems.push(`<button type="button" class="overflow-menu-item danger" id="detail-del">Delete film…</button>`);
     } else if (isScheduled) {
       primaryBtn = `<button class="btn btn-primary" id="detail-archive">✓ Move to Watched</button>`;
-      menuItems.push(`<button type="button" class="detail-menu-item danger" id="detail-unschedule">Send back to backlog…</button>`);
+      menuItems.push(`<button type="button" class="overflow-menu-item danger" id="detail-unschedule">Send back to backlog…</button>`);
     } else if (isWatched) {
-      if (state.me.is_admin) menuItems.push(`<button type="button" class="detail-menu-item" id="detail-return-thisweek">Move back to This Week…</button>`);
-      menuItems.push(`<button type="button" class="detail-menu-item danger" id="detail-unwatch">Move back to backlog…</button>`);
+      if (state.me.is_admin) menuItems.push(`<button type="button" class="overflow-menu-item" id="detail-return-thisweek">Move back to This Week…</button>`);
+      menuItems.push(`<button type="button" class="overflow-menu-item danger" id="detail-unwatch">Move back to backlog…</button>`);
     }
-    const overflow = menuItems.length ? `<div class="detail-overflow">
+    const overflow = menuItems.length ? `<div class="overflow-anchor">
       <button type="button" class="btn icon-btn" id="detail-more" aria-haspopup="true" aria-expanded="false" aria-label="More actions">${ICON_MORE}</button>
-      <div class="detail-menu" id="detail-menu" hidden>${menuItems.join("")}</div>
+      <div class="overflow-menu" id="detail-menu" hidden>${menuItems.join("")}</div>
     </div>` : "";
     const plexLink = m.library && m.library.deep_link
       ? `<a class="tw-plex-btn detail-plex" href="${esc(m.library.deep_link)}" target="_blank" rel="noopener">▶ Watch on Plex</a>` : "";
@@ -1884,6 +1884,37 @@
         const mn = $("#detail-menu"), bt = $("#detail-more");
         if (mn && !mn.hidden) { mn.hidden = true; if (bt) bt.setAttribute("aria-expanded", "false"); }
       });
+    }
+  }
+
+  // Same overflow-menu pattern as wireDetailMenu, but for however many rows a
+  // table has at once — closing one when another opens, and any open one on
+  // an outside click or after any of its own items is clicked (an item's
+  // action may itself just open a modal rather than re-rendering the page,
+  // so the menu needs to close on its own rather than relying on that).
+  function wireRowMenus() {
+    const closeAll = () => {
+      app.querySelectorAll(".row-menu-items").forEach(m => { m.hidden = true; });
+      app.querySelectorAll(".row-menu-toggle").forEach(b => b.setAttribute("aria-expanded", "false"));
+    };
+    app.querySelectorAll(".row-menu-toggle").forEach(btn => {
+      const menu = btn.nextElementSibling;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const open = menu.hidden;
+        closeAll();
+        menu.hidden = !open;
+        btn.setAttribute("aria-expanded", String(open));
+      };
+    });
+    app.querySelectorAll(".row-menu-items").forEach(menu => {
+      menu.onclick = (e) => e.stopPropagation();
+      menu.querySelectorAll(".overflow-menu-item").forEach(item =>
+        item.addEventListener("click", () => { menu.hidden = true; }));
+    });
+    if (!wireRowMenus._doc) {
+      wireRowMenus._doc = true;
+      document.addEventListener("click", closeAll);
     }
   }
 
@@ -2433,15 +2464,21 @@
         : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:var(--accent-soft)">Admin</span>`
         : `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Member</span>`;
       const rowActions = (member) => {
-        const adminAction = member.is_owner
-          ? `<span class="admin-muted">owner · locked</span>`
-          : member.is_admin
-            ? `<button class="btn admin-toggle" data-id="${member.id}" data-val="0">Remove admin</button>`
-            : `<button class="btn admin-toggle" data-id="${member.id}" data-val="1">Make admin</button>`;
-        const resetAction = (member.identity_providers || []).includes("local")
-          ? `<button class="btn password-reset-btn" data-id="${member.id}">Reset password</button>` : "";
-        const discordAction = `<button class="btn discord-id-btn" data-id="${member.id}">${member.discord_user_id ? "Edit Discord ID" : "Set Discord ID"}</button>`;
-        return `<div class="admin-actions">${adminAction}${resetAction}${discordAction}</div>`;
+        const items = [];
+        if (!member.is_owner) {
+          items.push(member.is_admin
+            ? `<button type="button" class="overflow-menu-item admin-toggle" data-id="${member.id}" data-val="0">Remove admin</button>`
+            : `<button type="button" class="overflow-menu-item admin-toggle" data-id="${member.id}" data-val="1">Make admin</button>`);
+        }
+        if ((member.identity_providers || []).includes("local")) {
+          items.push(`<button type="button" class="overflow-menu-item password-reset-btn" data-id="${member.id}">Reset password</button>`);
+        }
+        items.push(`<button type="button" class="overflow-menu-item discord-id-btn" data-id="${member.id}">${member.discord_user_id ? "Edit Discord ID" : "Set Discord ID"}</button>`);
+        const ownerNote = member.is_owner ? `<span class="admin-muted">Owner · locked</span>` : "";
+        return `<div class="admin-actions">${ownerNote}<div class="overflow-anchor row-menu">
+          <button type="button" class="btn icon-btn row-menu-toggle" data-id="${member.id}" aria-haspopup="true" aria-expanded="false" aria-label="More actions">${ICON_MORE}</button>
+          <div class="overflow-menu row-menu-items" hidden>${items.join("")}</div>
+        </div></div>`;
       };
       // "Plex" gets the actual Plex username alongside it (the effective name
       // above may be a chosen display name instead); "local" has no separate
@@ -2469,6 +2506,7 @@
         createPasswordReset(parseInt(button.dataset.id, 10), members.find(member => member.id === parseInt(button.dataset.id, 10))?.username));
       app.querySelectorAll(".discord-id-btn").forEach(button => button.onclick = () =>
         showDiscordIdModal(members.find(member => member.id === parseInt(button.dataset.id, 10))));
+      wireRowMenus();
       return;
     }
 
