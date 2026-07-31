@@ -2474,8 +2474,7 @@
           items.push(`<button type="button" class="overflow-menu-item password-reset-btn" data-id="${member.id}">Reset password</button>`);
         }
         items.push(`<button type="button" class="overflow-menu-item discord-id-btn" data-id="${member.id}">${member.discord_user_id ? "Edit Discord ID" : "Set Discord ID"}</button>`);
-        const ownerNote = member.is_owner ? `<span class="admin-muted">Owner · locked</span>` : "";
-        return `<div class="admin-actions">${ownerNote}<div class="overflow-anchor row-menu">
+        return `<div class="admin-actions"><div class="overflow-anchor row-menu">
           <button type="button" class="btn icon-btn row-menu-toggle" data-id="${member.id}" aria-haspopup="true" aria-expanded="false" aria-label="More actions">${ICON_MORE}</button>
           <div class="overflow-menu row-menu-items" hidden>${items.join("")}</div>
         </div></div>`;
