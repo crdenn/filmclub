@@ -3,13 +3,26 @@ import asyncio
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("SESSION_SECRET", "discord-reminder-test-secret")
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="filmclub-test-bootstrap-"))
 
-from app import config, db, discord, service  # noqa: E402
+from app import config, db, discord, service, settings  # noqa: E402
+
+
+class _FixedDatetime:
+    """Stand-in for the `datetime` class used by app.discord — fixes `now()`
+    to a chosen instant while still delegating `strptime` to the real
+    implementation (used by `_fmt_date`)."""
+    _now = datetime(2026, 8, 10, 8, 0)  # a Monday, 08:00
+    strptime = datetime.strptime
+
+    @classmethod
+    def now(cls):
+        return cls._now
 
 
 class _Response:
@@ -55,6 +68,8 @@ class DiscordReminderTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="filmclub-discord-")
         self.old_db_path = config.DB_PATH
         self.old_webhook_url = config.DISCORD_WEBHOOK_URL
+        self.old_weekday = config.DISCORD_REMINDER_WEEKDAY
+        self.old_hour = config.DISCORD_REMINDER_HOUR
         config.DB_PATH = Path(self.tmp.name) / "filmclub.db"
         config.DISCORD_WEBHOOK_URL = "https://discord.test/api/webhooks/123/abc"
         db.init_db()
@@ -64,6 +79,8 @@ class DiscordReminderTests(unittest.TestCase):
         self.conn.close()
         config.DB_PATH = self.old_db_path
         config.DISCORD_WEBHOOK_URL = self.old_webhook_url
+        config.DISCORD_REMINDER_WEEKDAY = self.old_weekday
+        config.DISCORD_REMINDER_HOUR = self.old_hour
         self.tmp.cleanup()
 
     def add_member(self, plex_id="uuid-1", username="Alice", discord_user_id=None):
@@ -179,6 +196,12 @@ class DiscordReminderTests(unittest.TestCase):
         self.assertIn("Everyone's caught up.", payload["content"])
         self.assertEqual(payload["allowed_mentions"]["users"], [])
 
+    def test_format_message_includes_backlog_and_watched_links(self):
+        payload = discord._format_message({"scheduled": [], "gaps": []})
+
+        self.assertIn(f"[Open Backlog]({config.APP_URL}/#/backlog)", payload["content"])
+        self.assertIn(f"[Open Watched]({config.APP_URL}/#/watched)", payload["content"])
+
     # --- _format_date_changed_message ----------------------------------------
 
     def test_format_date_changed_message_content(self):
@@ -234,6 +257,50 @@ class DiscordReminderTests(unittest.TestCase):
         self.conn.commit()
 
         self.assertFalse(discord._already_sent_this_week(self.conn))
+
+    # --- _maybe_send: configurable weekday/hour gating ------------------------
+
+    def test_maybe_send_fires_on_configured_weekday_and_hour(self):
+        # _FixedDatetime._now is a Monday at 08:00.
+        config.DISCORD_REMINDER_WEEKDAY = 0  # Monday
+        config.DISCORD_REMINDER_HOUR = 8
+        with patch("app.discord.datetime", _FixedDatetime), \
+             patch("app.discord._post", new=AsyncMock(return_value={"status": "sent"})) as post:
+            asyncio.run(discord._maybe_send())
+
+        post.assert_called_once()
+        self.assertTrue(discord._already_sent_this_week(self.conn))
+
+    def test_maybe_send_skips_wrong_weekday(self):
+        config.DISCORD_REMINDER_WEEKDAY = 2  # Wednesday; fixed "now" is a Monday
+        config.DISCORD_REMINDER_HOUR = 8
+        with patch("app.discord.datetime", _FixedDatetime), \
+             patch("app.discord._post", new=AsyncMock(return_value={"status": "sent"})) as post:
+            asyncio.run(discord._maybe_send())
+        post.assert_not_called()
+
+    def test_maybe_send_skips_before_configured_hour(self):
+        config.DISCORD_REMINDER_WEEKDAY = 0  # Monday matches the fixed "now"
+        config.DISCORD_REMINDER_HOUR = 9  # fixed "now" is 08:00 — too early
+        with patch("app.discord.datetime", _FixedDatetime), \
+             patch("app.discord._post", new=AsyncMock(return_value={"status": "sent"})) as post:
+            asyncio.run(discord._maybe_send())
+        post.assert_not_called()
+
+    # --- send_digest_now: the manual "test digest" path -----------------------
+
+    def test_send_digest_now_sends_without_marking_the_week_sent(self):
+        with patch("app.discord.httpx.AsyncClient", _Client):
+            _Client.response = _Response(204)
+            result = asyncio.run(discord.send_digest_now())
+
+        self.assertEqual(result["status"], "sent")
+        self.assertFalse(discord._already_sent_this_week(self.conn))
+
+    def test_send_digest_now_disabled_when_unconfigured(self):
+        config.DISCORD_WEBHOOK_URL = ""
+        result = asyncio.run(discord.send_digest_now())
+        self.assertEqual(result["status"], "disabled")
 
     # --- _post ---------------------------------------------------------------
 

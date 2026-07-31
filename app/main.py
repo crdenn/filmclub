@@ -263,6 +263,8 @@ class SettingsIn(BaseModel):
     SEERR_API_KEY: str | None = None
     SEERR_TIMEOUT: float | None = Field(default=None, ge=1, le=120)
     DISCORD_WEBHOOK_URL: str | None = None
+    DISCORD_REMINDER_WEEKDAY: int | None = Field(default=None, ge=0, le=6)
+    DISCORD_REMINDER_HOUR: int | None = Field(default=None, ge=0, le=23)
 
 
 class SetupOwnerIn(BaseModel):
@@ -1320,6 +1322,15 @@ async def api_admin_delete_movie(movie_id: int, admin=Depends(auth.require_admin
 async def api_admin_refresh_library(admin=Depends(auth.require_admin)):
     await plex.refresh_library()
     return {"ok": True}
+
+
+@app.post("/api/admin/discord/send_digest")
+async def api_admin_discord_send_digest(admin=Depends(auth.require_admin)):
+    """Send the weekly reminder digest right now, for testing. Independent of
+    the schedule — never marks the week as sent, so it can't suppress or
+    duplicate the real scheduled send."""
+    result = await discord.send_digest_now()
+    return result
 
 
 @app.get("/api/admin/diagnostics")

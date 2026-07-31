@@ -42,6 +42,17 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(config.PLEX_URL, "http://plex.local:32400")
         self.assertEqual(config.PLEX_REFRESH_INTERVAL, 900)
 
+    def test_public_values_does_not_blank_out_a_legitimate_zero(self):
+        # A falsy-but-set value (e.g. weekday/hour 0) must still read back as
+        # its real value and as "configured" — `effective or ""` would
+        # wrongly treat 0 the same as unset.
+        settings.save({"DISCORD_REMINDER_WEEKDAY": 0, "DISCORD_REMINDER_HOUR": 0})
+        public = settings.public_values()
+        self.assertEqual(public["DISCORD_REMINDER_WEEKDAY"]["value"], "0")
+        self.assertTrue(public["DISCORD_REMINDER_WEEKDAY"]["configured"])
+        self.assertEqual(public["DISCORD_REMINDER_HOUR"]["value"], "0")
+        self.assertTrue(public["DISCORD_REMINDER_HOUR"]["configured"])
+
     def test_encryption_follows_data_key_not_signing_secret(self):
         old_data_key, old_signing = config.DATA_KEY, config.SESSION_SECRET
         try:

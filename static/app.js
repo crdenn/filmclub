@@ -375,6 +375,8 @@
     ["SEERR_API_KEY", "Seerr API key", "Optional; required when a Seerr URL is set."],
     ["SEERR_TIMEOUT", "Seerr timeout (seconds)", "Request timeout in seconds."],
     ["DISCORD_WEBHOOK_URL", "Discord webhook URL", "Posts the weekly reminder digest to this channel."],
+    ["DISCORD_REMINDER_WEEKDAY", "Digest day", "Which day of the week the digest goes out."],
+    ["DISCORD_REMINDER_HOUR", "Digest hour", "Hour of day (0–23, server's local time) it goes out on that day."],
   ];
 
   const SETTING_GROUPS = [
@@ -401,24 +403,39 @@
     },
     {
       id: "discord", eyebrow: "Notifications", title: "Discord reminders",
-      description: "Optional weekly Monday digest of this week's film and outstanding backlog/rating gaps, posted to a Discord channel via webhook.",
-      keys: ["DISCORD_WEBHOOK_URL"], required: false,
+      description: "Optional weekly digest of this week's film and outstanding backlog/rating gaps, posted to a Discord channel via webhook.",
+      keys: ["DISCORD_WEBHOOK_URL", "DISCORD_REMINDER_WEEKDAY", "DISCORD_REMINDER_HOUR"], required: false,
     },
   ];
+
+  const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
   function settingField(settings, key, setup = false) {
       const [, label, hint] = SETTING_FIELDS.find(field => field[0] === key);
       const meta = settings[key] || {};
-      const type = meta.secret ? "password" : key.includes("TIMEOUT") || key.includes("INTERVAL") ? "number" : "text";
-      const required = meta.required ? "required" : "";
       const locked = meta.locked ? "disabled" : "";
+      const source = meta.locked ? (setup ? ` <small>environment override</small>` : ` <small class="setting-locked" title="Managed by an environment variable" aria-label="Managed by an environment variable">●</small>`) : "";
+      if (key === "DISCORD_REMINDER_WEEKDAY") {
+        const current = meta.value !== "" && meta.value != null ? parseInt(meta.value, 10) : 0;
+        const options = WEEKDAY_NAMES.map((day, i) =>
+          `<option value="${i}" ${i === current ? "selected" : ""}>${day}</option>`).join("");
+        return `<label class="setup-field" data-setting="${key}">
+          <span>${esc(label)}${source}</span>
+          <select class="search-input" name="${key}" ${locked}>${options}</select>
+          ${setup ? `<span class="setup-hint">${esc(hint)}</span>` : ""}<span class="setup-error"></span>
+        </label>`;
+      }
+      const isNumber = meta.secret ? false
+        : key.includes("TIMEOUT") || key.includes("INTERVAL") || key.includes("HOUR");
+      const type = meta.secret ? "password" : isNumber ? "number" : "text";
+      const bounds = key === "DISCORD_REMINDER_HOUR" ? `min="0" max="23"` : "";
+      const required = meta.required ? "required" : "";
       const placeholder = meta.secret && meta.configured ? "Saved — leave blank to keep" : "";
       const clear = !setup && meta.secret && meta.configured && !meta.required
         ? `<span class="setup-clear"><input type="checkbox" name="clear:${key}"> Clear saved value</span>` : "";
-      const source = meta.locked ? (setup ? ` <small>environment override</small>` : ` <small class="setting-locked" title="Managed by an environment variable" aria-label="Managed by an environment variable">●</small>`) : "";
       return `<label class="setup-field" data-setting="${key}">
         <span>${esc(label)}${meta.required ? " *" : ""}${source}</span>
-        <input class="search-input" name="${key}" type="${type}" value="${esc(meta.value || "")}" placeholder="${placeholder}" ${required} ${locked} autocomplete="off">
+        <input class="search-input" name="${key}" type="${type}" value="${esc(meta.value || "")}" placeholder="${placeholder}" ${bounds} ${required} ${locked} autocomplete="off">
         ${setup ? `<span class="setup-hint">${esc(hint)}</span>` : ""}${clear}<span class="setup-error"></span>
       </label>`;
   }
@@ -430,8 +447,13 @@
   function adminSettingsGroups(settings) {
     return SETTING_GROUPS.map(group => {
       const status = `<span class="service-state idle" aria-live="polite"></span>`;
+      // Test-send lets the admin see a real message land in Discord (mentions,
+      // links, wording) without waiting for the actual weekly schedule.
+      const discordTest = group.id === "discord"
+        ? `<div class="settings-extra"><button type="button" class="btn" id="discord-send-test">Send test digest now</button>
+             <span id="discord-send-test-result" class="service-test-detail"></span></div>` : "";
       const fields = `<div class="settings-fields">${settingsFields(settings, false, group.keys)}</div>
-        <div class="service-test-detail"></div>`;
+        <div class="service-test-detail"></div>${discordTest}`;
       if (!group.required) return `<details class="settings-service settings-service-optional" data-service="${group.id}">
         <summary><span>${esc(group.title)} <small>Optional</small></span>${status}</summary>${fields}</details>`;
       return `<section class="settings-service" data-service="${group.id}">
@@ -447,7 +469,7 @@
       else values[key] = value;
     });
     if (clear.length) values.clear_secrets = clear;
-    ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT"].forEach(key => {
+    ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT", "DISCORD_REMINDER_WEEKDAY", "DISCORD_REMINDER_HOUR"].forEach(key => {
       if (values[key] === "") delete values[key];
       else values[key] = Number(values[key]);
     });
@@ -2580,6 +2602,23 @@
       try { await api("/api/admin/refresh_library", { method: "POST" }); toast("Plex library refreshed"); }
       catch (error) { toast("Refresh failed: " + error.message, true); }
       button.disabled = false; button.textContent = "↻ Refresh Plex library";
+    };
+    const discordTestBtn = $("#discord-send-test");
+    if (discordTestBtn) discordTestBtn.onclick = async () => {
+      const result = $("#discord-send-test-result");
+      discordTestBtn.disabled = true; discordTestBtn.textContent = "Sending…";
+      result.textContent = "";
+      try {
+        const res = await api("/api/admin/discord/send_digest", { method: "POST" });
+        if (res.status === "sent") { toast("Test digest sent"); result.textContent = "Sent."; }
+        else if (res.status === "disabled") { toast("Set a webhook URL first", true); result.textContent = "Not configured."; }
+        else { toast("Send failed: " + (res.detail || "unknown error"), true); result.textContent = "Failed: " + (res.detail || ""); }
+      } catch (error) {
+        toast("Send failed: " + error.message, true);
+        result.textContent = "Failed: " + error.message;
+      } finally {
+        discordTestBtn.disabled = false; discordTestBtn.textContent = "Send test digest now";
+      }
     };
     const settingsForm = $("#admin-settings");
     const settingsMessage = $("#settings-message");

@@ -26,6 +26,8 @@ FIELDS = {
     "SEERR_API_KEY": {"secret": True, "required": False},
     "SEERR_TIMEOUT": {"secret": False, "required": False},
     "DISCORD_WEBHOOK_URL": {"secret": True, "required": False},
+    "DISCORD_REMINDER_WEEKDAY": {"secret": False, "required": False},
+    "DISCORD_REMINDER_HOUR": {"secret": False, "required": False},
 }
 SETUP_COMPLETE = "_setup_complete"
 
@@ -67,7 +69,7 @@ def load_into_config() -> None:
         if key not in FIELDS or os.environ.get(key, "").strip():
             continue
         value = _decrypt(stored) if encrypted else stored
-        if key in {"PLEX_REFRESH_INTERVAL"}:
+        if key in {"PLEX_REFRESH_INTERVAL", "DISCORD_REMINDER_WEEKDAY", "DISCORD_REMINDER_HOUR"}:
             value = int(value)
         elif key in {"SEERR_TIMEOUT"}:
             value = float(value)
@@ -115,9 +117,12 @@ def public_values(*, reveal_nonsecrets: bool = True) -> dict:
         env_value = os.environ.get(key, "").strip()
         stored = rows.get(key)
         effective = getattr(config, key, "")
+        # A falsy-but-set value (0 for an hour/weekday setting) must still count
+        # as configured and be shown — `effective or ""` would wrongly blank it.
+        is_set = effective is not None and effective != ""
         result[key] = {
-            "value": "" if meta["secret"] or not reveal_nonsecrets else str(effective or ""),
-            "configured": bool(effective),
+            "value": "" if meta["secret"] or not reveal_nonsecrets else (str(effective) if is_set else ""),
+            "configured": is_set,
             "secret": meta["secret"],
             "required": meta["required"],
             "source": "environment" if env_value else "database" if stored else "default",

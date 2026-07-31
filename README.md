@@ -203,7 +203,8 @@ The setup wizard and Admin screen manage normal application configuration:
 | `PLEX_REFRESH_INTERVAL` | — | Seconds between library refreshes (default 3600) |
 | `SEERR_URL`, `SEERR_API_KEY` | — | Enable Seerr auto-request when both are set |
 | `SEERR_TIMEOUT` | — | Per-request Seerr timeout (default 10s) |
-| `DISCORD_WEBHOOK_URL` | — | Enables the weekly Monday reminder digest |
+| `DISCORD_WEBHOOK_URL` | — | Enables the weekly reminder digest |
+| `DISCORD_REMINDER_WEEKDAY`, `DISCORD_REMINDER_HOUR` | — | Digest schedule (default Monday, 9am); also adjustable in Admin Settings |
 
 For automated or legacy deployments, environment variables override values
 saved through the UI. [`.env.example`](.env.example) documents those advanced

@@ -82,6 +82,11 @@ SEERR_TIMEOUT = float(os.environ.get("SEERR_TIMEOUT", "10"))
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 DISCORD_TIMEOUT = float(os.environ.get("DISCORD_TIMEOUT", "10"))
 DISCORD_REMINDER_INTERVAL = int(os.environ.get("DISCORD_REMINDER_INTERVAL", "2700"))
+# Weekly digest send target: day of week (0=Monday .. 6=Sunday) and hour of
+# day (0-23), both server-local time. The reminder loop fires on the first
+# tick at/after this weekday+hour each week.
+DISCORD_REMINDER_WEEKDAY = int(os.environ.get("DISCORD_REMINDER_WEEKDAY", "0"))
+DISCORD_REMINDER_HOUR = int(os.environ.get("DISCORD_REMINDER_HOUR", "9"))
 
 # --- Auth ------------------------------------------------------------------
 APP_URL = os.environ.get("APP_URL", "http://localhost:8000").rstrip("/")

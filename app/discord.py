@@ -4,8 +4,9 @@ Two responsibilities:
   1. Content assembly: gather this week's scheduled film and, per member,
      which backlog films still need a seen/unseen answer and which watched
      films still need a rating, then format it as a Discord message.
-  2. Scheduling: a background loop that posts the digest once per week, on
-     Monday (server-local date), to an incoming webhook.
+  2. Scheduling: a background loop that posts the digest once per week, on an
+     admin-configurable weekday/hour (server-local time), to an incoming
+     webhook.
 
 Optional and entirely additive. With DISCORD_WEBHOOK_URL unset the feature is
 inert.
@@ -18,6 +19,10 @@ Design rules (mirrors app/seerr.py):
   * Member Discord ids are admin-entered (Admin > Users), never self-service,
     and — like `theme` — deliberately absent from `service.all_members()` /
     `db.member_public()`, so they're fetched directly here.
+  * `send_digest_now()` is the manual-test path (Admin Settings "Send test
+    digest" button): it builds and sends exactly like the scheduled path, but
+    never touches the last-sent bookkeeping, so testing on a Wednesday can't
+    suppress that week's real Monday-equivalent send.
 """
 import asyncio
 import logging
@@ -104,10 +109,12 @@ def _format_message(digest: dict) -> dict:
     lines.append("")
     lines.append("**Backlog check-in** (mark seen/unseen)")
     lines.extend(backlog_lines if backlog_lines else ["Everyone's caught up."])
+    lines.append(f"[Open Backlog]({config.APP_URL}/#/backlog)")
 
     lines.append("")
     lines.append("**Rating check-in** (rate what we watched)")
     lines.extend(watched_lines if watched_lines else ["Everyone's caught up."])
+    lines.append(f"[Open Watched]({config.APP_URL}/#/watched)")
 
     mentioned_ids = sorted({
         e["discord_user_id"] for e in digest["gaps"]
@@ -192,8 +199,26 @@ def _mark_sent(conn) -> None:
     )
 
 
+async def send_digest_now() -> dict:
+    """Build and send the digest immediately, bypassing the schedule check —
+    the Admin Settings "Send test digest" button. Deliberately does not touch
+    the last-sent bookkeeping, so a manual test can never suppress (or
+    duplicate) the actual scheduled send for that week."""
+    if not is_configured():
+        return {"status": "disabled", "detail": None}
+    conn = db.connect()
+    try:
+        digest = build_digest(conn)
+    finally:
+        conn.close()
+    return await _post(_format_message(digest))
+
+
 async def _maybe_send() -> None:
-    if not is_configured() or date.today().weekday() != 0:  # Monday only
+    now = datetime.now()
+    if (not is_configured()
+            or now.weekday() != config.DISCORD_REMINDER_WEEKDAY
+            or now.hour < config.DISCORD_REMINDER_HOUR):
         return
     conn = db.connect()
     try:

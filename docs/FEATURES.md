@@ -104,15 +104,16 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 ### Discord weekly reminder digest
 
-- **Purpose:** Passively remind the club, outside the app, of three things every Monday (the day before the Tuesday discussion): this week's scheduled film and date, which members haven't marked backlog films seen/unseen, and which members haven't rated watched films.
-- **Main files:** `app/discord.py` (content assembly + weekly loop), `service.todo_details()`, `service.admin_members()`, Admin Users table (`static/app.js`).
+- **Purpose:** Passively remind the club, outside the app, of three things on the configured schedule: this week's scheduled film and date, which members haven't marked backlog films seen/unseen, and which members haven't rated watched films. Backlog/Rating sections each link straight to that page in the app.
+- **Main files:** `app/discord.py` (content assembly + weekly loop), `service.todo_details()`, `service.admin_members()`, Admin Users table and Admin Settings (`static/app.js`).
 - **Status:** Implemented, optional.
 - **Dependencies:** `DISCORD_WEBHOOK_URL` (Admin Settings or env). Per-member `@mention`s additionally depend on an admin having entered that member's Discord user id in the Admin Users table — this is admin-entered, not self-service, by design.
-- **Trigger:** A background loop (`discord.reminder_loop()`, started at app startup alongside the Plex refresh loop) checks roughly every 45 minutes (`DISCORD_REMINDER_INTERVAL`) whether it's Monday, server-local date, and the digest hasn't already gone out this calendar week — tracked via an `app_settings` bookkeeping key (`_discord_digest_last_sent_week`), not a separate table.
-- **Content:** The message always sends on a configured Monday, even with nothing to report — "no film picked yet" or "everyone's caught up" are both useful signals on their own, distinct from silence (which would be ambiguous: job not running vs. genuinely all clear).
-- **Failure behavior:** If the webhook post fails, the week is not marked sent, so the next tick (same Monday) retries automatically; a Discord outage can't silently skip a week.
-- **Limitations:** Cadence (Monday) is hardcoded for v1, not admin-configurable. No per-user timezone handling — "Monday" is the server's local date.
-- **Follow-up:** A `DISCORD_REMINDER_WEEKDAY` override, or a second cadence for the backlog/rating check-ins independent of the meeting reminder, if weekly turns out to be too infrequent or too noisy in practice.
+- **Trigger:** A background loop (`discord.reminder_loop()`, started at app startup alongside the Plex refresh loop) checks roughly every 45 minutes (`DISCORD_REMINDER_INTERVAL`) whether the current server-local weekday/hour have reached the configured `DISCORD_REMINDER_WEEKDAY`/`DISCORD_REMINDER_HOUR` (both admin-adjustable in Admin Settings → Discord reminders, default Monday/9am) and the digest hasn't already gone out this calendar week — tracked via an `app_settings` bookkeeping key (`_discord_digest_last_sent_week`), not a separate table.
+- **Content:** The message always sends once the schedule is reached, even with nothing to report — "no film picked yet" or "everyone's caught up" are both useful signals on their own, distinct from silence (which would be ambiguous: job not running vs. genuinely all clear).
+- **Failure behavior:** If the webhook post fails, the week is not marked sent, so the next tick (same day) retries automatically; a Discord outage can't silently skip a week.
+- **Manual test send:** Admin Settings → Discord reminders → "Send test digest now" (`POST /api/admin/discord/send_digest` → `discord.send_digest_now()`) builds and sends the digest immediately, independent of the schedule and the last-sent bookkeeping — testing on any day can't suppress or duplicate the real scheduled send.
+- **Limitations:** No per-user timezone handling — the configured hour is the server's local time.
+- **Follow-up:** A second cadence for the backlog/rating check-ins independent of the meeting reminder, if weekly turns out to be too infrequent or too noisy in practice.
 - **Discussion-date-changed notice:** A separate, immediate (not weekly-scheduled) Discord post fires whenever someone edits This Week's discussion date (`POST /api/movies/{id}/discuss_date` → `service.set_discuss_date()` → `discord.notify_date_changed()`), e.g. "📅 **Discussion date changed** — we're meeting to discuss *Title* (Year) on **Weekday, Mon D**." No `@mention`s or channel-wide ping. Same never-raise/status-dict discipline as the rest of `app/discord.py` — a failed post here does not undo or fail the date-change request itself.
 
 ## Backlog triage and eligibility
