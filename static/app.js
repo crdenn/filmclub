@@ -2447,7 +2447,7 @@
       // login-provider identity to show beyond the name already shown.
       const identityLabel = (member) => {
         const labels = (member.identity_providers || []).map(p =>
-          p === "plex" ? `Plex ${member.plex_username}` : p === "local" ? "Local" : p);
+          p === "plex" ? `Plex · ${member.plex_username}` : p === "local" ? "Local" : p);
         return labels.join(" + ") || "record only";
       };
       const table = (list, emptyMessage) => list.length ? `<table class="stat-table admin-table"><thead><tr>
