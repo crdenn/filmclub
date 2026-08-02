@@ -198,6 +198,41 @@ def upsert_entry(conn: sqlite3.Connection, collection_id: int, meta: dict,
     return cur.lastrowid
 
 
+def update_collection(conn: sqlite3.Connection, slug: str, fields: dict) -> bool:
+    """Patch authored fields on a collection. Unknown keys are ignored."""
+    allowed = ("title", "intro", "director_intro", "director_name", "published")
+    sets, params = [], []
+    for key in allowed:
+        if key not in fields:
+            continue
+        value = fields[key]
+        if key == "published":
+            value = 1 if value else 0
+        sets.append(f"{key} = ?")
+        params.append(value)
+    if not sets:
+        return False
+    params.append(slug)
+    cur = db.execute(
+        conn,
+        f"UPDATE collections SET {', '.join(sets)}, updated_at = datetime('now') WHERE slug = ?",
+        params,
+    )
+    return cur.rowcount > 0
+
+
+def update_entry(conn: sqlite3.Connection, collection_id: int, entry_id: int,
+                 blurb: str) -> bool:
+    """Store the author's blurb for one entry."""
+    cur = db.execute(
+        conn,
+        """UPDATE collection_entries SET blurb = ?, updated_at = datetime('now')
+               WHERE id = ? AND collection_id = ?""",
+        (blurb, entry_id, collection_id),
+    )
+    return cur.rowcount > 0
+
+
 def delete_entry(conn: sqlite3.Connection, collection_id: int, entry_id: int) -> bool:
     """Remove one film from a collection. Returns False if it wasn't there."""
     cur = db.execute(

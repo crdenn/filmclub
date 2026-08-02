@@ -1606,3 +1606,34 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .cl-remove:hover, .cl-delete:hover { color: var(--bad-text); }
 .cl-remove:disabled, .cl-delete:disabled { opacity: .5; cursor: default; }
 .cl-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+
+/* --- in-place editing (admin only) ---
+ * Styling for the editor component in static/editor/, which ships no CSS of
+ * its own so it inherits whatever typography it is dropped into. Quiet by
+ * default and only obvious on hover, so the reading surface stays a reading
+ * surface until the author actually reaches for it.
+ */
+.cl-editable { cursor: text; border-radius: 6px; transition: background .12s ease, box-shadow .12s ease; }
+.cl-editable:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+/* An empty blurb would otherwise be an invisible target. */
+.cl-blank::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint); font-style: italic;
+}
+.cl-blank:hover::before { color: var(--accent-text); }
+
+.ie-editable {
+  outline: none; white-space: pre-wrap;
+  box-shadow: inset 0 0 0 1px var(--line);
+  padding: .5rem .65rem; margin: -.5rem -.65rem;
+}
+.ie-editable.ie-active { box-shadow: inset 0 0 0 1px var(--accent); background: var(--bg-raise); }
+.ie-editable.ie-empty::before {
+  content: attr(data-placeholder); color: var(--text-faint);
+  font-style: italic; pointer-events: none;
+}
+/* Save state, shown as a hairline on the left rather than a badge — the author
+   is reading their own sentence, not watching a status widget. */
+.ie-editable.ie-saving { box-shadow: inset 2px 0 0 var(--warn), inset 0 0 0 1px var(--accent); }
+.ie-editable.ie-saved { box-shadow: inset 2px 0 0 var(--good), inset 0 0 0 1px var(--accent); }
+.ie-editable.ie-error { box-shadow: inset 2px 0 0 var(--bad), inset 0 0 0 1px var(--bad); }

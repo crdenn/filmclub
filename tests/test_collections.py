@@ -124,6 +124,39 @@ class CollectionResolutionTests(unittest.TestCase):
         self.assertEqual(entry["blurb"], "Written.")
 
 
+    def test_editing_a_blurb_stores_it_and_ungates_a_director_entry(self):
+        db.execute(self.conn, "UPDATE collections SET kind = 'director' WHERE id = ?",
+                   (self.collection_id,))
+        entry = next(e for e in coll.entries_for(self.conn, self.collection_id)
+                     if e["tmdb_id"] == 11)
+        self.assertTrue(coll.update_entry(self.conn, self.collection_id, entry["id"], ""))
+        self.assertEqual(coll.collection_detail(self.conn, "test-set", is_admin=False)["entries"], [])
+
+        self.assertTrue(coll.update_entry(self.conn, self.collection_id, entry["id"],
+                                          "Now written."))
+        public = coll.collection_detail(self.conn, "test-set", is_admin=False)
+        self.assertEqual([e["title"] for e in public["entries"]], ["On The Server"])
+        self.assertEqual(public["entries"][0]["blurb"], "Now written.")
+
+    def test_editing_an_entry_from_the_wrong_collection_does_nothing(self):
+        other = coll.create_collection(self.conn, "other", "Other")
+        entry = coll.entries_for(self.conn, self.collection_id)[0]
+        self.assertFalse(coll.update_entry(self.conn, other, entry["id"], "nope"))
+        unchanged = coll.entries_for(self.conn, self.collection_id)[0]
+        self.assertEqual(unchanged["blurb"], "Written.")
+
+    def test_updating_a_collection_patches_only_supplied_fields(self):
+        self.assertTrue(coll.update_collection(self.conn, "test-set",
+                                               {"intro": "New intro."}))
+        c = coll.get_by_slug(self.conn, "test-set")
+        self.assertEqual(c["intro"], "New intro.")
+        self.assertEqual(c["title"], "Test Set")     # untouched
+        self.assertTrue(c["published"])              # untouched
+
+    def test_updating_a_collection_with_no_known_fields_is_a_no_op(self):
+        self.assertFalse(coll.update_collection(self.conn, "test-set", {"bogus": 1}))
+        self.assertEqual(coll.get_by_slug(self.conn, "test-set")["intro"], "Intro prose.")
+
     def test_deleting_an_entry_leaves_the_rest_of_the_collection(self):
         entries = coll.entries_for(self.conn, self.collection_id)
         target = next(e for e in entries if e["tmdb_id"] == 22)

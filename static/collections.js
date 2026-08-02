@@ -101,6 +101,17 @@
 
   const isAdmin = () => !!(FC.me && FC.me.is_admin);
 
+  /* Marks a rendered-markdown block as editable in place. The raw source is
+     parked in a data attribute so clicking can swap the rendered HTML for the
+     text that produced it — the author edits what they actually wrote. */
+  function editable(source, key, placeholder) {
+    if (!isAdmin()) return "";
+    const raw = String(source || "");
+    return `data-edit="${esc(key)}" data-md="${esc(raw)}"`
+      + ` data-placeholder="${esc(placeholder)}"`
+      + (raw.trim() ? "" : ` data-blank="1"`);
+  }
+
   function row(entry) {
     const director = entry.director
       ? `<div class="cl-director">${esc(entry.director)}</div>` : "";
@@ -120,7 +131,8 @@
         <h2 class="cl-title">${esc(entry.title)}</h2>
         ${line ? `<div class="cl-meta">${esc(line)}</div>` : ""}
         ${missing}
-        <div class="cl-blurb">${markdown(entry.blurb)}</div>
+        <div class="cl-blurb" ${editable(entry.blurb, `entry:${entry.id}`,
+          "Why is this worth watching?")}>${markdown(entry.blurb)}</div>
         <div class="cl-row-actions">${watchButton(entry)}${remove}</div>
       </div>
     </article>`;
@@ -186,7 +198,8 @@
         ${director}
         <h1 class="cl-page-title">${esc(c.title)}</h1>
         ${draft}
-        <div class="cl-intro">${markdown(c.intro)}</div>
+        <div class="cl-intro" ${editable(c.intro, "intro",
+          "Introduce this collection…")}>${markdown(c.intro)}</div>
       </header>
       ${entries.length
         ? `<div class="cl-rows">${entries.map(row).join("")}</div>`
@@ -198,6 +211,56 @@
                data-title="${esc(c.title)}">Delete collection</button>` : ""}
       </div>
     </article>`;
+  }
+
+  /* Click-to-edit. The page shows rendered markdown; clicking a block swaps it
+     for the source that produced it and hands that to the editor component.
+     On blur the text is saved and re-rendered, so the author spends almost all
+     their time looking at the real typography rather than at markup. */
+  function wireEditing(slug) {
+    if (!isAdmin()) return;
+
+    document.querySelectorAll("[data-edit]").forEach((el) => {
+      const key = el.dataset.edit;
+      const placeholder = el.dataset.placeholder || "";
+      if (el.dataset.blank) el.classList.add("cl-blank");
+      el.classList.add("cl-editable");
+      el.title = "Click to edit";
+
+      el.addEventListener("click", function start() {
+        if (el.dataset.editing) return;
+        el.dataset.editing = "1";
+        el.classList.remove("cl-blank");
+
+        const handle = window.InlineEditor.attach(el, {
+          value: el.dataset.md || "",
+          placeholder,
+          onStatus: (state) => {
+            if (state === "error") FC.toast("Couldn't save — your text is still here", true);
+          },
+          onSave: async (text) => {
+            const path = key === "intro"
+              ? `/api/collections/${encodeURIComponent(slug)}`
+              : `/api/collections/${encodeURIComponent(slug)}/entries/${key.split(":")[1]}`;
+            const body = key === "intro" ? { intro: text } : { blurb: text };
+            await api(path, { method: "PATCH", body });
+            el.dataset.md = text;
+          },
+        });
+
+        // Leaving the block ends the edit: save, tear the editor down, and put
+        // the rendered version back.
+        el.addEventListener("blur", async function done() {
+          el.removeEventListener("blur", done);
+          await handle.destroy();
+          delete el.dataset.editing;
+          el.innerHTML = markdown(el.dataset.md);
+          el.classList.toggle("cl-blank", !String(el.dataset.md || "").trim());
+        }, { once: true });
+
+        el.focus();
+      });
+    });
   }
 
   /* Admin-only destructive actions. Wired after each paint rather than
@@ -250,6 +313,7 @@
         const c = await api(`/api/collections/${encodeURIComponent(arg)}`);
         paintView("collections", collectionPage(c), preserve);
         wireAdminActions(c.slug);
+        wireEditing(c.slug);
       } else {
         const data = await api("/api/collections");
         paintView("collections", indexPage(data.items || []), preserve);

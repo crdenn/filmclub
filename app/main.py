@@ -80,6 +80,11 @@ class BroadcastMiddleware:
                 and path.startswith("/api/")
                 and path != "/api/events"
                 and path != "/api/admin/settings/test"
+                # Collection autosave fires every few seconds while the author
+                # is typing. Broadcasting each one would make every other
+                # client re-fetch continuously for a change only the author can
+                # see. Deletions and additions still broadcast normally.
+                and not (scope["method"] == "PATCH" and path.startswith("/api/collections/"))
                 and not path.startswith("/api/plex/webhook/")
                 and status["code"] < 400):
             headers = dict(scope.get("headers") or [])
@@ -926,6 +931,46 @@ async def api_collection(slug: str, member=Depends(auth.current_member)):
         conn.close()
 
 
+class CollectionPatch(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    intro: str | None = Field(default=None, max_length=20000)
+    director_intro: str | None = Field(default=None, max_length=20000)
+    published: bool | None = None
+
+
+class EntryPatch(BaseModel):
+    blurb: str = Field(default="", max_length=20000)
+
+
+@app.patch("/api/collections/{slug}")
+async def api_patch_collection(slug: str, body: CollectionPatch,
+                               admin=Depends(auth.require_admin)):
+    fields = body.model_dump(exclude_none=True)
+    conn = db.connect()
+    try:
+        if not curated.get_by_slug(conn, slug):
+            raise HTTPException(status_code=404, detail="Collection not found")
+        curated.update_collection(conn, slug, fields)
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.patch("/api/collections/{slug}/entries/{entry_id}")
+async def api_patch_collection_entry(slug: str, entry_id: int, body: EntryPatch,
+                                     admin=Depends(auth.require_admin)):
+    conn = db.connect()
+    try:
+        collection = curated.get_by_slug(conn, slug)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.update_entry(conn, collection["id"], entry_id, body.blurb):
+            raise HTTPException(status_code=404, detail="Entry not found")
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
 @app.delete("/api/collections/{slug}")
 async def api_delete_collection(slug: str, admin=Depends(auth.require_admin)):
     conn = db.connect()
@@ -1431,12 +1476,13 @@ async def api_admin_diagnostics(admin=Depends(auth.require_admin)):
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-_ASSET_RE = re.compile(r'(/static/(?:app\.js|collections\.js|styles\.css))\?v=[^"\']*')
+_ASSET_RE = re.compile(
+    r'(/static/(?:app\.js|collections\.js|editor/inline-editor\.js|styles\.css))\?v=[^"\']*')
 
 # Every script/stylesheet the shell references. All of them feed one shared
 # hash, so a change to any single file busts the cache for the whole set and
 # they can never be served as a mismatched mixture of versions.
-_VERSIONED_ASSETS = ("app.js", "collections.js", "styles.css")
+_VERSIONED_ASSETS = ("app.js", "collections.js", "editor/inline-editor.js", "styles.css")
 
 
 def _asset_version() -> str:
