@@ -217,6 +217,14 @@ def _m11_director_scaffold(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "collections", "director_died", "director_died TEXT")
 
 
+def _m12_collection_origin(conn: sqlite3.Connection) -> None:
+    # Whether a collection is the owner's own writing or was assembled for them.
+    # Defaults to 'authored' so an existing collection keeps its full editing
+    # surface; marking the generated ones is a data decision, not a schema one.
+    _add_column_if_missing(conn, "collections", "origin",
+                           "origin TEXT NOT NULL DEFAULT 'authored'")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -230,6 +238,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (9, "member-discord-id", _m9_member_discord_id),
     (10, "collections", _m10_collections),
     (11, "director-scaffold", _m11_director_scaffold),
+    (12, "collection-origin", _m12_collection_origin),
 ]
 
 

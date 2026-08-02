@@ -187,6 +187,22 @@ class CollectionResolutionTests(unittest.TestCase):
         self.assertEqual(coll.smart_title("Night Drives"), "Night Drives")
         self.assertEqual(coll.smart_title(""), "")
 
+    def test_collections_default_to_authored_and_report_editability(self):
+        c = coll.get_by_slug(self.conn, "test-set")
+        self.assertEqual(c["origin"], "authored")
+        self.assertTrue(c["editable"])
+
+    def test_a_generated_collection_reports_itself_read_only(self):
+        coll.create_collection(self.conn, "made-for-you", "Made For You",
+                               origin="generated")
+        c = coll.get_by_slug(self.conn, "made-for-you")
+        self.assertEqual(c["origin"], "generated")
+        self.assertFalse(c["editable"])
+
+    def test_a_row_predating_the_origin_column_reads_as_authored(self):
+        """Existing collections must keep their editing surface, not lose it."""
+        self.assertTrue(coll.collection_base({"slug": "x", "published": 1})["editable"])
+
     def test_slugs_are_url_safe_and_unique(self):
         self.assertEqual(coll.slugify("Films for a Rainy Sunday!"), "films-for-a-rainy-sunday")
         self.assertEqual(coll.slugify("  ***  "), "collection")

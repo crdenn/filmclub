@@ -2912,6 +2912,11 @@
     }
     state.currentHash = hash;
     state.route = view;
+    // A feature module's route may restyle the whole page by overriding theme
+    // tokens for `html[data-surface="<view>"]`. Set here rather than inside the
+    // module so leaving the route always clears it, whichever screen follows.
+    document.documentElement.setAttribute(
+      "data-surface", featureRoutes[view] ? view : "");
     // Feature modules first: they own their whole route, including the arg.
     if (featureRoutes[view]) return featureRoutes[view]({ arg, preserve });
     if (view === "backlog") return renderBacklog(preserve);

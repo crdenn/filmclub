@@ -950,6 +950,19 @@ async def api_collection(slug: str, preview: bool = False,
         conn.close()
 
 
+def _require_authored(collection: dict, changing=True) -> None:
+    """Reject content edits to a collection that was generated, not authored.
+
+    Generated collections are read-only: the app hides their editing controls,
+    but a hidden control is a UI convenience, not an authorisation rule, so the
+    endpoints enforce it too.
+    """
+    if changing and collection.get("origin") == "generated":
+        raise HTTPException(
+            status_code=403,
+            detail="This collection was generated for you and isn't editable.")
+
+
 class CollectionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     kind: Literal["picked", "director"] = "picked"
@@ -1105,6 +1118,7 @@ async def api_add_collection_entry(slug: str, body: EntryCreate,
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        _require_authored(collection)
         try:
             meta = await tmdb.details(body.tmdb_id)
         except Exception as e:  # noqa: BLE001 — a TMDB outage must read clearly
@@ -1123,8 +1137,13 @@ async def api_patch_collection(slug: str, body: CollectionPatch,
     fields = body.model_dump(exclude_none=True)
     conn = db.connect()
     try:
-        if not curated.get_by_slug(conn, slug):
+        collection = curated.get_by_slug(conn, slug)
+        if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        # Publishing is management and stays available; rewriting the text of a
+        # generated collection is not, and the UI hiding the editor is not on
+        # its own a guarantee.
+        _require_authored(collection, set(fields) - {"published"})
         curated.update_collection(conn, slug, fields)
         return {"ok": True}
     finally:
@@ -1139,6 +1158,7 @@ async def api_patch_collection_entry(slug: str, entry_id: int, body: EntryPatch,
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        _require_authored(collection)
         if not curated.update_entry(conn, collection["id"], entry_id, body.blurb):
             raise HTTPException(status_code=404, detail="Entry not found")
         return {"ok": True}
@@ -1165,6 +1185,7 @@ async def api_delete_collection_entry(slug: str, entry_id: int,
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        _require_authored(collection)
         if not curated.delete_entry(conn, collection["id"], entry_id):
             raise HTTPException(status_code=404, detail="Entry not found")
         return {"ok": True}

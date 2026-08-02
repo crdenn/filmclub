@@ -152,6 +152,13 @@
   const reallyAdmin = () => !!(FC.me && FC.me.is_admin);
   const isAdmin = () => reallyAdmin() && !previewing();
 
+  /* Authoring controls belong only to collections the owner wrote. A generated
+     one is read-only, so it carries no editor, no Add, and no Remove — there is
+     no point dressing a page in furniture nobody intends to use. Set per render
+     from the collection being shown; management actions (publish, delete) are
+     governed by isAdmin() alone and stay available on both kinds. */
+  let canAuthor = false;
+
   /* Shown only to a real admin, and deliberately fixed to the viewport: in
      preview there is nothing else on the page that could turn it off. */
   function previewBar() {
@@ -178,7 +185,7 @@
      parked in a data attribute so clicking can swap the rendered HTML for the
      text that produced it — the author edits what they actually wrote. */
   function editable(source, key, placeholder) {
-    if (!isAdmin()) return "";
+    if (!isAdmin() || !canAuthor) return "";
     const raw = String(source || "");
     return `data-edit="${esc(key)}" data-md="${esc(raw)}"`
       + ` data-placeholder="${esc(placeholder)}"`
@@ -193,7 +200,7 @@
     // admin, so labelling it here cannot leak anything to a reader.
     const missing = entry.plex_state === "missing"
       ? `<div class="cl-missing">Not on the server — hidden from readers</div>` : "";
-    const remove = isAdmin()
+    const remove = isAdmin() && canAuthor
       ? `<button class="cl-remove" data-entry="${entry.id}"
            data-title="${esc(entry.title)}" title="Remove from this collection">Remove</button>`
       : "";
@@ -351,7 +358,8 @@
      serif placeholders stacked together are indistinguishable; a label says
      which is which without intruding on the reading view once written. */
   function proseLabel(text) {
-    return isAdmin() ? `<div class="cl-prose-label">${esc(text)}</div>` : "";
+    return isAdmin() && canAuthor
+      ? `<div class="cl-prose-label">${esc(text)}</div>` : "";
   }
 
   /* The author's coverage view: the full filmography as a to-do list. Admin
@@ -450,7 +458,7 @@
         ? `<div class="cl-rows">${entries.map(row).join("")}</div>`
         : `<div class="empty">Nothing to show here yet.</div>`}
       ${coveragePanel(c)}
-      ${isAdmin() ? `
+      ${isAdmin() && canAuthor ? `
         <div class="cl-admin">
           <button class="cl-add-toggle" type="button">+ Add a film</button>
           ${c.kind === "director"
@@ -750,6 +758,7 @@
     try {
       if (arg) {
         const c = await api(`/api/collections/${encodeURIComponent(arg)}${q}`);
+        canAuthor = c.editable !== false;
         paintView("collections", collectionPage(c), preserve);
         wireAdminActions(c.slug);
         wireEditing(c.slug);

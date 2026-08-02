@@ -81,7 +81,8 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (8, "movie-pitch"),
                                 (9, "member-discord-id"),
                                 (10, "collections"),
-                                (11, "director-scaffold")])
+                                (11, "director-scaffold"),
+                                (12, "collection-origin")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))

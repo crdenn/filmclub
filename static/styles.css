@@ -200,6 +200,52 @@ html[data-theme="light"] {
   --lowconf-opacity: .72;
 }
 
+/* --- collections surface -------------------------------------------------
+ * Collections deliberately look like a different publication from the rest of
+ * the app: warmer, softer, closer to printed matter than to a media server.
+ *
+ * These override the base tokens rather than adding a parallel set, so every
+ * existing rule follows without a single selector being rewritten — the whole
+ * chrome shifts together instead of a warm article sitting inside cold
+ * furniture. The route sets data-surface on <html>; see app.js.
+ *
+ * The text is deliberately not white. Pure white on near-black is the harsh
+ * combination; a warm off-white on a warm near-black keeps well clear of the
+ * accessibility floor while reading much more like paper.
+ */
+html[data-surface="collections"],
+html[data-theme="dark"][data-surface="collections"] {
+  --bg: #141110;
+  --bg-raise: #1c1917;
+  --bg-raise-2: #241f1c;
+  --surface-sunk: #2a2421;
+  --line: #302925;
+
+  --text: #e6ddd0;          /* warm off-white, not #ffffff */
+  --text-dim: #a4988a;
+  --text-faint: #766c60;
+
+  --accent: #cc8f5e;        /* warm tan; the cool blue read as UI, not print */
+  --accent-text: #d9a071;
+  --on-accent: #1a1512;
+}
+
+html[data-theme="light"][data-surface="collections"] {
+  --bg: #f1ebe0;            /* warm paper rather than cool grey */
+  --bg-raise: #f9f5ed;
+  --bg-raise-2: #e5ded0;
+  --surface-sunk: #e2dacb;
+  --line: #dcd2c0;
+
+  --text: #23201a;
+  --text-dim: #5b5348;
+  --text-faint: #7e7466;
+
+  --accent: #9c5b30;
+  --accent-text: #8b4f28;
+  --on-accent: #fdfaf4;
+}
+
 /* THEME:END */
 
 /* Derived from the active theme's base hues. color-mix(X n%, transparent) is

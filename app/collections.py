@@ -35,6 +35,9 @@ def collection_base(row: sqlite3.Row | dict) -> dict:
     d["published"] = bool(d.get("published"))
     d["intro"] = d.get("intro") or ""
     d["director_intro"] = d.get("director_intro") or ""
+    # Anything without an explicit origin predates the column and is the owner's.
+    d["origin"] = d.get("origin") or "authored"
+    d["editable"] = d["origin"] == "authored"
     return d
 
 
@@ -394,12 +397,15 @@ def create_collection(conn: sqlite3.Connection, slug: str, title: str, *,
                       kind: str = "picked", intro: str | None = None,
                       director_name: str | None = None,
                       director_tmdb_id: int | None = None,
-                      published: bool = False) -> int:
+                      published: bool = False,
+                      origin: str = "authored") -> int:
     cur = db.execute(
         conn,
         """INSERT INTO collections
-               (slug, title, kind, intro, director_name, director_tmdb_id, published)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (slug, title, kind, intro, director_name, director_tmdb_id, 1 if published else 0),
+               (slug, title, kind, intro, director_name, director_tmdb_id,
+                published, origin)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (slug, title, kind, intro, director_name, director_tmdb_id,
+         1 if published else 0, origin),
     )
     return cur.lastrowid

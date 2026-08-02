@@ -116,6 +116,12 @@ CREATE TABLE IF NOT EXISTS collections (
     director_born    TEXT,                -- ISO date
     director_died    TEXT,
     published     INTEGER NOT NULL DEFAULT 0,  -- 0 = admin-only draft
+    -- Who wrote this. 'authored' collections are the owner's own and carry the
+    -- full editing surface; 'generated' ones were assembled for them and are
+    -- read-only in the UI, so there is no editing furniture on a page nobody
+    -- intends to edit. Deliberately a stored fact rather than inferred, since
+    -- nothing about the content itself distinguishes the two.
+    origin        TEXT NOT NULL DEFAULT 'authored',  -- 'authored' | 'generated'
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
