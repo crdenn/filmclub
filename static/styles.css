@@ -1553,3 +1553,20 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .cl-head { margin-bottom: 2.4rem; }
   .cl-foot { margin-top: 3rem; }
 }
+
+/* Admin-only controls on a collection page. Deliberately quiet: this is a
+   reading surface, and a destructive action should not compete with the
+   writing for attention. */
+.cl-row-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.cl-missing {
+  margin-top: .7rem; font-size: .8rem; color: var(--warn-text);
+}
+.cl-remove, .cl-delete {
+  background: none; border: none; padding: 0;
+  color: var(--text-faint); font-size: .82rem; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cl-remove { margin-top: 1.3rem; }
+.cl-remove:hover, .cl-delete:hover { color: var(--bad-text); }
+.cl-remove:disabled, .cl-delete:disabled { opacity: .5; cursor: default; }
+.cl-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

@@ -99,18 +99,29 @@
        target="_blank" rel="noopener">▶ Watch on Plex</a>`;
   }
 
+  const isAdmin = () => !!(FC.me && FC.me.is_admin);
+
   function row(entry) {
     const director = entry.director
       ? `<div class="cl-director">${esc(entry.director)}</div>` : "";
     const line = meta(entry);
+    // An entry that no longer resolves on Plex is only ever rendered for an
+    // admin, so labelling it here cannot leak anything to a reader.
+    const missing = entry.plex_state === "missing"
+      ? `<div class="cl-missing">Not on the server — hidden from readers</div>` : "";
+    const remove = isAdmin()
+      ? `<button class="cl-remove" data-entry="${entry.id}"
+           data-title="${esc(entry.title)}" title="Remove from this collection">Remove</button>`
+      : "";
     return `<article class="cl-row">
       ${still(entry)}
       <div class="cl-panel">
         ${director}
         <h2 class="cl-title">${esc(entry.title)}</h2>
         ${line ? `<div class="cl-meta">${esc(line)}</div>` : ""}
+        ${missing}
         <div class="cl-blurb">${markdown(entry.blurb)}</div>
-        ${watchButton(entry)}
+        <div class="cl-row-actions">${watchButton(entry)}${remove}</div>
       </div>
     </article>`;
   }
@@ -159,8 +170,53 @@
         : `<div class="empty">Nothing to show here yet.</div>`}
       <div class="cl-foot">
         <a class="cl-back" href="#/collections">← All collections</a>
+        ${isAdmin()
+          ? `<button class="cl-delete" data-slug="${esc(c.slug)}"
+               data-title="${esc(c.title)}">Delete collection</button>` : ""}
       </div>
     </article>`;
+  }
+
+  /* Admin-only destructive actions. Wired after each paint rather than
+     delegated globally, so nothing of this module is live on other routes. */
+  function wireAdminActions(slug) {
+    document.querySelectorAll(".cl-remove").forEach((btn) => {
+      btn.onclick = async () => {
+        const title = btn.dataset.title;
+        if (!confirm(`Remove "${title}" from this collection?\n\n`
+          + `The blurb written for it is deleted too. The film itself is untouched.`)) return;
+        btn.disabled = true;
+        try {
+          await api(`/api/collections/${encodeURIComponent(slug)}/entries/${btn.dataset.entry}`,
+            { method: "DELETE" });
+          FC.toast(`Removed ${title}`);
+          renderCollections({ arg: slug, preserve: true });
+        } catch (e) {
+          btn.disabled = false;
+          if (e.message !== "unauth") FC.toast(e.message, true);
+        }
+      };
+    });
+
+    const del = document.querySelector(".cl-delete");
+    if (del) {
+      del.onclick = async () => {
+        const title = del.dataset.title;
+        if (!confirm(`Delete the whole "${title}" collection?\n\n`
+          + `Every film in it and everything written about them is deleted. `
+          + `This cannot be undone.`)) return;
+        del.disabled = true;
+        try {
+          await api(`/api/collections/${encodeURIComponent(del.dataset.slug)}`,
+            { method: "DELETE" });
+          FC.toast(`Deleted ${title}`);
+          location.hash = "#/collections";
+        } catch (e) {
+          del.disabled = false;
+          if (e.message !== "unauth") FC.toast(e.message, true);
+        }
+      };
+    }
   }
 
   // ---------- routing ----------
@@ -170,6 +226,7 @@
       if (arg) {
         const c = await api(`/api/collections/${encodeURIComponent(arg)}`);
         paintView("collections", collectionPage(c), preserve);
+        wireAdminActions(c.slug);
       } else {
         const data = await api("/api/collections");
         paintView("collections", indexPage(data.items || []), preserve);

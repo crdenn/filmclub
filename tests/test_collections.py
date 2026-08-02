@@ -124,5 +124,32 @@ class CollectionResolutionTests(unittest.TestCase):
         self.assertEqual(entry["blurb"], "Written.")
 
 
+    def test_deleting_an_entry_leaves_the_rest_of_the_collection(self):
+        entries = coll.entries_for(self.conn, self.collection_id)
+        target = next(e for e in entries if e["tmdb_id"] == 22)
+        self.assertTrue(coll.delete_entry(self.conn, self.collection_id, target["id"]))
+        remaining = coll.entries_for(self.conn, self.collection_id)
+        self.assertEqual([e["tmdb_id"] for e in remaining], [11])
+        # Already gone: a second delete reports nothing removed rather than raising.
+        self.assertFalse(coll.delete_entry(self.conn, self.collection_id, target["id"]))
+
+    def test_deleting_an_entry_from_the_wrong_collection_does_nothing(self):
+        other = coll.create_collection(self.conn, "other", "Other")
+        entries = coll.entries_for(self.conn, self.collection_id)
+        self.assertFalse(coll.delete_entry(self.conn, other, entries[0]["id"]))
+        self.assertEqual(len(coll.entries_for(self.conn, self.collection_id)), 2)
+
+    def test_deleting_a_collection_cascades_to_its_entries(self):
+        self.assertTrue(coll.delete_collection(self.conn, "test-set"))
+        self.assertIsNone(coll.get_by_slug(self.conn, "test-set"))
+        left = db.query_one(
+            self.conn,
+            "SELECT COUNT(*) AS n FROM collection_entries WHERE collection_id = ?",
+            (self.collection_id,),
+        )
+        self.assertEqual(left["n"], 0)
+        self.assertFalse(coll.delete_collection(self.conn, "test-set"))
+
+
 if __name__ == "__main__":
     unittest.main()

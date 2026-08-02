@@ -184,6 +184,22 @@ def upsert_entry(conn: sqlite3.Connection, collection_id: int, meta: dict,
     return cur.lastrowid
 
 
+def delete_entry(conn: sqlite3.Connection, collection_id: int, entry_id: int) -> bool:
+    """Remove one film from a collection. Returns False if it wasn't there."""
+    cur = db.execute(
+        conn,
+        "DELETE FROM collection_entries WHERE id = ? AND collection_id = ?",
+        (entry_id, collection_id),
+    )
+    return cur.rowcount > 0
+
+
+def delete_collection(conn: sqlite3.Connection, slug: str) -> bool:
+    """Delete a collection and, by foreign-key cascade, all of its entries."""
+    cur = db.execute(conn, "DELETE FROM collections WHERE slug = ?", (slug,))
+    return cur.rowcount > 0
+
+
 def create_collection(conn: sqlite3.Connection, slug: str, title: str, *,
                       kind: str = "picked", intro: str | None = None,
                       director_name: str | None = None,

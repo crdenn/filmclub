@@ -926,6 +926,32 @@ async def api_collection(slug: str, member=Depends(auth.current_member)):
         conn.close()
 
 
+@app.delete("/api/collections/{slug}")
+async def api_delete_collection(slug: str, admin=Depends(auth.require_admin)):
+    conn = db.connect()
+    try:
+        if not curated.delete_collection(conn, slug):
+            raise HTTPException(status_code=404, detail="Collection not found")
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/collections/{slug}/entries/{entry_id}")
+async def api_delete_collection_entry(slug: str, entry_id: int,
+                                      admin=Depends(auth.require_admin)):
+    conn = db.connect()
+    try:
+        collection = curated.get_by_slug(conn, slug)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.delete_entry(conn, collection["id"], entry_id):
+            raise HTTPException(status_code=404, detail="Entry not found")
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
 @app.get("/api/movies/{movie_id}")
 async def api_movie(movie_id: int, member=Depends(auth.current_member)):
     conn = db.connect()
