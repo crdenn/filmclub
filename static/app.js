@@ -254,6 +254,7 @@
         </button>
         <div class="me-menu" id="me-menu" hidden>
           ${themeToggle("me-menu-theme")}
+          ${paletteToggle()}
           <a class="me-menu-item" href="#/profile" id="menu-profile">Profile</a>
           <button class="me-menu-item" id="logout-btn">Sign out</button>
         </div>
@@ -340,8 +341,10 @@
     const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta && bg) meta.setAttribute("content", bg);
-    // Both switchers (app bar + profile) reflect the same state.
-    document.querySelectorAll(".theme-btn").forEach(b => {
+    // Both switchers (app bar + profile) reflect the same state. The palette
+    // switcher shares the .theme-btn styling but not its state, so it is
+    // excluded here rather than being silently deactivated.
+    document.querySelectorAll(".theme-btn:not([data-palette])").forEach(b => {
       const on = b.dataset.theme === themePref;
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", String(on));
@@ -375,8 +378,55 @@
     if (!btn) return;
     e.preventDefault();
     e.stopPropagation();   // keep the app-bar menu open while trying modes
+    if (btn.dataset.palette) {
+      if (btn.dataset.palette !== palettePref) setPalettePref(btn.dataset.palette);
+      return;
+    }
     if (btn.dataset.theme !== themePref) setThemePref(btn.dataset.theme);
   });
+
+  /* The dark palette is an app-wide setting, not a per-member one: the server
+     is authoritative and localStorage is only a mirror, so the <head> script
+     can paint the right colours before the boot fetch returns. */
+  let palettePref = "warm";
+  function applyPalette(value) {
+    palettePref = value === "classic" ? "classic" : "warm";
+    document.documentElement.setAttribute("data-palette", palettePref);
+    try { localStorage.setItem("fc_palette", palettePref); } catch (e) { /* private mode */ }
+    applyTheme();   // re-read --bg for the browser-chrome colour
+  }
+
+  function setPalettePref(pref) {
+    const previous = palettePref;
+    applyPalette(pref);
+    document.querySelectorAll(".theme-btn[data-palette]").forEach(b => {
+      const on = b.dataset.palette === palettePref;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    // App-wide and shared, so unlike the per-member theme a failure here must
+    // not leave the owner believing everyone else sees the new palette.
+    api("/api/admin/dark-palette", { method: "PUT", body: { palette: palettePref } })
+      .catch(() => { applyPalette(previous); toast("Couldn't save the palette", true); });
+  }
+
+  const PALETTE_LABELS = { warm: "Warm", classic: "Classic" };
+
+  /* Owner-only, and deliberately in the user menu beside the light/dark
+     switcher rather than in admin settings: it is an appearance choice, not an
+     integration credential. It does change what everyone sees, which the hint
+     says out loud. */
+  function paletteToggle() {
+    if (!(state.me && state.me.is_admin)) return "";
+    return `<div class="me-menu-section">
+      <div class="me-menu-label">Dark palette · everyone</div>
+      <div class="theme-toggle" role="group" aria-label="Dark palette">${
+        ["warm", "classic"].map(p =>
+          `<button type="button" class="theme-btn ${palettePref === p ? "active" : ""}"` +
+          ` data-palette="${p}" aria-pressed="${palettePref === p}">` +
+          `<span>${PALETTE_LABELS[p]}</span></button>`).join("")}</div>
+    </div>`;
+  }
 
   function themeToggle(extraClass = "") {
     return `<div class="theme-toggle ${extraClass}" role="group" aria-label="Visual mode">${
@@ -525,6 +575,7 @@
     catch (e) { app.innerHTML = `<div class="login-wrap"><div class="login-card">${esc(e.message)}</div></div>`; return; }
     if (!status.required) { state.setupRequired = false; bootAuthenticated(); return; }
     state.authOptions.plex_enabled = !!status.plex_enabled;
+    applyPalette(status.dark_palette);
     if (status.owner_required) {
       app.innerHTML = `<div class="setup-wrap"><form class="setup-card setup-owner-card" id="setup-owner-form">
         <div class="setup-kicker">First-run setup · 1 of 2</div><h1>Create the owner account</h1>
@@ -2968,6 +3019,7 @@
     try {
       const setup = await api("/api/setup/status");
       state.authOptions.plex_enabled = !!setup.plex_enabled;
+      applyPalette(setup.dark_palette);
       if (setup.required) { state.setupRequired = true; renderSetup(); return; }
     } catch { /* normal auth flow will show the actionable error */ }
     bootAuthenticated();

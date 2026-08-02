@@ -474,6 +474,9 @@ async def api_setup_status():
         "owner_required": not complete and not bool(has_members),
         "owner_exists": bool(has_owner),
         "plex_enabled": config.plex_configured(),
+        # Sent with the boot payload (which is fetched before sign-in) so the
+        # login screen wears the same palette as everything behind it.
+        "dark_palette": config.DARK_PALETTE,
         "settings": app_settings.public_values(reveal_nonsecrets=False) if not complete else None,
     }
 
@@ -901,6 +904,17 @@ async def api_watched(member=Depends(auth.current_member)):
         return {"items": service.watched(conn, member["id"])}
     finally:
         conn.close()
+
+
+class DarkPaletteIn(BaseModel):
+    palette: Literal["warm", "classic"]
+
+
+@app.put("/api/admin/dark-palette")
+async def api_set_dark_palette(body: DarkPaletteIn, admin=Depends(auth.require_admin)):
+    """Choose the app-wide dark palette. Appearance only; affects everyone."""
+    app_settings.save({"DARK_PALETTE": body.palette})
+    return {"dark_palette": config.DARK_PALETTE}
 
 
 @app.get("/api/collections")

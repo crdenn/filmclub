@@ -70,6 +70,19 @@ class SettingsTests(unittest.TestCase):
         finally:
             config.DATA_KEY, config.SESSION_SECRET = old_data_key, old_signing
 
+    def test_dark_palette_round_trips_and_is_not_encrypted(self):
+        settings.save({"DARK_PALETTE": "classic"})
+        self.assertEqual(config.DARK_PALETTE, "classic")
+        # Appearance, not a credential: storing it encrypted would be pointless
+        # work and would hide it from a plain database read.
+        row = sqlite3.connect(config.DB_PATH).execute(
+            "SELECT value, encrypted FROM app_settings WHERE key = 'DARK_PALETTE'"
+        ).fetchone()
+        self.assertEqual(row, ("classic", 0))
+
+        settings.save({"DARK_PALETTE": "warm"})
+        self.assertEqual(config.DARK_PALETTE, "warm")
+
 
 class SetupCodeTests(unittest.TestCase):
     def setUp(self):

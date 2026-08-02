@@ -29,11 +29,22 @@
         } catch (e2) { /* keep the dark default */ }
       }
       document.documentElement.setAttribute("data-theme", resolved);
-      // Duplicates one pair of hex values from styles.css because this runs
-      // before the stylesheet is guaranteed applied; app.js reads the real
-      // token from CSS thereafter, so these two can never drift far.
+      // The palette is an app-wide setting, so the authoritative value arrives
+      // with the boot payload. This mirror exists only so the first paint is
+      // already correct; anything applied after that fetch would flash.
+      var palette = "warm";
+      try {
+        if (localStorage.getItem("fc_palette") === "classic") palette = "classic";
+      } catch (e) { /* keep the default */ }
+      document.documentElement.setAttribute("data-palette", palette);
+      // Duplicates a few hex values from styles.css because this runs before
+      // the stylesheet is guaranteed applied; app.js reads the real token from
+      // CSS thereafter, so these can never drift far.
       var meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute("content", resolved === "light" ? "#f7f7f9" : "#0c0c0f");
+      if (meta) {
+        meta.setAttribute("content", resolved === "light" ? "#f7f7f9"
+          : palette === "classic" ? "#0c0c0f" : "#141110");
+      }
     })();
   </script>
   <link rel="stylesheet" href="/static/styles.css?v=73">

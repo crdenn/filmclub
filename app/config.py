@@ -102,6 +102,12 @@ SESSION_COOKIE = "filmclub_session"
 SESSION_MAX_AGE = int(os.environ.get("SESSION_MAX_AGE", str(60 * 60 * 24 * 90)))  # 90 days
 PLEX_PRODUCT = os.environ.get("PLEX_PRODUCT", "Film Club Tracker")
 
+# Which dark palette the app wears: 'warm' (warm off-white on warm near-black)
+# or 'classic' (the original cool near-black). Owner-selected and app-wide, so
+# the club sees one look rather than a per-device mixture. Light mode is
+# unaffected either way.
+DARK_PALETTE = os.environ.get("DARK_PALETTE", "warm")
+
 # Development convenience: skip Plex OAuth and log in as this username.
 DEV_BYPASS_USER = os.environ.get("DEV_BYPASS_USER", "").strip()
 

@@ -200,20 +200,24 @@ html[data-theme="light"] {
   --lowconf-opacity: .72;
 }
 
-/* --- collections surface -------------------------------------------------
- * Collections deliberately look like a different publication from the rest of
- * the app: warmer, softer, closer to printed matter than to a media server.
+/* --- warm palette --------------------------------------------------------
+ * A warmer, softer dark: warm off-white on warm near-black instead of stark
+ * white on black, with a tan accent in place of the UI blue. It reads closer
+ * to printed matter than to a media server.
+ *
+ * Applied in two situations, sharing one definition so the two can never
+ * drift: whenever the owner has selected the warm palette for the whole app,
+ * and always on the collections surface, which is deliberately a different
+ * publication from the rest of the app regardless of that choice.
  *
  * These override the base tokens rather than adding a parallel set, so every
- * existing rule follows without a single selector being rewritten — the whole
- * chrome shifts together instead of a warm article sitting inside cold
- * furniture. The route sets data-surface on <html>; see app.js.
+ * existing rule follows without a single selector being rewritten.
  *
- * The text is deliberately not white. Pure white on near-black is the harsh
- * combination; a warm off-white on a warm near-black keeps well clear of the
- * accessibility floor while reading much more like paper.
+ * Deliberately scoped to [data-theme="dark"]: unscoped, a warm *dark* palette
+ * would win over the light theme block (equal specificity, later in source)
+ * and paint dark tokens onto a light page.
  */
-html[data-surface="collections"],
+html[data-theme="dark"][data-palette="warm"],
 html[data-theme="dark"][data-surface="collections"] {
   --bg: #141110;
   --bg-raise: #1c1917;
@@ -228,8 +232,18 @@ html[data-theme="dark"][data-surface="collections"] {
   --accent: #cc8f5e;        /* warm tan; the cool blue read as UI, not print */
   --accent-text: #d9a071;
   --on-accent: #1a1512;
+
+  /* Neutrals that would otherwise stay cool and give the warmth away. */
+  --star-empty: #3d352e;
+  --on-member-color: #141110;
+  --overlay-plate: rgba(20,17,16,.72);
+  --grad-poster: linear-gradient(150deg, #262019, #1a1512);
+  --grad-poster-alt: linear-gradient(160deg, #2a231b, #1d1815);
+  --grad-skeleton: linear-gradient(100deg, #1c1917 30%, #262019 50%, #1c1917 70%);
 }
 
+/* The collections surface stays warm in light mode too — the same deliberate
+   deviation, in paper rather than ink. */
 html[data-theme="light"][data-surface="collections"] {
   --bg: #f1ebe0;            /* warm paper rather than cool grey */
   --bg-raise: #f9f5ed;
@@ -1955,3 +1969,15 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .cl-still.cl-linked:hover { transform: translateY(-3px); }
 .cl-title a { color: inherit; }
 .cl-title a:hover { color: var(--accent-text); text-decoration: none; }
+
+/* Owner-only palette switcher in the user menu. Set apart from the menu items
+   above it, because it changes what the whole club sees rather than acting on
+   this account. */
+.me-menu-section {
+  padding: .45rem .6rem .3rem; margin-top: .25rem;
+  border-top: 1px solid var(--line);
+}
+.me-menu-label {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--text-faint); margin-bottom: .4rem;
+}

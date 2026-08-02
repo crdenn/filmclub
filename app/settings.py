@@ -28,6 +28,9 @@ FIELDS = {
     "DISCORD_WEBHOOK_URL": {"secret": True, "required": False},
     "DISCORD_REMINDER_WEEKDAY": {"secret": False, "required": False},
     "DISCORD_REMINDER_HOUR": {"secret": False, "required": False},
+    # Appearance rather than an integration credential, so it is set from the
+    # user menu rather than the admin settings form.
+    "DARK_PALETTE": {"secret": False, "required": False},
 }
 SETUP_COMPLETE = "_setup_complete"
 
