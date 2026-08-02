@@ -1520,7 +1520,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   linear-gradient(0deg, color-mix(in srgb, var(--bg) 94%, transparent), color-mix(in srgb, var(--bg) 5%, transparent) 60%); }
 .cl-hero-inner {
   position: relative; display: flex; flex-direction: column; justify-content: flex-end;
-  padding: 2.4rem; min-height: min(340px, 46vh);
+  padding: 2.2rem; min-height: min(220px, 30vh);
 }
 .cl-hero-eyebrow {
   text-transform: uppercase; letter-spacing: .16em; font-size: .72rem;
@@ -1737,7 +1737,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
   /* The hero keeps its shape but stops eating the whole screen; the scrim
      flips to bottom-up, since there is no longer a left column to protect. */
-  .cl-hero-inner { padding: 1.3rem; min-height: min(240px, 40vh); }
+  .cl-hero-inner { padding: 1.3rem; min-height: min(180px, 26vh); }
   .cl-hero-title { font-size: 1.8rem; }
   .cl-hero-scrim { background:
     linear-gradient(0deg, color-mix(in srgb, var(--bg) 96%, transparent) 25%, var(--scrim-mid)); }
@@ -1809,7 +1809,10 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
 /* --- admin: add a film / new collection --- */
 .cl-admin { margin: 3rem 0 0; }
-.cl-admin-index { margin: 0 0 1.6rem; }
+/* The spacing belongs to the form, not the container, so a hidden form leaves
+   no gap above the cards. */
+.cl-admin-index { margin: 0; }
+.cl-admin-index .cl-new { margin: 0 0 1.6rem; }
 .cl-add-toggle, .cl-new-toggle {
   background: none; border: 1px dashed var(--line); border-radius: 10px;
   color: var(--text-dim); font-size: .88rem; padding: .6rem 1.1rem;
@@ -1931,7 +1934,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   font-size: .82rem; text-decoration: underline; text-underline-offset: 2px;
 }
 .cl-preview-enter:hover { color: var(--accent-text); }
-.cl-admin-index .cl-preview-enter { margin-left: 1rem; }
 .cl-sync {
   background: none; border: 1px dashed var(--line); border-radius: 10px;
   color: var(--text-dim); font-size: .88rem; padding: .6rem 1.1rem; margin-left: .6rem;
@@ -1981,3 +1983,15 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   font-size: .68rem; text-transform: uppercase; letter-spacing: .1em;
   color: var(--text-faint); margin-bottom: .4rem;
 }
+
+/* Owner actions sit in the hero's corner, out of the reading path. */
+.cl-hero-menu { position: absolute; top: .9rem; right: .9rem; z-index: 5; }
+.cl-hero-menu .btn {
+  background: var(--overlay-plate); border-color: transparent; color: var(--on-overlay);
+}
+.cl-hero-menu .btn:hover { background: var(--overlay-fill); }
+.cl-new-cancel {
+  background: none; border: none; color: var(--text-faint);
+  font-size: .84rem; text-decoration: underline; text-underline-offset: 2px;
+}
+.cl-new-cancel:hover { color: var(--text); }

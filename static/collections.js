@@ -169,6 +169,24 @@
     </div>`;
   }
 
+  const ICON_MORE = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`;
+
+  /* Owner actions for the index live in the hero corner rather than as buttons
+     above the list. They are occasional — a collection is created rarely and
+     previewed rarely — and standing controls in the reading path made the page
+     look like a form. Same overflow pattern the movie detail page uses. */
+  function indexMenu() {
+    if (!isAdmin()) return "";
+    return `<div class="cl-hero-menu overflow-anchor">
+      <button type="button" class="btn icon-btn" id="cl-index-more"
+        aria-haspopup="true" aria-expanded="false" aria-label="Collection actions">${ICON_MORE}</button>
+      <div class="overflow-menu" id="cl-index-menu" hidden>
+        <button type="button" class="overflow-menu-item" id="cl-index-new">New collection…</button>
+        <button type="button" class="overflow-menu-item" id="cl-index-preview">Preview as reader</button>
+      </div>
+    </div>`;
+  }
+
   function previewToggle() {
     if (!isAdmin()) return "";
     return `<button class="cl-preview-enter" type="button">Preview as reader</button>`;
@@ -235,6 +253,7 @@
     return `<div class="cl-hero">
       ${cover ? `<img class="cl-hero-img" src="${esc(cover)}" alt="">` : ""}
       <div class="cl-hero-scrim"></div>
+      ${indexMenu()}
       <div class="cl-hero-inner">
         <div class="cl-hero-eyebrow">Film Club</div>
         <h1 class="cl-hero-title">Collections</h1>
@@ -262,10 +281,10 @@
         </div>
       </a>`;
     }).join("");
+    // Hidden until asked for from the menu: creating a collection is a rare
+    // action and does not deserve standing space above the list.
     const admin = isAdmin() ? `
       <div class="cl-admin cl-admin-index">
-        <button class="cl-new-toggle" type="button">+ New collection</button>
-        ${previewToggle()}
         <form class="cl-new" hidden>
           <input class="cl-new-title" type="text" required maxlength="200"
                  placeholder="Collection title" aria-label="Collection title">
@@ -277,6 +296,7 @@
                  placeholder="Director name (defaults to the title)"
                  aria-label="Director name">
           <button class="btn btn-primary" type="submit">Create</button>
+          <button class="cl-new-cancel" type="button">Cancel</button>
         </form>
       </div>` : "";
 
@@ -288,18 +308,57 @@
         : `<div class="empty">No collections yet.</div>`}`;
   }
 
-  function wireNewCollection() {
-    const toggle = document.querySelector(".cl-new-toggle");
+  /* The index overflow menu. Follows the same open/close behaviour as the
+     movie detail page's menu: click toggles, a click anywhere else closes, and
+     a click inside does not bubble out and immediately close it again. */
+  function wireIndexMenu() {
+    const btn = document.querySelector("#cl-index-more");
+    const menu = document.querySelector("#cl-index-menu");
+    if (!btn || !menu) return;
+    const close = () => {
+      menu.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+    };
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      menu.hidden = !open;
+      btn.setAttribute("aria-expanded", String(open));
+    };
+    menu.onclick = (e) => e.stopPropagation();
+    if (!wireIndexMenu._doc) {
+      wireIndexMenu._doc = true;
+      document.addEventListener("click", () => {
+        const m = document.querySelector("#cl-index-menu");
+        const b = document.querySelector("#cl-index-more");
+        if (m && !m.hidden) { m.hidden = true; if (b) b.setAttribute("aria-expanded", "false"); }
+      });
+    }
+
+    const preview = document.querySelector("#cl-index-preview");
+    if (preview) preview.onclick = () => { close(); setPreview(true); renderCurrent(); };
+
+    const newBtn = document.querySelector("#cl-index-new");
     const form = document.querySelector(".cl-new");
-    if (!toggle || !form) return;
+    if (newBtn && form) {
+      newBtn.onclick = () => {
+        close();
+        form.hidden = false;
+        const t = form.querySelector(".cl-new-title");
+        if (t) t.focus();
+      };
+    }
+  }
+
+  function wireNewCollection() {
+    const form = document.querySelector(".cl-new");
+    if (!form) return;
     const title = form.querySelector(".cl-new-title");
     const kind = form.querySelector(".cl-new-kind");
     const director = form.querySelector(".cl-new-director");
+    const cancel = form.querySelector(".cl-new-cancel");
 
-    toggle.onclick = () => {
-      form.hidden = !form.hidden;
-      if (!form.hidden) title.focus();
-    };
+    if (cancel) cancel.onclick = () => { form.hidden = true; form.reset(); };
     // A director collection needs its subject; a hand-picked one does not.
     kind.onchange = () => { director.hidden = kind.value !== "director"; };
 
@@ -771,6 +830,7 @@
       } else {
         const data = await api(`/api/collections${q}`);
         paintView("collections", indexPage(data.items || []), preserve);
+        wireIndexMenu();
         wireNewCollection();
         wirePreview();
       }
