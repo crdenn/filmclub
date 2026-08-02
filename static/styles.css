@@ -1542,7 +1542,15 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .cl-still img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cl-still-empty { background: var(--grad-poster); box-shadow: none; }
 
-.cl-panel { padding-top: .2rem; }
+/* The reading measure lives on the panel rather than on the blurb alone, so
+   the eyebrow, title, metadata and prose all share one left edge. Capping only
+   the prose left the title running wider than the paragraph under it. */
+.cl-panel { padding-top: .2rem; max-width: 56ch; }
+/* Still on the right: push the whole text block over so it sits against the
+   image instead of stranding an empty gutter between the two. The text itself
+   stays ragged-right — right-aligning prose would cost more in readability
+   than the tidy edge is worth. */
+.cl-row:nth-child(even) .cl-panel { margin-left: auto; }
 .cl-director {
   font-size: .74rem; text-transform: uppercase; letter-spacing: .15em;
   color: var(--accent-text); margin-bottom: .55rem;
@@ -1558,7 +1566,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 }
 .cl-blurb {
   font-family: var(--font-serif); font-size: 1.08rem; line-height: 1.66;
-  color: var(--text); margin-top: .9rem; max-width: 56ch;
+  color: var(--text); margin-top: .9rem;
 }
 .cl-blurb p { margin: 0 0 1em; }
 .cl-blurb p:last-child { margin-bottom: 0; }
@@ -1586,6 +1594,9 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 @media (max-width: 860px) {
   .cl-rows { gap: 3.2rem; }
   .cl-row, .cl-row:nth-child(even) { grid-template-columns: 1fr; gap: 1.1rem; }
+  /* One column: nothing to sit against, so the panel is full width and flush
+     left on every row. */
+  .cl-panel, .cl-row:nth-child(even) .cl-panel { max-width: none; margin-left: 0; }
   /* Undo the alternation: in a single column every row must be image-above-text,
      or the even ones would put the writing first and read as a mistake. */
   .cl-row:nth-child(even) .cl-still { grid-column: 1; grid-row: 1; }
