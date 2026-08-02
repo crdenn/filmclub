@@ -95,6 +95,55 @@ CREATE INDEX IF NOT EXISTS idx_votes_movie ON votes(movie_id);
 -- tables have received the is_owner column. Creating it here would make
 -- db.init_db() fail before migrations can upgrade a pre-v2 database.
 
+-- Curated collections: an authored essay-style page of films, each with a
+-- blurb. Separate from the club's suggest/schedule/watch lifecycle on purpose —
+-- a collection film need not ever have been a suggestion, and adding one must
+-- not put it on the backlog.
+CREATE TABLE IF NOT EXISTS collections (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug          TEXT UNIQUE NOT NULL,   -- URL key: #/collections/<slug>
+    title         TEXT NOT NULL,
+    kind          TEXT NOT NULL DEFAULT 'picked',  -- 'picked' | 'director'
+    intro         TEXT,                   -- author's markdown, shown above the rows
+    -- 'director' collections only: the subject, and the TMDB person id used to
+    -- pull the factual scaffolding (portrait, dates, full filmography).
+    director_name    TEXT,
+    director_tmdb_id INTEGER,
+    director_intro   TEXT,                -- markdown prose about the director
+    published     INTEGER NOT NULL DEFAULT 0,  -- 0 = admin-only draft
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One film within a collection.
+--
+-- Keyed on tmdb_id (the durable external GUID), never on a Plex ratingKey:
+-- ratingKeys are server-local and change when an item is deleted and re-added
+-- or the library is rebuilt, which would silently detach the author's writing
+-- from the film. Resolution to a live Plex item happens at render time.
+--
+-- The title/year/runtime/director/still columns are a deliberate snapshot, for
+-- the same reason `movies` snapshots TMDB: a collection page must render
+-- without calling TMDB, and without the film existing in `movies` at all.
+CREATE TABLE IF NOT EXISTS collection_entries (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    tmdb_id       INTEGER NOT NULL,
+    imdb_id       TEXT,                   -- secondary key for Plex matching
+    title         TEXT NOT NULL,
+    year          INTEGER,
+    runtime       INTEGER,                -- minutes
+    director      TEXT,
+    still_url     TEXT,                   -- TMDB backdrop/still for the row image
+    blurb         TEXT,                   -- author's markdown; empty = not written yet
+    position      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (collection_id, tmdb_id)
+);
+CREATE INDEX IF NOT EXISTS idx_collection_entries_collection
+    ON collection_entries(collection_id, position);
+
 -- Runtime configuration entered through first-run setup or Admin settings.
 -- Sensitive values are Fernet-encrypted with the durable key in /data.
 CREATE TABLE IF NOT EXISTS app_settings (

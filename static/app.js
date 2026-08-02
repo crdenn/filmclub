@@ -50,6 +50,28 @@
     setTimeout(() => t.remove(), 3200);
   }
 
+  // ---------- feature-module bridge ----------
+  // This file owns the shell, the router and the club's own screens. A feature
+  // large enough to have its own page (collections) lives in its own script and
+  // registers here, rather than growing this file further.
+  //
+  // The surface is deliberately narrow: shared primitives in, a render function
+  // out. A module gets no access to `state` beyond the current member, so the
+  // shell stays the only thing that can mutate app state.
+  const featureRoutes = Object.create(null);
+  window.FilmClub = {
+    api,
+    esc,
+    toast,
+    // Painting goes through the shell's own helpers so a feature page keeps the
+    // appbar, nav highlighting and badge updates without reimplementing them.
+    paintView,
+    paintError,
+    // Registered as `#/<view>`; the router dispatches to fn({ arg, preserve }).
+    registerRoute(view, fn) { featureRoutes[view] = fn; },
+    get me() { return state.me; },
+  };
+
   const state = {
     me: null,
     route: null,
@@ -203,6 +225,7 @@
     backlog: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l16 0M4 12l16 0M4 17l10 0"/></svg>`,
     watched: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>`,
     stats: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>`,
+    collections: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 9 20H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M13.5 5.5A1.5 1.5 0 0 1 15 4h1.5A1.5 1.5 0 0 1 18 5.5v13a1.5 1.5 0 0 1-1.5 1.5H15a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M20.2 6.4l1.4 12.3"/></svg>`,
     admin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>`,
   };
   function navLink(active, view, label, badge = 0) {
@@ -219,6 +242,7 @@
         ${navLink(active, "thisweek", "This week")}
         ${navLink(active, "backlog", "Backlog", state.todo.backlog)}
         ${navLink(active, "watched", "Watched", state.todo.watched)}
+        ${navLink(active, "collections", "Collections")}
         ${navLink(active, "stats", "Stats")}
         ${m && m.is_admin ? navLink(active, "admin", "Admin") : ""}
       </nav>
@@ -2888,6 +2912,8 @@
     }
     state.currentHash = hash;
     state.route = view;
+    // Feature modules first: they own their whole route, including the arg.
+    if (featureRoutes[view]) return featureRoutes[view]({ arg, preserve });
     if (view === "backlog") return renderBacklog(preserve);
     if (view === "watched") return renderWatched(preserve);
     if (view === "stats") return renderStats(preserve);

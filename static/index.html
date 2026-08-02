@@ -44,5 +44,9 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
   <script src="/static/app.js?v=76"></script>
+  <!-- Feature modules load after the shell: app.js defines window.FilmClub, and
+       each module registers its own route on it. The router resolves routes at
+       navigation time, so registration order does not matter. -->
+  <script src="/static/collections.js?v=76"></script>
 </body>
 </html>
