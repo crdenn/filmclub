@@ -1499,7 +1499,13 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 }
 
 /* --- collection page head --- */
-.cl-head { margin: .5rem 0 3.5rem; }
+/* The header is a masthead, and has to read as one. A rule closes it off so the
+   list below starts cleanly instead of the page being one continuous column of
+   text from the title down through the first film's blurb. */
+.cl-head {
+  margin: .5rem 0 3.2rem; padding-bottom: 2.4rem;
+  border-bottom: 1px solid var(--line);
+}
 
 /* Title on the left, the collection's own summary on the right, both starting
    at the same y. An even 1fr/1fr split (rather than sizing the title column to
@@ -1510,7 +1516,21 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem 3.2rem; align-items: start;
 }
-.cl-head-summary .cl-intro { margin-top: 0; max-width: none; }
+
+/* The summary is a standfirst, not body copy. Set at the same size and colour
+   as the blurbs it sits above, the right-hand column read as one unbroken run
+   of serif from the top of the page into the first film — nothing announced
+   that the header had ended. Smaller, dimmer and on a tighter measure, it
+   introduces the list instead of competing with it. */
+.cl-head-summary .cl-intro {
+  margin-top: .1rem; max-width: 46ch;
+  font-size: 1.02rem; line-height: 1.6; color: var(--text-dim);
+}
+
+.cl-head-meta {
+  margin-top: 1.1rem; font-size: .84rem; color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
 
 .cl-eyebrow {
   font-size: .78rem; text-transform: uppercase; letter-spacing: .15em;
@@ -1648,11 +1668,11 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .cl-row:nth-child(even) .cl-still { grid-column: 1; grid-row: 1; }
   .cl-row:nth-child(even) .cl-panel { grid-column: 1; grid-row: 2; }
   .cl-blurb, .cl-intro { max-width: none; }
-  .cl-head { margin-bottom: 2.4rem; }
+  .cl-head { margin-bottom: 2.4rem; padding-bottom: 1.8rem; }
   /* No side-by-side columns to top-align at this width: stack title above
      summary and give the summary back its top spacing. */
   .cl-head-top { grid-template-columns: 1fr; gap: 0; }
-  .cl-head-summary .cl-intro { margin-top: 1.4rem; }
+  .cl-head-summary .cl-intro { margin-top: 1.4rem; max-width: none; }
   .cl-foot { margin-top: 3rem; }
 
   /* The hero keeps its shape but stops eating the whole screen; the scrim

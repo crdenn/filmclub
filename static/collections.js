@@ -396,6 +396,27 @@
     </div>`;
   }
 
+  /* A small factual line under the title. It earns its place twice: it tells a
+     reader what they are committing to before they scroll, and it gives the
+     title column something to sit on — without it the left half is a large
+     heading above a void. */
+  function headerMeta(c, entries) {
+    const n = entries.length;
+    const mins = entries.reduce((t, e) => t + (Number(e.runtime) || 0), 0);
+    const years = entries.map((e) => Number(e.year)).filter(Boolean);
+    const bits = [];
+    if (n) bits.push(`${n} film${n === 1 ? "" : "s"}`);
+    if (mins) {
+      const h = Math.floor(mins / 60);
+      bits.push(h ? `${h}h ${mins % 60}m` : `${mins}m`);
+    }
+    if (years.length > 1) {
+      const lo = Math.min(...years), hi = Math.max(...years);
+      if (lo !== hi) bits.push(`${lo}–${hi}`);
+    }
+    return bits.length ? `<div class="cl-head-meta">${esc(bits.join(" · "))}</div>` : "";
+  }
+
   function collectionPage(c) {
     const entries = c.entries || [];
     // A draft is only ever served to an admin, so this badge is not a leak.
@@ -411,6 +432,7 @@
             ${eyebrow}
             <h1 class="cl-page-title">${esc(c.title)}</h1>
             ${draft}
+            ${headerMeta(c, entries)}
           </div>
           <div class="cl-head-summary">
             ${c.kind === "director" ? proseLabel("On this collection") : ""}
