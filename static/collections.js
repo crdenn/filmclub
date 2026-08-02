@@ -86,11 +86,45 @@
   }
 
   // ---------- rows ----------
+  /* A film the club is also tracking has a normal detail page, so the artwork
+     and title link to it exactly as they do from the backlog. A film that has
+     never been suggested has no such page — the Add button below is what
+     brings one into existence. */
   function still(entry) {
-    if (!entry.still_url) return `<div class="cl-still cl-still-empty"></div>`;
-    return `<div class="cl-still">
-      <img src="${esc(entry.still_url)}" alt="" loading="lazy" decoding="async">
-    </div>`;
+    const inner = entry.still_url
+      ? `<img src="${esc(entry.still_url)}" alt="" loading="lazy" decoding="async">`
+      : "";
+    const cls = `cl-still${entry.still_url ? "" : " cl-still-empty"}`;
+    return entry.movie_id
+      ? `<a class="${cls} cl-linked" href="#/movie/${entry.movie_id}"
+           aria-label="${esc(entry.title)}">${inner}</a>`
+      : `<div class="${cls}">${inner}</div>`;
+  }
+
+  function titleMarkup(entry) {
+    const t = esc(entry.title);
+    return entry.movie_id
+      ? `<h2 class="cl-title"><a href="#/movie/${entry.movie_id}">${t}</a></h2>`
+      : `<h2 class="cl-title">${t}</h2>`;
+  }
+
+  /* The backlog control. Any member can put a film on the list, so this is not
+     an admin affordance and stays visible in preview. */
+  const BACKLOG_LABEL = {
+    suggested: "On the backlog",
+    scheduled: "This week's pick",
+    watched: "Watched",
+  };
+
+  function backlogControl(entry) {
+    const status = entry.movie_status;
+    if (status) {
+      const label = BACKLOG_LABEL[status] || "On the list";
+      return `<a class="cl-inlist cl-inlist-${esc(status)}"
+         href="#/movie/${entry.movie_id}">${esc(label)}</a>`;
+    }
+    return `<button class="cl-addbacklog" data-tmdb="${entry.tmdb_id}"
+       data-title="${esc(entry.title)}">+ Add to backlog</button>`;
   }
 
   function watchButton(entry) {
@@ -167,12 +201,14 @@
       ${still(entry)}
       <div class="cl-panel">
         ${director}
-        <h2 class="cl-title">${esc(entry.title)}</h2>
+        ${titleMarkup(entry)}
         ${line ? `<div class="cl-meta">${esc(line)}</div>` : ""}
         ${missing}
         <div class="cl-blurb" ${editable(entry.blurb, `entry:${entry.id}`,
           "Why is this worth watching?")}>${markdown(entry.blurb)}</div>
-        <div class="cl-row-actions">${watchButton(entry)}${remove}</div>
+        <div class="cl-row-actions">
+          ${watchButton(entry)}${backlogControl(entry)}${remove}
+        </div>
       </div>
     </article>`;
   }
@@ -502,6 +538,38 @@
     });
   }
 
+  /* Adding to the backlog reuses the app's own /api/movies endpoint, so a film
+     added from here goes through exactly the same path as one added from the
+     search box — including the Seerr request when it isn't on the server.
+
+     The result is swapped in place rather than re-rendering the page: on a long
+     collection a full repaint would throw away the reader's scroll position for
+     what is a one-row change. */
+  function wireAddToBacklog() {
+    document.querySelectorAll(".cl-addbacklog").forEach((btn) => {
+      btn.onclick = async () => {
+        const title = btn.dataset.title;
+        btn.disabled = true;
+        btn.textContent = "Adding…";
+        try {
+          const r = await api("/api/movies", {
+            method: "POST", body: { tmdb_id: Number(btn.dataset.tmdb) },
+          });
+          const link = document.createElement("a");
+          link.className = "cl-inlist cl-inlist-suggested";
+          link.href = `#/movie/${r.id}`;
+          link.textContent = "On the backlog";
+          btn.replaceWith(link);
+          FC.toast(`Added ${title} to the backlog`);
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "+ Add to backlog";
+          if (e.message !== "unauth") FC.toast(e.message, true);
+        }
+      };
+    });
+  }
+
   function wireSync(slug) {
     const btn = document.querySelector(".cl-sync");
     if (!btn) return;
@@ -661,6 +729,7 @@
         wirePublish(c.slug);
         wireCoverage(c.slug);
         wireSync(c.slug);
+        wireAddToBacklog();
         wirePreview();
       } else {
         const data = await api(`/api/collections${q}`);

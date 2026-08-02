@@ -38,6 +38,33 @@ def collection_base(row: sqlite3.Row | dict) -> dict:
     return d
 
 
+def attach_club_state(conn: sqlite3.Connection, entries: list[dict]) -> None:
+    """Mark which entries are also films the club is tracking, in place.
+
+    A collection entry is deliberately independent of ``movies`` — a film can be
+    written about without ever being suggested. But when the same film *is* on
+    the club's list, the page should link to its normal detail page and say
+    where it stands, rather than pretending the two are unrelated.
+
+    One query for the whole page rather than one per row.
+    """
+    ids = [e["tmdb_id"] for e in entries if e.get("tmdb_id")]
+    found: dict[int, dict] = {}
+    if ids:
+        marks = ",".join("?" * len(ids))
+        rows = db.query_all(
+            conn,
+            f"SELECT id, tmdb_id, status FROM movies WHERE tmdb_id IN ({marks})",
+            tuple(ids),
+        )
+        found = {r["tmdb_id"]: {"movie_id": r["id"], "movie_status": r["status"]}
+                 for r in rows}
+    for entry in entries:
+        state = found.get(entry.get("tmdb_id"))
+        entry["movie_id"] = state["movie_id"] if state else None
+        entry["movie_status"] = state["movie_status"] if state else None
+
+
 def resolve_entry(entry: dict) -> dict:
     """Attach Plex resolution state and a deep link to one entry.
 
@@ -132,6 +159,7 @@ def collection_detail(conn: sqlite3.Connection, slug: str, *, is_admin: bool,
     is_admin = is_admin and not preview
 
     resolved = [resolve_entry(e) for e in entries_for(conn, collection["id"])]
+    attach_club_state(conn, resolved)
 
     # A director collection's public membership is gated on the blurb; a
     # hand-picked one is not — the author chose those films explicitly, so an

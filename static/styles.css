@@ -1809,3 +1809,35 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 }
 .cl-sync:hover { color: var(--accent-text); border-color: var(--accent); }
 .cl-sync:disabled { opacity: .5; cursor: default; }
+
+/* --- backlog control on a collection row ---
+ * Deliberately secondary to Watch on Plex: on a page whose purpose is to make
+ * you want to see the film, watching it now beats queueing it for later. */
+.cl-addbacklog {
+  background: none; border: 1px solid var(--line); border-radius: 10px;
+  color: var(--text-dim); font-size: .85rem; font-weight: 600;
+  padding: .5rem .95rem;
+}
+.cl-addbacklog:hover { color: var(--accent-text); border-color: var(--accent); }
+.cl-addbacklog:disabled { opacity: .55; cursor: default; }
+
+/* Already on the club's list: a statement of fact that happens to be a link to
+   the film's page, not a second button competing with the first. */
+.cl-inlist {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .82rem; color: var(--text-faint);
+}
+.cl-inlist::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; flex: 0 0 auto;
+}
+.cl-inlist:hover { color: var(--accent-text); text-decoration: none; }
+.cl-inlist-scheduled { color: var(--warn-text); }
+.cl-inlist-watched { color: var(--good-text); }
+
+/* Artwork and title link through to the film's normal detail page when the
+   club is also tracking it. */
+.cl-still.cl-linked { display: block; transition: transform .12s ease; }
+.cl-still.cl-linked:hover { transform: translateY(-3px); }
+.cl-title a { color: inherit; }
+.cl-title a:hover { color: var(--accent-text); text-decoration: none; }

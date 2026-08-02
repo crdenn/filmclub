@@ -124,6 +124,38 @@ class CollectionResolutionTests(unittest.TestCase):
         self.assertEqual(entry["blurb"], "Written.")
 
 
+    def test_entries_report_whether_the_club_is_also_tracking_the_film(self):
+        db.execute(self.conn,
+                   "INSERT INTO movies (tmdb_id, title, status) VALUES (?, ?, ?)",
+                   (11, "On The Server", "watched"))
+        detail = coll.collection_detail(self.conn, "test-set", is_admin=True)
+        by_tmdb = {e["tmdb_id"]: e for e in detail["entries"]}
+        self.assertEqual(by_tmdb[11]["movie_status"], "watched")
+        self.assertIsNotNone(by_tmdb[11]["movie_id"])
+        # A film the club has never suggested has no detail page to link to.
+        self.assertIsNone(by_tmdb[22]["movie_id"])
+        self.assertIsNone(by_tmdb[22]["movie_status"])
+
+    def test_club_state_is_attached_without_a_query_per_row(self):
+        """One statement for the page, regardless of how many films are on it."""
+        for tmdb_id in range(200, 215):
+            coll.upsert_entry(self.conn, self.collection_id,
+                              _meta(tmdb_id, f"Film {tmdb_id}"), blurb="x")
+        entries = coll.entries_for(self.conn, self.collection_id)
+        seen = []
+        original = db.query_all
+
+        def counting(conn, sql, params=()):
+            seen.append(sql)
+            return original(conn, sql, params)
+
+        db.query_all = counting
+        try:
+            coll.attach_club_state(self.conn, entries)
+        finally:
+            db.query_all = original
+        self.assertEqual(len(seen), 1)
+
     def test_preview_gives_an_admin_exactly_the_reader_view(self):
         admin = coll.collection_detail(self.conn, "test-set", is_admin=True)
         preview = coll.collection_detail(self.conn, "test-set", is_admin=True, preview=True)
