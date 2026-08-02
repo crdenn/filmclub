@@ -1807,17 +1807,13 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .ie-editable.ie-saved { box-shadow: inset 2px 0 0 var(--good), inset 0 0 0 1px var(--accent); }
 .ie-editable.ie-error { box-shadow: inset 2px 0 0 var(--bad), inset 0 0 0 1px var(--bad); }
 
-/* --- admin: add a film / new collection --- */
+/* --- admin: add a film to a collection --- */
 .cl-admin { margin: 3rem 0 0; }
-/* The spacing belongs to the form, not the container, so a hidden form leaves
-   no gap above the cards. */
-.cl-admin-index { margin: 0; }
-.cl-admin-index .cl-new { margin: 0 0 1.6rem; }
-.cl-add-toggle, .cl-new-toggle {
+.cl-add-toggle {
   background: none; border: 1px dashed var(--line); border-radius: 10px;
   color: var(--text-dim); font-size: .88rem; padding: .6rem 1.1rem;
 }
-.cl-add-toggle:hover, .cl-new-toggle:hover { color: var(--accent-text); border-color: var(--accent); }
+.cl-add-toggle:hover { color: var(--accent-text); border-color: var(--accent); }
 
 .cl-add { margin-top: 1rem; max-width: 520px; }
 .cl-add-input {
@@ -1842,14 +1838,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .cl-add-title { font-size: .92rem; font-weight: 600; }
 .cl-add-sub { font-size: .8rem; color: var(--text-dim); }
 
-.cl-new { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1rem; }
-.cl-new input, .cl-new select {
-  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 10px;
-  color: var(--text); padding: .55rem .75rem; font: inherit; font-size: .92rem;
-}
-.cl-new-title { flex: 1 1 240px; min-width: 0; }
-.cl-new input:focus, .cl-new select:focus { outline: none; border-color: var(--accent); }
-
 .cl-foot-admin { display: flex; align-items: center; gap: 1.2rem; }
 .cl-publish {
   background: none; border: none; padding: 0; color: var(--text-faint);
@@ -1860,8 +1848,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
 @media (max-width: 860px) {
   .cl-foot { flex-direction: column; align-items: flex-start; gap: .9rem; }
-  .cl-new { flex-direction: column; }
-  .cl-new-title { flex: 1 1 auto; }
 }
 
 /* --- director scaffolding --- */
@@ -1990,8 +1976,3 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   background: var(--overlay-plate); border-color: transparent; color: var(--on-overlay);
 }
 .cl-hero-menu .btn:hover { background: var(--overlay-fill); }
-.cl-new-cancel {
-  background: none; border: none; color: var(--text-faint);
-  font-size: .84rem; text-decoration: underline; text-underline-offset: 2px;
-}
-.cl-new-cancel:hover { color: var(--text); }

@@ -281,28 +281,12 @@
         </div>
       </a>`;
     }).join("");
-    // Hidden until asked for from the menu: creating a collection is a rare
-    // action and does not deserve standing space above the list.
-    const admin = isAdmin() ? `
-      <div class="cl-admin cl-admin-index">
-        <form class="cl-new" hidden>
-          <input class="cl-new-title" type="text" required maxlength="200"
-                 placeholder="Collection title" aria-label="Collection title">
-          <select class="cl-new-kind" aria-label="Collection kind">
-            <option value="picked">Hand-picked</option>
-            <option value="director">Director</option>
-          </select>
-          <input class="cl-new-director" type="text" maxlength="200" hidden
-                 placeholder="Director name (defaults to the title)"
-                 aria-label="Director name">
-          <button class="btn btn-primary" type="submit">Create</button>
-          <button class="cl-new-cancel" type="button">Cancel</button>
-        </form>
-      </div>` : "";
 
+    // No standing admin furniture on the index at all now — New collection
+    // lives only in the hero menu, as a modal, so a rare action never occupies
+    // permanent space above the list.
     return `${previewBar()}
       ${indexHero(items)}
-      ${admin}
       ${items.length
         ? `<div class="cl-cards">${cards}</div>`
         : `<div class="empty">No collections yet.</div>`}`;
@@ -339,44 +323,73 @@
     if (preview) preview.onclick = () => { close(); setPreview(true); renderCurrent(); };
 
     const newBtn = document.querySelector("#cl-index-new");
-    const form = document.querySelector(".cl-new");
-    if (newBtn && form) {
-      newBtn.onclick = () => {
-        close();
-        form.hidden = false;
-        const t = form.querySelector(".cl-new-title");
-        if (t) t.focus();
-      };
-    }
+    if (newBtn) newBtn.onclick = () => { close(); showNewCollectionModal(); };
   }
 
-  function wireNewCollection() {
-    const form = document.querySelector(".cl-new");
-    if (!form) return;
-    const title = form.querySelector(".cl-new-title");
-    const kind = form.querySelector(".cl-new-kind");
-    const director = form.querySelector(".cl-new-director");
-    const cancel = form.querySelector(".cl-new-cancel");
+  /* New-collection is a real modal in #modal-root — the same host and pattern
+     app.js's own modals use (see showDiscordIdModal) — rather than an inline
+     form living permanently under the hero. Creating a collection is rare
+     enough that it should cost nothing when nobody is doing it, and a modal
+     also plants focus in the title field without any extra wiring. */
+  function showNewCollectionModal() {
+    const root = document.getElementById("modal-root");
+    if (!root) return;
+    root.innerHTML = `<div class="modal-backdrop" id="cl-new-backdrop"><div class="modal">
+      <div class="modal-head"><h2>New collection</h2>
+        <button class="modal-close" id="cl-new-close" type="button">×</button></div>
+      <form class="modal-body" id="cl-new-form">
+        <label><span>Title</span>
+          <input class="search-input" id="cl-new-title" type="text" required
+            maxlength="200" placeholder="Collection title" autocomplete="off">
+        </label>
+        <label><span>Kind</span>
+          <select class="search-input" id="cl-new-kind">
+            <option value="picked">Hand-picked</option>
+            <option value="director">Director</option>
+          </select>
+        </label>
+        <label id="cl-new-director-row" hidden><span>Director</span>
+          <input class="search-input" id="cl-new-director" type="text" maxlength="200"
+            placeholder="Defaults to the title" autocomplete="off">
+        </label>
+        <div class="setup-actions">
+          <span id="cl-new-message"></span>
+          <button class="btn btn-primary" type="submit">Create</button>
+        </div>
+      </form>
+    </div></div>`;
 
-    if (cancel) cancel.onclick = () => { form.hidden = true; form.reset(); };
+    const close = () => { root.innerHTML = ""; };
+    document.getElementById("cl-new-close").onclick = close;
+    document.getElementById("cl-new-backdrop").onclick = (e) => {
+      if (e.target.id === "cl-new-backdrop") close();
+    };
+
+    const kind = document.getElementById("cl-new-kind");
+    const directorRow = document.getElementById("cl-new-director-row");
     // A director collection needs its subject; a hand-picked one does not.
-    kind.onchange = () => { director.hidden = kind.value !== "director"; };
+    kind.onchange = () => { directorRow.hidden = kind.value !== "director"; };
 
-    form.onsubmit = async (e) => {
+    document.getElementById("cl-new-title").focus();
+
+    document.getElementById("cl-new-form").onsubmit = async (e) => {
       e.preventDefault();
-      const name = title.value.trim();
+      const name = document.getElementById("cl-new-title").value.trim();
       if (!name) return;
-      const submit = form.querySelector('button[type="submit"]');
-      submit.disabled = true;
+      const submit = e.target.querySelector('button[type="submit"]');
+      const message = document.getElementById("cl-new-message");
+      submit.disabled = true; submit.textContent = "Creating…";
       try {
+        const director = document.getElementById("cl-new-director").value.trim();
         const c = await api("/api/collections", {
           method: "POST",
           body: {
             title: name,
             kind: kind.value,
-            director_name: kind.value === "director" ? director.value.trim() : null,
+            director_name: kind.value === "director" ? director : null,
           },
         });
+        close();
         const added = c.sync && c.sync.added;
         FC.toast(added
           ? `Created "${c.title}" — ${added} film${added === 1 ? "" : "s"} from Plex, `
@@ -384,8 +397,8 @@
           : `Created "${c.title}" — it's a draft until you publish it`);
         location.hash = `#/collections/${encodeURIComponent(c.slug)}`;
       } catch (e2) {
-        submit.disabled = false;
-        if (e2.message !== "unauth") FC.toast(e2.message, true);
+        submit.disabled = false; submit.textContent = "Create";
+        message.textContent = e2.message;
       }
     };
   }
@@ -831,7 +844,6 @@
         const data = await api(`/api/collections${q}`);
         paintView("collections", indexPage(data.items || []), preserve);
         wireIndexMenu();
-        wireNewCollection();
         wirePreview();
       }
     } catch (e) {
