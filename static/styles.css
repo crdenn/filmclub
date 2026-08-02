@@ -1528,6 +1528,13 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   grid-template-columns: minmax(0, 41%) minmax(0, 1fr);
   gap: 2.2rem; align-items: start;
 }
+/* Alternate which side the still falls on, so a long page has a rhythm rather
+   than one hard column edge running all the way down it. Explicit grid
+   placement rather than row-reverse, so the source order stays image-then-text
+   for screen readers and for the mobile stack. */
+.cl-row:nth-child(even) { grid-template-columns: minmax(0, 1fr) minmax(0, 41%); }
+.cl-row:nth-child(even) .cl-still { grid-column: 2; grid-row: 1; }
+.cl-row:nth-child(even) .cl-panel { grid-column: 1; grid-row: 1; }
 .cl-still {
   aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
   background: var(--surface-sunk); box-shadow: var(--shadow);
@@ -1578,7 +1585,11 @@ select:focus-visible { outline: none; border-color: var(--accent); }
    undifferentiated stack. */
 @media (max-width: 860px) {
   .cl-rows { gap: 3.2rem; }
-  .cl-row { grid-template-columns: 1fr; gap: 1.1rem; }
+  .cl-row, .cl-row:nth-child(even) { grid-template-columns: 1fr; gap: 1.1rem; }
+  /* Undo the alternation: in a single column every row must be image-above-text,
+     or the even ones would put the writing first and read as a mistake. */
+  .cl-row:nth-child(even) .cl-still { grid-column: 1; grid-row: 1; }
+  .cl-row:nth-child(even) .cl-panel { grid-column: 1; grid-row: 2; }
   .cl-blurb, .cl-intro { max-width: none; }
   .cl-head { margin-bottom: 2.4rem; }
   .cl-foot { margin-top: 3rem; }
