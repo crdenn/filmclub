@@ -124,6 +124,31 @@ class CollectionResolutionTests(unittest.TestCase):
         self.assertEqual(entry["blurb"], "Written.")
 
 
+    def test_slugs_are_url_safe_and_unique(self):
+        self.assertEqual(coll.slugify("Films for a Rainy Sunday!"), "films-for-a-rainy-sunday")
+        self.assertEqual(coll.slugify("  ***  "), "collection")
+        self.assertEqual(coll.slugify("Kurosawa: 1950–1965"), "kurosawa-1950-1965")
+
+        first = coll.unique_slug(self.conn, "Night Drives")
+        coll.create_collection(self.conn, first, "Night Drives")
+        second = coll.unique_slug(self.conn, "Night Drives")
+        self.assertEqual(first, "night-drives")
+        self.assertEqual(second, "night-drives-2")
+
+    def test_readding_a_film_refreshes_metadata_without_reordering(self):
+        """Re-adding must not silently move a film to the end of the page."""
+        coll.upsert_entry(self.conn, self.collection_id, _meta(33, "Third"), position=2)
+        coll.upsert_entry(self.conn, self.collection_id, _meta(11, "On The Server", runtime=999))
+        order = [e["tmdb_id"] for e in coll.entries_for(self.conn, self.collection_id)]
+        self.assertEqual(order, [11, 22, 33])
+        first = coll.entries_for(self.conn, self.collection_id)[0]
+        self.assertEqual(first["runtime"], 999)
+
+    def test_a_newly_added_film_goes_to_the_end(self):
+        coll.upsert_entry(self.conn, self.collection_id, _meta(44, "Newest"))
+        order = [e["tmdb_id"] for e in coll.entries_for(self.conn, self.collection_id)]
+        self.assertEqual(order[-1], 44)
+
     def test_editing_a_blurb_stores_it_and_ungates_a_director_entry(self):
         db.execute(self.conn, "UPDATE collections SET kind = 'director' WHERE id = ?",
                    (self.collection_id,))

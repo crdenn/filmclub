@@ -931,6 +931,16 @@ async def api_collection(slug: str, member=Depends(auth.current_member)):
         conn.close()
 
 
+class CollectionCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    kind: Literal["picked", "director"] = "picked"
+    director_name: str | None = Field(default=None, max_length=200)
+
+
+class EntryCreate(BaseModel):
+    tmdb_id: int
+
+
 class CollectionPatch(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     intro: str | None = Field(default=None, max_length=20000)
@@ -940,6 +950,45 @@ class CollectionPatch(BaseModel):
 
 class EntryPatch(BaseModel):
     blurb: str = Field(default="", max_length=20000)
+
+
+@app.post("/api/collections")
+async def api_create_collection(body: CollectionCreate,
+                                admin=Depends(auth.require_admin)):
+    """Create a collection. New ones start unpublished so nothing half-written
+    reaches readers before the author has said it is ready."""
+    conn = db.connect()
+    try:
+        slug = curated.unique_slug(conn, body.title)
+        curated.create_collection(
+            conn, slug, body.title.strip(), kind=body.kind,
+            director_name=(body.director_name or "").strip() or None,
+            published=False,
+        )
+        return curated.get_by_slug(conn, slug)
+    finally:
+        conn.close()
+
+
+@app.post("/api/collections/{slug}/entries")
+async def api_add_collection_entry(slug: str, body: EntryCreate,
+                                   admin=Depends(auth.require_admin)):
+    """Add a film by TMDB id, snapshotting its metadata like `movies` does."""
+    conn = db.connect()
+    try:
+        collection = curated.get_by_slug(conn, slug)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        try:
+            meta = await tmdb.details(body.tmdb_id)
+        except Exception as e:  # noqa: BLE001 — a TMDB outage must read clearly
+            log.error("TMDB lookup failed for %s: %s", body.tmdb_id, e)
+            raise HTTPException(status_code=502,
+                                detail="Could not fetch film details from TMDB")
+        curated.upsert_entry(conn, collection["id"], meta)
+        return {"ok": True, "title": meta.get("title")}
+    finally:
+        conn.close()
 
 
 @app.patch("/api/collections/{slug}")

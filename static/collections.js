@@ -180,10 +180,66 @@
         </div>
       </a>`;
     }).join("");
+    const admin = isAdmin() ? `
+      <div class="cl-admin cl-admin-index">
+        <button class="cl-new-toggle" type="button">+ New collection</button>
+        <form class="cl-new" hidden>
+          <input class="cl-new-title" type="text" required maxlength="200"
+                 placeholder="Collection title" aria-label="Collection title">
+          <select class="cl-new-kind" aria-label="Collection kind">
+            <option value="picked">Hand-picked</option>
+            <option value="director">Director</option>
+          </select>
+          <input class="cl-new-director" type="text" maxlength="200" hidden
+                 placeholder="Director name" aria-label="Director name">
+          <button class="btn btn-primary" type="submit">Create</button>
+        </form>
+      </div>` : "";
+
     return `${indexHero(items)}
+      ${admin}
       ${items.length
         ? `<div class="cl-cards">${cards}</div>`
         : `<div class="empty">No collections yet.</div>`}`;
+  }
+
+  function wireNewCollection() {
+    const toggle = document.querySelector(".cl-new-toggle");
+    const form = document.querySelector(".cl-new");
+    if (!toggle || !form) return;
+    const title = form.querySelector(".cl-new-title");
+    const kind = form.querySelector(".cl-new-kind");
+    const director = form.querySelector(".cl-new-director");
+
+    toggle.onclick = () => {
+      form.hidden = !form.hidden;
+      if (!form.hidden) title.focus();
+    };
+    // A director collection needs its subject; a hand-picked one does not.
+    kind.onchange = () => { director.hidden = kind.value !== "director"; };
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const name = title.value.trim();
+      if (!name) return;
+      const submit = form.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      try {
+        const c = await api("/api/collections", {
+          method: "POST",
+          body: {
+            title: name,
+            kind: kind.value,
+            director_name: kind.value === "director" ? director.value.trim() : null,
+          },
+        });
+        FC.toast(`Created "${c.title}" — it's a draft until you publish it`);
+        location.hash = `#/collections/${encodeURIComponent(c.slug)}`;
+      } catch (e2) {
+        submit.disabled = false;
+        if (e2.message !== "unauth") FC.toast(e2.message, true);
+      }
+    };
   }
 
   function collectionPage(c) {
@@ -204,13 +260,112 @@
       ${entries.length
         ? `<div class="cl-rows">${entries.map(row).join("")}</div>`
         : `<div class="empty">Nothing to show here yet.</div>`}
+      ${isAdmin() ? `
+        <div class="cl-admin">
+          <button class="cl-add-toggle" type="button">+ Add a film</button>
+          <div class="cl-add" hidden>
+            <input class="cl-add-input" type="search" autocomplete="off"
+                   placeholder="Search TMDB by title…" aria-label="Search films to add">
+            <div class="cl-add-results"></div>
+          </div>
+        </div>` : ""}
       <div class="cl-foot">
         <a class="cl-back" href="#/collections">← All collections</a>
         ${isAdmin()
-          ? `<button class="cl-delete" data-slug="${esc(c.slug)}"
-               data-title="${esc(c.title)}">Delete collection</button>` : ""}
+          ? `<span class="cl-foot-admin">
+               <button class="cl-publish" data-slug="${esc(c.slug)}"
+                 data-published="${c.published ? "1" : "0"}">${
+                   c.published ? "Unpublish" : "Publish"}</button>
+               <button class="cl-delete" data-slug="${esc(c.slug)}"
+                 data-title="${esc(c.title)}">Delete collection</button>
+             </span>` : ""}
       </div>
     </article>`;
+  }
+
+  /* Add-a-film. Reuses the app's existing TMDB search endpoint rather than
+     introducing a second search path. Debounced, because it fires per keystroke
+     and TMDB is a third party. */
+  function wireAddFilm(slug) {
+    const toggle = document.querySelector(".cl-add-toggle");
+    const panel = document.querySelector(".cl-add");
+    if (!toggle || !panel) return;
+    const input = panel.querySelector(".cl-add-input");
+    const results = panel.querySelector(".cl-add-results");
+    let timer = null;
+    let seq = 0;
+
+    toggle.onclick = () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) input.focus();
+    };
+
+    input.oninput = () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (q.length < 2) { results.innerHTML = ""; return; }
+      timer = setTimeout(async () => {
+        // Responses can arrive out of order; only the newest query may paint.
+        const mine = ++seq;
+        results.innerHTML = `<div class="cl-add-hint">Searching…</div>`;
+        try {
+          const data = await api(`/api/tmdb/search?q=${encodeURIComponent(q)}`);
+          if (mine !== seq) return;
+          const items = data.results || [];
+          results.innerHTML = items.length
+            ? items.map((r) => `
+                <button class="cl-add-result" data-tmdb="${r.tmdb_id}">
+                  ${r.poster_url
+                    ? `<img src="${esc(r.poster_url)}" alt="" loading="lazy">`
+                    : `<span class="cl-add-noposter"></span>`}
+                  <span class="cl-add-meta">
+                    <span class="cl-add-title">${esc(r.title)}</span>
+                    <span class="cl-add-sub">${esc([r.year, r.director].filter(Boolean).join(" · "))}</span>
+                  </span>
+                </button>`).join("")
+            : `<div class="cl-add-hint">No matches.</div>`;
+          wireResults();
+        } catch (e) {
+          if (mine !== seq) return;
+          results.innerHTML = `<div class="cl-add-hint">${esc(e.message)}</div>`;
+        }
+      }, 300);
+    };
+
+    function wireResults() {
+      results.querySelectorAll(".cl-add-result").forEach((btn) => {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            const r = await api(`/api/collections/${encodeURIComponent(slug)}/entries`,
+              { method: "POST", body: { tmdb_id: Number(btn.dataset.tmdb) } });
+            FC.toast(`Added ${r.title || "film"}`);
+            renderCollections({ arg: slug, preserve: true });
+          } catch (e) {
+            btn.disabled = false;
+            if (e.message !== "unauth") FC.toast(e.message, true);
+          }
+        };
+      });
+    }
+  }
+
+  function wirePublish(slug) {
+    const btn = document.querySelector(".cl-publish");
+    if (!btn) return;
+    btn.onclick = async () => {
+      const publish = btn.dataset.published !== "1";
+      btn.disabled = true;
+      try {
+        await api(`/api/collections/${encodeURIComponent(slug)}`,
+          { method: "PATCH", body: { published: publish } });
+        FC.toast(publish ? "Published — readers can see this now" : "Unpublished");
+        renderCollections({ arg: slug, preserve: true });
+      } catch (e) {
+        btn.disabled = false;
+        if (e.message !== "unauth") FC.toast(e.message, true);
+      }
+    };
   }
 
   /* Click-to-edit. The page shows rendered markdown; clicking a block swaps it
@@ -314,9 +469,12 @@
         paintView("collections", collectionPage(c), preserve);
         wireAdminActions(c.slug);
         wireEditing(c.slug);
+        wireAddFilm(c.slug);
+        wirePublish(c.slug);
       } else {
         const data = await api("/api/collections");
         paintView("collections", indexPage(data.items || []), preserve);
+        wireNewCollection();
       }
     } catch (e) {
       if (e.message !== "unauth") paintError("collections", e, preserve);

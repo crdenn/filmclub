@@ -11,6 +11,7 @@ deliberately tri-state (see ``resolve_entry``): a film that is genuinely absent
 from the server and a server we simply cannot reach right now are different
 situations and must not be rendered the same way.
 """
+import re
 import sqlite3
 
 from . import db, plex
@@ -159,12 +160,23 @@ def upsert_entry(conn: sqlite3.Connection, collection_id: int, meta: dict,
     blurb unless one is supplied.
     """
     if position is None:
-        row = db.query_one(
+        # An entry that already exists keeps where the author put it: re-adding
+        # a film to refresh its metadata must not silently reorder the page.
+        existing = db.query_one(
             conn,
-            "SELECT COALESCE(MAX(position), -1) + 1 AS next FROM collection_entries WHERE collection_id = ?",
-            (collection_id,),
+            "SELECT position FROM collection_entries WHERE collection_id = ? AND tmdb_id = ?",
+            (collection_id, meta["tmdb_id"]),
         )
-        position = row["next"] if row else 0
+        if existing:
+            position = existing["position"]
+        else:
+            row = db.query_one(
+                conn,
+                "SELECT COALESCE(MAX(position), -1) + 1 AS next"
+                "  FROM collection_entries WHERE collection_id = ?",
+                (collection_id,),
+            )
+            position = row["next"] if row else 0
 
     cur = db.execute(
         conn,
@@ -247,6 +259,25 @@ def delete_collection(conn: sqlite3.Connection, slug: str) -> bool:
     """Delete a collection and, by foreign-key cascade, all of its entries."""
     cur = db.execute(conn, "DELETE FROM collections WHERE slug = ?", (slug,))
     return cur.rowcount > 0
+
+
+_SLUG_STRIP = re.compile(r"[^a-z0-9]+")
+
+
+def slugify(title: str) -> str:
+    """Turn a title into a URL key. Falls back to 'collection' if nothing survives."""
+    slug = _SLUG_STRIP.sub("-", str(title or "").lower()).strip("-")
+    return slug[:60].strip("-") or "collection"
+
+
+def unique_slug(conn: sqlite3.Connection, title: str) -> str:
+    """A slug not already taken, suffixing -2, -3 … as needed."""
+    base = slugify(title)
+    slug, n = base, 1
+    while db.query_one(conn, "SELECT 1 FROM collections WHERE slug = ?", (slug,)):
+        n += 1
+        slug = f"{base}-{n}"
+    return slug
 
 
 def create_collection(conn: sqlite3.Connection, slug: str, title: str, *,
