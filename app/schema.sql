@@ -110,6 +110,11 @@ CREATE TABLE IF NOT EXISTS collections (
     director_name    TEXT,
     director_tmdb_id INTEGER,
     director_intro   TEXT,                -- markdown prose about the director
+    -- Snapshotted TMDB scaffolding, so a public page load never hits TMDB. The
+    -- filmography is not stored: it is only needed by the admin coverage view.
+    director_portrait_url TEXT,
+    director_born    TEXT,                -- ISO date
+    director_died    TEXT,
     published     INTEGER NOT NULL DEFAULT 0,  -- 0 = admin-only draft
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))

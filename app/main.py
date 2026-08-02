@@ -921,11 +921,21 @@ async def api_collections(member=Depends(auth.current_member)):
 async def api_collection(slug: str, member=Depends(auth.current_member)):
     conn = db.connect()
     try:
-        detail = curated.collection_detail(
-            conn, slug, is_admin=bool(member.get("is_admin"))
-        )
+        is_admin = bool(member.get("is_admin"))
+        detail = curated.collection_detail(conn, slug, is_admin=is_admin)
         if not detail:
             raise HTTPException(status_code=404, detail="Collection not found")
+
+        # The filmography is only ever needed for the author's coverage view, so
+        # a reader's page load never waits on TMDB. Failure degrades to no
+        # coverage panel rather than breaking the page.
+        if is_admin and detail["kind"] == "director" and detail.get("director_tmdb_id"):
+            try:
+                films = await tmdb.directed_films(detail["director_tmdb_id"])
+                detail["coverage"] = curated.coverage(detail["entries"], films)
+            except Exception as e:  # noqa: BLE001 — optional enrichment
+                log.warning("TMDB filmography for %s failed: %s", slug, e)
+                detail["coverage"] = None
         return detail
     finally:
         conn.close()
@@ -960,11 +970,22 @@ async def api_create_collection(body: CollectionCreate,
     conn = db.connect()
     try:
         slug = curated.unique_slug(conn, body.title)
+        director_name = (body.director_name or "").strip() or None
         curated.create_collection(
             conn, slug, body.title.strip(), kind=body.kind,
-            director_name=(body.director_name or "").strip() or None,
-            published=False,
+            director_name=director_name, published=False,
         )
+        # Resolve the director once, at creation, so the page has its factual
+        # scaffolding without the author entering dates or finding a portrait.
+        # A failure here leaves a usable collection with no scaffolding.
+        if body.kind == "director" and director_name:
+            try:
+                found = await tmdb.find_director(director_name)
+                if found:
+                    person = await tmdb.person(found["tmdb_id"])
+                    curated.set_director_scaffold(conn, slug, person)
+            except Exception as e:  # noqa: BLE001 — optional enrichment
+                log.warning("Director lookup for %r failed: %s", director_name, e)
         return curated.get_by_slug(conn, slug)
     finally:
         conn.close()

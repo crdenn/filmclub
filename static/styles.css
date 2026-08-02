@@ -1691,3 +1691,46 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .cl-new { flex-direction: column; }
   .cl-new-title { flex: 1 1 auto; }
 }
+
+/* --- director scaffolding --- */
+.cl-dir { display: flex; align-items: center; gap: 1.1rem; margin-top: 1.6rem; }
+.cl-dir-portrait {
+  width: 76px; height: 76px; border-radius: 50%; object-fit: cover;
+  flex: 0 0 auto; background: var(--surface-sunk); box-shadow: var(--shadow-sm);
+}
+.cl-dir-portrait-empty { background: var(--grad-poster); }
+.cl-dir-name { font-family: var(--font-serif); font-size: 1.2rem; font-weight: 600; }
+.cl-dir-dates { color: var(--text-faint); font-size: .85rem; margin-top: .15rem;
+  font-variant-numeric: tabular-nums; }
+
+/* --- coverage (admin) ---
+ * The author's to-do list, not a reading surface: plain app typography, dense
+ * rows, and no serif. */
+.cl-cov { margin: 3.5rem 0 0; padding-top: 1.6rem; border-top: 1px solid var(--line); }
+.cl-cov-head {
+  display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap;
+  font-size: .95rem; font-weight: 600; margin-bottom: .8rem;
+}
+.cl-cov-count { color: var(--text-faint); font-size: .82rem; font-weight: 400; }
+.cl-cov-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+.cl-cov-row {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  padding: .4rem .5rem; border-radius: 8px; font-size: .88rem;
+}
+.cl-cov-row:hover { background: var(--bg-raise); }
+.cl-cov-year { color: var(--text-faint); font-variant-numeric: tabular-nums; min-width: 3ch; }
+.cl-cov-title { flex: 1 1 auto; min-width: 0; }
+.cl-cov-untouched .cl-cov-title { color: var(--text-dim); }
+.cl-cov-state { font-size: .75rem; color: var(--text-faint); }
+.cl-cov-written .cl-cov-state { color: var(--good-text); }
+.cl-cov-blank .cl-cov-state { color: var(--warn-text); }
+.cl-cov-plex, .cl-cov-noplex { font-size: .72rem; }
+.cl-cov-plex { color: var(--text-faint); }
+.cl-cov-noplex { color: var(--text-faint); opacity: .7; }
+.cl-cov-add {
+  background: none; border: 1px solid var(--line); border-radius: 7px;
+  color: var(--text-dim); font-size: .78rem; padding: .18rem .6rem;
+}
+.cl-cov-add:hover { color: var(--accent-text); border-color: var(--accent); }
+.cl-cov-add:disabled { opacity: .5; cursor: default; }
+.cl-cov-sub { color: var(--text-faint); font-size: .82rem; margin-top: .9rem; }

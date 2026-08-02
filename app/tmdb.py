@@ -110,6 +110,79 @@ async def search(query: str, limit: int = 6) -> list[dict]:
     return out
 
 
+def _profile(path: str | None, size: str = "w300") -> str | None:
+    return f"{config.TMDB_IMAGE_BASE}/{size}{path}" if path else None
+
+
+async def find_director(name: str) -> dict | None:
+    """Resolve a director's name to a TMDB person.
+
+    Prefers someone TMDB classifies in the directing department; a plain name
+    search otherwise returns actors first for anyone who has both careers.
+    """
+    name = (name or "").strip()
+    if not name or not config.TMDB_API_KEY:
+        return None
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(f"{BASE}/search/person", params=_params({"query": name}))
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+    if not results:
+        return None
+    directing = [r for r in results if r.get("known_for_department") == "Directing"]
+    chosen = (directing or results)[0]
+    return {
+        "tmdb_id": chosen["id"],
+        "name": chosen.get("name") or name,
+        "portrait_url": _profile(chosen.get("profile_path")),
+    }
+
+
+async def person(person_id: int) -> dict:
+    """Biographical scaffolding for a director: portrait and dates."""
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(f"{BASE}/person/{person_id}", params=_params())
+        resp.raise_for_status()
+        d = resp.json()
+    return {
+        "tmdb_id": d["id"],
+        "name": d.get("name"),
+        "portrait_url": _profile(d.get("profile_path")),
+        "born": d.get("birthday"),
+        "died": d.get("deathday"),
+        "place_of_birth": d.get("place_of_birth"),
+    }
+
+
+async def directed_films(person_id: int) -> list[dict]:
+    """Every film TMDB credits this person with directing, newest first.
+
+    Deduplicated by film: TMDB sometimes lists a person twice on one title
+    (say, as both director and writer-director on differing credit rows).
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(f"{BASE}/person/{person_id}/movie_credits", params=_params())
+        resp.raise_for_status()
+        crew = resp.json().get("crew", [])
+
+    seen: set[int] = set()
+    films = []
+    for entry in crew:
+        if entry.get("job") != "Director" or entry["id"] in seen:
+            continue
+        seen.add(entry["id"])
+        year = (entry.get("release_date") or "")[:4]
+        films.append({
+            "tmdb_id": entry["id"],
+            "title": entry.get("title") or entry.get("original_title") or "Untitled",
+            "year": int(year) if year.isdigit() else None,
+            "poster_url": _poster(entry.get("poster_path"), "w185"),
+        })
+    # Undated entries are usually unreleased; they belong at the end, not the top.
+    films.sort(key=lambda f: (f["year"] is None, -(f["year"] or 0), f["title"]))
+    return films
+
+
 async def details(tmdb_id: int) -> dict:
     """Full metadata snapshot, including credits and US content rating."""
     async with httpx.AsyncClient(timeout=8.0) as client:

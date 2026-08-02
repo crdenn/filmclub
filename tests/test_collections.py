@@ -209,5 +209,73 @@ class CollectionResolutionTests(unittest.TestCase):
         self.assertFalse(coll.delete_collection(self.conn, "test-set"))
 
 
+class DirectorCoverageTests(unittest.TestCase):
+    """The coverage view is the author's to-do list for a director page."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="filmclub-coverage-")
+        self._old_db_path = config.DB_PATH
+        config.DB_PATH = Path(self.tmp.name) / "filmclub.db"
+        db.init_db()
+        self.conn = db.connect()
+        self._old_library = dict(plex._library)
+        plex._library.update(tmdb={101}, imdb=set(), rk_tmdb={101: "9"}, rk_imdb={},
+                             rt_tmdb={}, rt_imdb={}, machine_id="m", ok=True)
+
+        self.cid = coll.create_collection(self.conn, "kurosawa", "Kurosawa",
+                                          kind="director", director_name="Akira Kurosawa")
+        coll.upsert_entry(self.conn, self.cid, _meta(101, "Ikiru"), blurb="Written.")
+        coll.upsert_entry(self.conn, self.cid, _meta(102, "Ran"), blurb="")
+
+        self.filmography = [
+            {"tmdb_id": 101, "title": "Ikiru", "year": 1952},
+            {"tmdb_id": 102, "title": "Ran", "year": 1985},
+            {"tmdb_id": 103, "title": "Dersu Uzala", "year": 1975},
+        ]
+
+    def tearDown(self):
+        self.conn.close()
+        plex._library.clear()
+        plex._library.update(self._old_library)
+        config.DB_PATH = self._old_db_path
+        self.tmp.cleanup()
+
+    def test_each_film_is_classified_and_counted(self):
+        cov = coll.coverage(coll.entries_for(self.conn, self.cid), self.filmography)
+        self.assertEqual([f["state"] for f in cov["films"]],
+                         ["written", "blank", "untouched"])
+        self.assertEqual((cov["written"], cov["blank"], cov["total"]), (1, 1, 3))
+
+    def test_plex_presence_is_flagged_per_film(self):
+        cov = coll.coverage(coll.entries_for(self.conn, self.cid), self.filmography)
+        by_id = {f["tmdb_id"]: f for f in cov["films"]}
+        self.assertTrue(by_id[101]["on_plex"])
+        self.assertFalse(by_id[103]["on_plex"])
+
+    def test_unknown_library_reports_none_not_false(self):
+        """A cold cache must not claim every film is missing from the server."""
+        plex._library["ok"] = False
+        cov = coll.coverage(coll.entries_for(self.conn, self.cid), self.filmography)
+        self.assertTrue(all(f["on_plex"] is None for f in cov["films"]))
+
+    def test_entries_tmdb_does_not_credit_are_kept_as_extra(self):
+        coll.upsert_entry(self.conn, self.cid, _meta(999, "Co-directed Oddity"),
+                          blurb="Deliberate.")
+        cov = coll.coverage(coll.entries_for(self.conn, self.cid), self.filmography)
+        self.assertEqual([e["title"] for e in cov["extra"]], ["Co-directed Oddity"])
+        self.assertNotIn(999, [f["tmdb_id"] for f in cov["films"]])
+
+    def test_scaffold_snapshot_is_stored(self):
+        coll.set_director_scaffold(self.conn, "kurosawa", {
+            "tmdb_id": 5026, "name": "Akira Kurosawa",
+            "portrait_url": "https://image.tmdb.org/t/p/w300/x.jpg",
+            "born": "1910-03-23", "died": "1998-09-06",
+        })
+        c = coll.get_by_slug(self.conn, "kurosawa")
+        self.assertEqual(c["director_tmdb_id"], 5026)
+        self.assertEqual(c["director_born"], "1910-03-23")
+        self.assertEqual(c["director_died"], "1998-09-06")
+
+
 if __name__ == "__main__":
     unittest.main()

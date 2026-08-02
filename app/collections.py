@@ -210,6 +210,66 @@ def upsert_entry(conn: sqlite3.Connection, collection_id: int, meta: dict,
     return cur.lastrowid
 
 
+def set_director_scaffold(conn: sqlite3.Connection, slug: str, person: dict) -> bool:
+    """Snapshot a director's TMDB scaffolding onto the collection."""
+    cur = db.execute(
+        conn,
+        """UPDATE collections
+              SET director_tmdb_id = ?, director_name = COALESCE(?, director_name),
+                  director_portrait_url = ?, director_born = ?, director_died = ?,
+                  updated_at = datetime('now')
+            WHERE slug = ?""",
+        (person.get("tmdb_id"), person.get("name"), person.get("portrait_url"),
+         person.get("born"), person.get("died"), slug),
+    )
+    return cur.rowcount > 0
+
+
+def coverage(entries: list[dict], filmography: list[dict]) -> dict:
+    """Merge a director's full filmography with what the author has written.
+
+    This is the to-do list: every film TMDB credits them with, marked as
+    written about, added but still blank, or not yet touched. Films on the Plex
+    server are flagged so the author can tell what is actually watchable now
+    from what would need finding first.
+
+    Entries the author added that TMDB does not attribute to this director
+    (a segment, a co-directed film, a disputed credit) are kept in `extra`
+    rather than dropped — the author put them there deliberately.
+    """
+    by_tmdb = {e["tmdb_id"]: e for e in entries}
+    plex_ok = plex.library_ready()
+
+    films, written, added = [], 0, 0
+    for film in filmography:
+        entry = by_tmdb.pop(film["tmdb_id"], None)
+        if entry is None:
+            state = "untouched"
+        elif entry["has_blurb"]:
+            state = "written"
+            written += 1
+        else:
+            state = "blank"
+            added += 1
+        films.append({
+            **film,
+            "state": state,
+            "entry_id": entry["id"] if entry else None,
+            # None, not False, when we have no library snapshot: unknown is not
+            # the same as absent, and the UI should not claim otherwise.
+            "on_plex": (plex.library_match(film["tmdb_id"], None) is not None)
+                       if plex_ok else None,
+        })
+
+    return {
+        "films": films,
+        "extra": list(by_tmdb.values()),
+        "total": len(filmography),
+        "written": written,
+        "blank": added,
+    }
+
+
 def update_collection(conn: sqlite3.Connection, slug: str, fields: dict) -> bool:
     """Patch authored fields on a collection. Unknown keys are ignored."""
     allowed = ("title", "intro", "director_intro", "director_name", "published")

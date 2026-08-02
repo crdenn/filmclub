@@ -242,24 +242,92 @@
     };
   }
 
+  const YEAR = (iso) => (String(iso || "").match(/^(\d{4})/) || [])[1] || "";
+
+  /* A director's factual scaffolding, from TMDB: portrait and dates. Having
+     these on the page is what frees the author's prose from having to be a
+     summary of facts. */
+  function directorHeader(c) {
+    if (c.kind !== "director") return "";
+    const born = YEAR(c.director_born);
+    const died = YEAR(c.director_died);
+    const dates = born ? (died ? `${born}–${died}` : `b. ${born}`) : "";
+    return `<div class="cl-dir">
+      ${c.director_portrait_url
+        ? `<img class="cl-dir-portrait" src="${esc(c.director_portrait_url)}" alt="">`
+        : `<div class="cl-dir-portrait cl-dir-portrait-empty"></div>`}
+      <div class="cl-dir-facts">
+        <div class="cl-dir-name">${esc(c.director_name || "")}</div>
+        ${dates ? `<div class="cl-dir-dates">${esc(dates)}</div>` : ""}
+      </div>
+    </div>`;
+  }
+
+  /* The author's coverage view: the full filmography as a to-do list. Admin
+     only — it is the reason a director page can grow gradually without ever
+     looking half-finished to a reader. */
+  function coveragePanel(c) {
+    if (!isAdmin() || c.kind !== "director") return "";
+    const cov = c.coverage;
+    if (!cov) {
+      return `<div class="cl-cov"><div class="cl-cov-head">Filmography</div>
+        <div class="cl-add-hint">${c.director_tmdb_id
+          ? "Couldn't reach TMDB for the filmography."
+          : "No TMDB director linked, so there's no filmography to track."}</div></div>`;
+    }
+    const rows = cov.films.map((f) => {
+      const label = f.state === "written" ? "Written"
+        : f.state === "blank" ? "Added, not written" : "";
+      // on_plex is null when the library cache is cold — say nothing rather
+      // than imply the film is missing.
+      const plexTag = f.on_plex === true ? `<span class="cl-cov-plex">On Plex</span>`
+        : f.on_plex === false ? `<span class="cl-cov-noplex">Not on Plex</span>` : "";
+      const action = f.state === "untouched"
+        ? `<button class="cl-cov-add" data-tmdb="${f.tmdb_id}">Add</button>` : "";
+      return `<li class="cl-cov-row cl-cov-${f.state}">
+        <span class="cl-cov-year">${esc(f.year || "—")}</span>
+        <span class="cl-cov-title">${esc(f.title)}</span>
+        ${label ? `<span class="cl-cov-state">${label}</span>` : ""}
+        ${plexTag}${action}
+      </li>`;
+    }).join("");
+    const extra = cov.extra.length
+      ? `<div class="cl-cov-sub">Also in this collection, not credited to them on TMDB:
+           ${cov.extra.map((e) => esc(e.title)).join(", ")}</div>`
+      : "";
+    return `<div class="cl-cov">
+      <div class="cl-cov-head">Filmography
+        <span class="cl-cov-count">${cov.written} of ${cov.total} written${
+          cov.blank ? ` · ${cov.blank} awaiting a blurb` : ""}</span>
+      </div>
+      <ul class="cl-cov-list">${rows}</ul>
+      ${extra}
+    </div>`;
+  }
+
   function collectionPage(c) {
     const entries = c.entries || [];
     // A draft is only ever served to an admin, so this badge is not a leak.
     const draft = c.published ? "" : `<span class="cl-draft">Draft</span>`;
-    const director = c.kind === "director" && c.director_name
-      ? `<div class="cl-eyebrow">${esc(c.director_name)}</div>` : "";
+    const eyebrow = c.kind === "director" && c.director_name
+      ? `<div class="cl-eyebrow">Director</div>` : "";
 
     return `<article class="cl-page">
       <header class="cl-head">
-        ${director}
+        ${eyebrow}
         <h1 class="cl-page-title">${esc(c.title)}</h1>
         ${draft}
+        ${directorHeader(c)}
+        ${c.kind === "director"
+          ? `<div class="cl-intro" ${editable(c.director_intro, "director_intro",
+              "Write about the director…")}>${markdown(c.director_intro)}</div>` : ""}
         <div class="cl-intro" ${editable(c.intro, "intro",
           "Introduce this collection…")}>${markdown(c.intro)}</div>
       </header>
       ${entries.length
         ? `<div class="cl-rows">${entries.map(row).join("")}</div>`
         : `<div class="empty">Nothing to show here yet.</div>`}
+      ${coveragePanel(c)}
       ${isAdmin() ? `
         <div class="cl-admin">
           <button class="cl-add-toggle" type="button">+ Add a film</button>
@@ -350,6 +418,27 @@
     }
   }
 
+  /* One-click add straight from the coverage list — the common case is
+     "I've decided to write about this one", not a fresh search. */
+  function wireCoverage(slug) {
+    document.querySelectorAll(".cl-cov-add").forEach((btn) => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        btn.textContent = "Adding…";
+        try {
+          const r = await api(`/api/collections/${encodeURIComponent(slug)}/entries`,
+            { method: "POST", body: { tmdb_id: Number(btn.dataset.tmdb) } });
+          FC.toast(`Added ${r.title || "film"}`);
+          renderCollections({ arg: slug, preserve: true });
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Add";
+          if (e.message !== "unauth") FC.toast(e.message, true);
+        }
+      };
+    });
+  }
+
   function wirePublish(slug) {
     const btn = document.querySelector(".cl-publish");
     if (!btn) return;
@@ -394,11 +483,16 @@
             if (state === "error") FC.toast("Couldn't save — your text is still here", true);
           },
           onSave: async (text) => {
-            const path = key === "intro"
-              ? `/api/collections/${encodeURIComponent(slug)}`
-              : `/api/collections/${encodeURIComponent(slug)}/entries/${key.split(":")[1]}`;
-            const body = key === "intro" ? { intro: text } : { blurb: text };
-            await api(path, { method: "PATCH", body });
+            // "entry:<id>" patches one film's blurb; anything else names a
+            // field on the collection itself (intro, director_intro).
+            const isEntry = key.startsWith("entry:");
+            const path = isEntry
+              ? `/api/collections/${encodeURIComponent(slug)}/entries/${key.slice(6)}`
+              : `/api/collections/${encodeURIComponent(slug)}`;
+            await api(path, {
+              method: "PATCH",
+              body: isEntry ? { blurb: text } : { [key]: text },
+            });
             el.dataset.md = text;
           },
         });
@@ -471,6 +565,7 @@
         wireEditing(c.slug);
         wireAddFilm(c.slug);
         wirePublish(c.slug);
+        wireCoverage(c.slug);
       } else {
         const data = await api("/api/collections");
         paintView("collections", indexPage(data.items || []), preserve);

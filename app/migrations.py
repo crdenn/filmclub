@@ -207,6 +207,16 @@ def _m10_collections(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m11_director_scaffold(conn: sqlite3.Connection) -> None:
+    # Snapshotted TMDB scaffolding for a director collection, so a public page
+    # load never depends on TMDB. The filmography is deliberately not stored:
+    # it is only needed for the admin coverage view and is fetched on demand.
+    _add_column_if_missing(conn, "collections", "director_portrait_url",
+                           "director_portrait_url TEXT")
+    _add_column_if_missing(conn, "collections", "director_born", "director_born TEXT")
+    _add_column_if_missing(conn, "collections", "director_died", "director_died TEXT")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -219,6 +229,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (8, "movie-pitch", _m8_movie_pitch),
     (9, "member-discord-id", _m9_member_discord_id),
     (10, "collections", _m10_collections),
+    (11, "director-scaffold", _m11_director_scaffold),
 ]
 
 

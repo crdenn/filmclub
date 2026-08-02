@@ -80,7 +80,8 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (7, "member-theme"),
                                 (8, "movie-pitch"),
                                 (9, "member-discord-id"),
-                                (10, "collections")])
+                                (10, "collections"),
+                                (11, "director-scaffold")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
@@ -89,6 +90,7 @@ class MigrationRunnerTests(unittest.TestCase):
         self.assertIn("theme", _columns(self.db_path, "members"))
         self.assertIn("slug", _columns(self.db_path, "collections"))
         self.assertIn("tmdb_id", _columns(self.db_path, "collection_entries"))
+        self.assertIn("director_portrait_url", _columns(self.db_path, "collections"))
 
     def test_upgrades_old_shaped_db_and_preserves_data(self):
         self._make_old_shaped_db()
