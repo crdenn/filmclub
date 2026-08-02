@@ -127,28 +127,51 @@
   }
 
   // ---------- pages ----------
+  /* The index is a normal app page: same sans typography, same card idiom as
+     the backlog and watched grids. The serif reading treatment belongs to a
+     collection itself, so that opening one feels like stepping into something
+     different rather than more of the same. */
+  function indexHero(items) {
+    const cover = (items.find((c) => c.cover_url) || {}).cover_url;
+    const films = items.reduce((n, c) => n + (c.entry_count || 0), 0);
+    const sub = items.length
+      ? `${items.length} ${items.length === 1 ? "collection" : "collections"}`
+        + `${films ? ` · ${films} ${films === 1 ? "film" : "films"}` : ""}`
+      : "Nothing here yet";
+    return `<div class="cl-hero">
+      ${cover ? `<img class="cl-hero-img" src="${esc(cover)}" alt="">` : ""}
+      <div class="cl-hero-scrim"></div>
+      <div class="cl-hero-inner">
+        <div class="cl-hero-eyebrow">Film Club</div>
+        <h1 class="cl-hero-title">Collections</h1>
+        <div class="cl-hero-sub">${esc(sub)}</div>
+      </div>
+    </div>`;
+  }
+
   function indexPage(items) {
-    if (!items.length) {
-      return `<div class="cl-index">
-        <h1 class="cl-index-title">Collections</h1>
-        <div class="empty">No collections yet.</div>
-      </div>`;
-    }
     const cards = items.map((c) => {
       const draft = c.published ? "" : `<span class="cl-draft">Draft</span>`;
       const kind = c.kind === "director" && c.director_name
         ? `<div class="cl-card-kind">Director · ${esc(c.director_name)}</div>` : "";
+      const count = c.entry_count
+        ? `${c.entry_count} ${c.entry_count === 1 ? "film" : "films"}` : "";
       return `<a class="cl-card" href="#/collections/${encodeURIComponent(c.slug)}">
-        ${kind}
-        <h2 class="cl-card-title">${esc(c.title)}</h2>
-        <div class="cl-card-intro">${markdown(excerpt(c.intro))}</div>
-        ${draft}
+        <div class="cl-card-thumb">
+          ${c.cover_url ? `<img src="${esc(c.cover_url)}" alt="" loading="lazy">` : ""}
+        </div>
+        <div class="cl-card-body">
+          ${kind}
+          <h2 class="cl-card-title">${esc(c.title)}${draft}</h2>
+          <div class="cl-card-intro">${markdown(excerpt(c.intro, 190))}</div>
+          ${count ? `<div class="cl-card-count">${esc(count)}</div>` : ""}
+        </div>
       </a>`;
     }).join("");
-    return `<div class="cl-index">
-      <h1 class="cl-index-title">Collections</h1>
-      <div class="cl-cards">${cards}</div>
-    </div>`;
+    return `${indexHero(items)}
+      ${items.length
+        ? `<div class="cl-cards">${cards}</div>`
+        : `<div class="empty">No collections yet.</div>`}`;
   }
 
   function collectionPage(c) {

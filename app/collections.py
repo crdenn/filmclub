@@ -69,11 +69,25 @@ def resolve_entry(entry: dict) -> dict:
 
 
 def list_collections(conn: sqlite3.Connection, *, include_unpublished: bool = False) -> list[dict]:
-    """All collections, newest first. Drafts are admin-only."""
-    sql = "SELECT * FROM collections"
+    """All collections, newest first. Drafts are admin-only.
+
+    Each row carries the artwork of its first entry, so the index can show a
+    cover without a second round trip. ``entry_count`` counts stored entries,
+    not the publicly visible subset — the index is a table of contents, not a
+    claim about what a reader will see.
+    """
+    sql = """
+        SELECT c.*,
+               (SELECT e.still_url FROM collection_entries e
+                     WHERE e.collection_id = c.id AND e.still_url IS NOT NULL
+                     ORDER BY e.position, e.id LIMIT 1) AS cover_url,
+               (SELECT COUNT(*) FROM collection_entries e2
+                     WHERE e2.collection_id = c.id) AS entry_count
+          FROM collections c
+    """
     if not include_unpublished:
-        sql += " WHERE published = 1"
-    sql += " ORDER BY created_at DESC, id DESC"
+        sql += " WHERE c.published = 1"
+    sql += " ORDER BY c.created_at DESC, c.id DESC"
     return [collection_base(r) for r in db.query_all(conn, sql)]
 
 

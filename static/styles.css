@@ -1438,35 +1438,63 @@ select:focus-visible { outline: none; border-color: var(--accent); }
  * Colour comes entirely from the existing tokens, so these pages follow the
  * light/dark theme like the rest of the app.
  */
-.cl-index, .cl-page { max-width: var(--maxw-read); margin: 0 auto; }
+.cl-page { max-width: var(--maxw-read); margin: 0 auto; }
 
-/* --- index --- */
-.cl-index-title {
-  font-family: var(--font-serif); font-weight: 600;
-  font-size: clamp(1.9rem, 1.3rem + 2vw, 2.6rem);
-  letter-spacing: -.015em; margin: .6rem 0 1.8rem;
+/* --- index ---
+ * Ordinary app typography on purpose: this is a browsing page like the backlog,
+ * and the serif reading treatment is reserved for a collection itself, so
+ * opening one feels like stepping into a different kind of page.
+ */
+.cl-hero {
+  position: relative; border-radius: 18px; overflow: hidden;
+  margin-bottom: 1.6rem; background: var(--bg-raise); box-shadow: var(--shadow);
 }
-.cl-cards { display: grid; gap: 1rem; }
+.cl-hero-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center 35%; opacity: .55;
+}
+/* Same two-axis scrim as the This-week hero, so artwork never fights the text. */
+.cl-hero-scrim { position: absolute; inset: 0; background:
+  linear-gradient(90deg, color-mix(in srgb, var(--bg) 97%, transparent) 30%, var(--scrim-mid) 70%, var(--scrim-soft)),
+  linear-gradient(0deg, color-mix(in srgb, var(--bg) 94%, transparent), color-mix(in srgb, var(--bg) 5%, transparent) 60%); }
+.cl-hero-inner {
+  position: relative; display: flex; flex-direction: column; justify-content: flex-end;
+  padding: 2.4rem; min-height: min(340px, 46vh);
+}
+.cl-hero-eyebrow {
+  text-transform: uppercase; letter-spacing: .16em; font-size: .72rem;
+  font-weight: 700; color: var(--accent-text); margin-bottom: .55rem;
+}
+.cl-hero-title { margin: 0; font-size: 2.4rem; line-height: 1.08; letter-spacing: -.02em; }
+.cl-hero-sub { color: var(--text-dim); font-size: .92rem; margin-top: .5rem; }
+
+.cl-cards { display: grid; gap: 1.4rem 1.15rem; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 .cl-card {
-  display: block; padding: 1.4rem 1.5rem; border-radius: var(--radius);
-  background: var(--bg-raise); border: 1px solid var(--line); color: inherit;
+  display: flex; flex-direction: column; min-width: 0; color: inherit;
+  border-radius: var(--radius); overflow: hidden;
+  background: var(--bg-raise); border: 1px solid var(--line);
+  transition: transform .12s ease;
 }
-.cl-card:hover { background: var(--bg-raise-2); text-decoration: none; }
+.cl-card:hover { transform: translateY(-3px); text-decoration: none; }
+.cl-card-thumb { aspect-ratio: 16/9; background: var(--grad-poster); }
+.cl-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cl-card-body { padding: 1rem 1.1rem 1.2rem; }
 .cl-card-kind {
-  font-size: .72rem; text-transform: uppercase; letter-spacing: .13em;
-  color: var(--accent-text); margin-bottom: .5rem;
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .13em;
+  color: var(--accent-text); margin-bottom: .4rem;
 }
 .cl-card-title {
-  font-family: var(--font-serif); font-weight: 600; font-size: 1.5rem;
-  margin: 0 0 .5rem; letter-spacing: -.01em;
+  font-size: 1.05rem; font-weight: 600; margin: 0 0 .4rem; line-height: 1.25;
+  display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
 }
-.cl-card-intro { font-family: var(--font-serif); color: var(--text-dim); }
+.cl-card-intro { color: var(--text-dim); font-size: .88rem; line-height: 1.5; }
 .cl-card-intro p { margin: 0; }
+.cl-card-count { color: var(--text-faint); font-size: .8rem; margin-top: .6rem; }
 .cl-draft {
-  display: inline-block; margin-top: .8rem; padding: .15rem .5rem;
-  border-radius: 6px; background: var(--warn); color: var(--on-warn);
-  font-size: .72rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em;
+  display: inline-block; padding: .1rem .45rem; border-radius: 6px;
+  background: var(--warn); color: var(--on-warn);
+  font-size: .66rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; vertical-align: middle;
 }
 
 /* --- collection page head --- */
@@ -1552,6 +1580,14 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .cl-blurb, .cl-intro { max-width: none; }
   .cl-head { margin-bottom: 2.4rem; }
   .cl-foot { margin-top: 3rem; }
+
+  /* The hero keeps its shape but stops eating the whole screen; the scrim
+     flips to bottom-up, since there is no longer a left column to protect. */
+  .cl-hero-inner { padding: 1.3rem; min-height: min(240px, 40vh); }
+  .cl-hero-title { font-size: 1.8rem; }
+  .cl-hero-scrim { background:
+    linear-gradient(0deg, color-mix(in srgb, var(--bg) 96%, transparent) 25%, var(--scrim-mid)); }
+  .cl-cards { grid-template-columns: 1fr; gap: 1.1rem; }
 }
 
 /* Admin-only controls on a collection page. Deliberately quiet: this is a
