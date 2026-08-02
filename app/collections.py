@@ -109,19 +109,27 @@ def entries_for(conn: sqlite3.Connection, collection_id: int) -> list[dict]:
     return [_entry_base(r) for r in rows]
 
 
-def collection_detail(conn: sqlite3.Connection, slug: str, *, is_admin: bool) -> dict | None:
+def collection_detail(conn: sqlite3.Connection, slug: str, *, is_admin: bool,
+                      preview: bool = False) -> dict | None:
     """Assemble one collection page.
 
     The public view shows only entries that both resolve on Plex (or cannot be
     checked) and, for director collections, carry a blurb — so the page grows as
     the author writes and never looks half-finished. The admin view keeps
     everything and reports what was withheld and why.
+
+    ``preview`` lets an admin see exactly the public view. It gates the content
+    but not the access: an unpublished draft is still viewable, because the
+    author previewing their own draft is the entire point. Deriving the preview
+    here rather than hiding things in the client means what is shown is the same
+    payload a reader would actually receive.
     """
     collection = get_by_slug(conn, slug)
     if collection is None:
         return None
     if not collection["published"] and not is_admin:
         return None
+    is_admin = is_admin and not preview
 
     resolved = [resolve_entry(e) for e in entries_for(conn, collection["id"])]
 

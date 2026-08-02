@@ -124,6 +124,28 @@ class CollectionResolutionTests(unittest.TestCase):
         self.assertEqual(entry["blurb"], "Written.")
 
 
+    def test_preview_gives_an_admin_exactly_the_reader_view(self):
+        admin = coll.collection_detail(self.conn, "test-set", is_admin=True)
+        preview = coll.collection_detail(self.conn, "test-set", is_admin=True, preview=True)
+        public = coll.collection_detail(self.conn, "test-set", is_admin=False)
+
+        self.assertEqual([e["title"] for e in preview["entries"]],
+                         [e["title"] for e in public["entries"]])
+        self.assertEqual(len(admin["entries"]), 2)      # admin still sees the broken one
+        self.assertNotIn("unresolved", preview)
+        self.assertNotIn("unwritten", preview)
+
+    def test_preview_still_shows_an_unpublished_draft_to_its_author(self):
+        """Preview gates the content, not the access — previewing a draft is
+        the whole point of previewing."""
+        db.execute(self.conn, "UPDATE collections SET published = 0 WHERE id = ?",
+                   (self.collection_id,))
+        preview = coll.collection_detail(self.conn, "test-set", is_admin=True, preview=True)
+        self.assertIsNotNone(preview)
+        self.assertFalse(preview["published"])
+        # A genuine reader still gets nothing.
+        self.assertIsNone(coll.collection_detail(self.conn, "test-set", is_admin=False))
+
     def test_slugs_are_url_safe_and_unique(self):
         self.assertEqual(coll.slugify("Films for a Rainy Sunday!"), "films-for-a-rainy-sunday")
         self.assertEqual(coll.slugify("  ***  "), "collection")

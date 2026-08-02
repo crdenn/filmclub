@@ -904,13 +904,19 @@ async def api_watched(member=Depends(auth.current_member)):
 
 
 @app.get("/api/collections")
-async def api_collections(member=Depends(auth.current_member)):
-    """Collection index. Drafts are visible only to an admin."""
+async def api_collections(preview: bool = False,
+                          member=Depends(auth.current_member)):
+    """Collection index. Drafts are visible only to an admin.
+
+    ``preview`` lets an admin request the reader's view of the index, drafts
+    included in the hiding.
+    """
     conn = db.connect()
     try:
         return {
             "items": curated.list_collections(
-                conn, include_unpublished=bool(member.get("is_admin"))
+                conn,
+                include_unpublished=bool(member.get("is_admin")) and not preview,
             )
         }
     finally:
@@ -918,18 +924,21 @@ async def api_collections(member=Depends(auth.current_member)):
 
 
 @app.get("/api/collections/{slug}")
-async def api_collection(slug: str, member=Depends(auth.current_member)):
+async def api_collection(slug: str, preview: bool = False,
+                         member=Depends(auth.current_member)):
     conn = db.connect()
     try:
         is_admin = bool(member.get("is_admin"))
-        detail = curated.collection_detail(conn, slug, is_admin=is_admin)
+        detail = curated.collection_detail(conn, slug, is_admin=is_admin,
+                                           preview=preview)
         if not detail:
             raise HTTPException(status_code=404, detail="Collection not found")
 
         # The filmography is only ever needed for the author's coverage view, so
         # a reader's page load never waits on TMDB. Failure degrades to no
         # coverage panel rather than breaking the page.
-        if is_admin and detail["kind"] == "director" and detail.get("director_tmdb_id"):
+        if (is_admin and not preview
+                and detail["kind"] == "director" and detail.get("director_tmdb_id")):
             try:
                 films = await tmdb.directed_films(detail["director_tmdb_id"])
                 detail["coverage"] = curated.coverage(detail["entries"], films)

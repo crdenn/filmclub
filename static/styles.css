@@ -1734,3 +1734,26 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .cl-cov-add:hover { color: var(--accent-text); border-color: var(--accent); }
 .cl-cov-add:disabled { opacity: .5; cursor: default; }
 .cl-cov-sub { color: var(--text-faint); font-size: .82rem; margin-top: .9rem; }
+
+/* --- preview mode ---
+ * Fixed to the viewport on purpose: in preview every other admin control is
+ * gone, so this bar is the only way back out. */
+.cl-preview-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.1rem; z-index: 60;
+  display: flex; align-items: center; gap: 1rem;
+  background: var(--bg-raise-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: .5rem .7rem .5rem 1.1rem;
+  box-shadow: var(--shadow); font-size: .85rem; color: var(--text-dim);
+  max-width: calc(100vw - 2rem);
+}
+.cl-preview-exit {
+  background: var(--accent); color: var(--on-accent); border: none;
+  border-radius: 999px; padding: .3rem .85rem; font-size: .8rem; font-weight: 600;
+}
+.cl-preview-exit:hover { background: color-mix(in srgb, var(--accent) 92%, var(--hover-mix)); }
+.cl-preview-enter {
+  background: none; border: none; padding: 0; color: var(--text-faint);
+  font-size: .82rem; text-decoration: underline; text-underline-offset: 2px;
+}
+.cl-preview-enter:hover { color: var(--accent-text); }
+.cl-admin-index .cl-preview-enter { margin-left: 1rem; }

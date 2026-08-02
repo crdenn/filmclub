@@ -99,7 +99,46 @@
        target="_blank" rel="noopener">▶ Watch on Plex</a>`;
   }
 
-  const isAdmin = () => !!(FC.me && FC.me.is_admin);
+  /* Preview mode: an admin looking at their own pages exactly as a reader
+     would. The flag is checked by isAdmin(), so every admin affordance —
+     editing, adding, deleting, publishing, coverage — disappears from a single
+     decision rather than each one remembering to hide itself.
+
+     The content gating is done by the server (?preview=1), not here: hiding
+     things client-side would only approximate what a reader receives, and the
+     point of a preview is to be certain. */
+  const PREVIEW_KEY = "fc_cl_preview";
+  const previewing = () => {
+    try { return localStorage.getItem(PREVIEW_KEY) === "1"; } catch (e) { return false; }
+  };
+  function setPreview(on) {
+    try { localStorage.setItem(PREVIEW_KEY, on ? "1" : "0"); } catch (e) { /* private mode */ }
+  }
+
+  const reallyAdmin = () => !!(FC.me && FC.me.is_admin);
+  const isAdmin = () => reallyAdmin() && !previewing();
+
+  /* Shown only to a real admin, and deliberately fixed to the viewport: in
+     preview there is nothing else on the page that could turn it off. */
+  function previewBar() {
+    if (!reallyAdmin() || !previewing()) return "";
+    return `<div class="cl-preview-bar">
+      <span>Preview — this is what everyone else sees</span>
+      <button class="cl-preview-exit" type="button">Exit preview</button>
+    </div>`;
+  }
+
+  function previewToggle() {
+    if (!isAdmin()) return "";
+    return `<button class="cl-preview-enter" type="button">Preview as reader</button>`;
+  }
+
+  function wirePreview() {
+    const exit = document.querySelector(".cl-preview-exit");
+    if (exit) exit.onclick = () => { setPreview(false); renderCurrent(); };
+    const enter = document.querySelector(".cl-preview-enter");
+    if (enter) enter.onclick = () => { setPreview(true); renderCurrent(); };
+  }
 
   /* Marks a rendered-markdown block as editable in place. The raw source is
      parked in a data attribute so clicking can swap the rendered HTML for the
@@ -183,6 +222,7 @@
     const admin = isAdmin() ? `
       <div class="cl-admin cl-admin-index">
         <button class="cl-new-toggle" type="button">+ New collection</button>
+        ${previewToggle()}
         <form class="cl-new" hidden>
           <input class="cl-new-title" type="text" required maxlength="200"
                  placeholder="Collection title" aria-label="Collection title">
@@ -196,7 +236,8 @@
         </form>
       </div>` : "";
 
-    return `${indexHero(items)}
+    return `${previewBar()}
+      ${indexHero(items)}
       ${admin}
       ${items.length
         ? `<div class="cl-cards">${cards}</div>`
@@ -312,7 +353,8 @@
     const eyebrow = c.kind === "director" && c.director_name
       ? `<div class="cl-eyebrow">Director</div>` : "";
 
-    return `<article class="cl-page">
+    return `${previewBar()}
+    <article class="cl-page">
       <header class="cl-head">
         ${eyebrow}
         <h1 class="cl-page-title">${esc(c.title)}</h1>
@@ -341,6 +383,7 @@
         <a class="cl-back" href="#/collections">← All collections</a>
         ${isAdmin()
           ? `<span class="cl-foot-admin">
+               ${previewToggle()}
                <button class="cl-publish" data-slug="${esc(c.slug)}"
                  data-published="${c.published ? "1" : "0"}">${
                    c.published ? "Unpublish" : "Publish"}</button>
@@ -555,21 +598,32 @@
   }
 
   // ---------- routing ----------
+  // Re-render whatever route is currently showing (used by the preview toggle,
+  // which changes what the server should send rather than just the styling).
+  let currentArg = null;
+  function renderCurrent() {
+    renderCollections({ arg: currentArg, preserve: true });
+  }
+
   async function renderCollections({ arg, preserve = false }) {
+    currentArg = arg || null;
+    const q = previewing() ? "?preview=1" : "";
     if (!preserve) paintView("collections", `<div class="cl-loading"></div>`);
     try {
       if (arg) {
-        const c = await api(`/api/collections/${encodeURIComponent(arg)}`);
+        const c = await api(`/api/collections/${encodeURIComponent(arg)}${q}`);
         paintView("collections", collectionPage(c), preserve);
         wireAdminActions(c.slug);
         wireEditing(c.slug);
         wireAddFilm(c.slug);
         wirePublish(c.slug);
         wireCoverage(c.slug);
+        wirePreview();
       } else {
-        const data = await api("/api/collections");
+        const data = await api(`/api/collections${q}`);
         paintView("collections", indexPage(data.items || []), preserve);
         wireNewCollection();
+        wirePreview();
       }
     } catch (e) {
       if (e.message !== "unauth") paintError("collections", e, preserve);
