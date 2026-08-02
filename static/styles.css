@@ -18,6 +18,33 @@
   --radius: 12px;
   --maxw: 1240px;
   font-synthesis: none;
+
+  /* Reading measure for curated collections. Prose wants a narrower column
+     than the poster grids, which run to --maxw. */
+  --maxw-read: 940px;
+  --font-serif: "Source Serif 4", Iowan Old Style, Charter, Georgia, serif;
+}
+
+/* Source Serif 4 (Adobe, SIL OFL 1.1 — see static/fonts/OFL.md). Self-hosted
+   and subset to Latin: no external request, and nothing to fetch from a third
+   party on a page a dozen people load through the tunnel.
+   The roman keeps its optical-size axis, which is the reason to use this family
+   at all — the same font serves an 11px caption and a 44px title with the right
+   letterforms for each. Italic is pinned at a text optical size because it only
+   ever appears inside body prose, and the axis roughly doubled the file. */
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/static/fonts/source-serif-4-latin.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/static/fonts/source-serif-4-latin-italic.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
 }
 
 /* THEME:BEGIN — colour literals are allowed only inside this range. */
@@ -1399,4 +1426,130 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   /* --- modal fills more of the small screen --- */
   .modal-backdrop { padding: 3vh .7rem; }
   .search-results { max-height: 60vh; }
+}
+
+/* ---------- curated collections ----------
+ *
+ * A reading surface, not a browsing one. Everywhere else in the app is a poster
+ * grid; here the artwork is subordinate to the writing, so each film is a wide
+ * row — still on the left, text panel on the right — and the whole page is one
+ * column you scroll top to bottom.
+ *
+ * Colour comes entirely from the existing tokens, so these pages follow the
+ * light/dark theme like the rest of the app.
+ */
+.cl-index, .cl-page { max-width: var(--maxw-read); margin: 0 auto; }
+
+/* --- index --- */
+.cl-index-title {
+  font-family: var(--font-serif); font-weight: 600;
+  font-size: clamp(1.9rem, 1.3rem + 2vw, 2.6rem);
+  letter-spacing: -.015em; margin: .6rem 0 1.8rem;
+}
+.cl-cards { display: grid; gap: 1rem; }
+.cl-card {
+  display: block; padding: 1.4rem 1.5rem; border-radius: var(--radius);
+  background: var(--bg-raise); border: 1px solid var(--line); color: inherit;
+}
+.cl-card:hover { background: var(--bg-raise-2); text-decoration: none; }
+.cl-card-kind {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .13em;
+  color: var(--accent-text); margin-bottom: .5rem;
+}
+.cl-card-title {
+  font-family: var(--font-serif); font-weight: 600; font-size: 1.5rem;
+  margin: 0 0 .5rem; letter-spacing: -.01em;
+}
+.cl-card-intro { font-family: var(--font-serif); color: var(--text-dim); }
+.cl-card-intro p { margin: 0; }
+.cl-draft {
+  display: inline-block; margin-top: .8rem; padding: .15rem .5rem;
+  border-radius: 6px; background: var(--warn); color: var(--on-warn);
+  font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+/* --- collection page head --- */
+.cl-head { margin: .5rem 0 3.5rem; }
+.cl-eyebrow {
+  font-size: .78rem; text-transform: uppercase; letter-spacing: .15em;
+  color: var(--accent-text); margin-bottom: .7rem;
+}
+.cl-page-title {
+  font-family: var(--font-serif); font-weight: 600;
+  /* Optical sizing does the real work here: the same file that sets the 1rem
+     blurb sets this, with letterforms cut for display size. */
+  font-size: clamp(2.2rem, 1.4rem + 3.4vw, 3.4rem);
+  line-height: 1.08; letter-spacing: -.02em; margin: 0;
+}
+.cl-intro {
+  font-family: var(--font-serif); font-size: 1.15rem; line-height: 1.65;
+  color: var(--text-dim); margin-top: 1.4rem; max-width: 62ch;
+}
+.cl-intro p { margin: 0 0 1em; }
+.cl-intro p:last-child { margin-bottom: 0; }
+
+/* --- rows --- */
+.cl-rows { display: grid; gap: 4.5rem; }
+.cl-row {
+  display: grid;
+  /* The still is large enough to carry the row but never the main event; the
+     text column keeps the larger share. */
+  grid-template-columns: minmax(0, 41%) minmax(0, 1fr);
+  gap: 2.2rem; align-items: start;
+}
+.cl-still {
+  aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
+  background: var(--surface-sunk); box-shadow: var(--shadow);
+}
+.cl-still img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cl-still-empty { background: var(--grad-poster); box-shadow: none; }
+
+.cl-panel { padding-top: .2rem; }
+.cl-director {
+  font-size: .74rem; text-transform: uppercase; letter-spacing: .15em;
+  color: var(--accent-text); margin-bottom: .55rem;
+}
+.cl-title {
+  font-family: var(--font-serif); font-weight: 600;
+  font-size: clamp(1.7rem, 1.2rem + 1.6vw, 2.3rem);
+  line-height: 1.12; letter-spacing: -.015em; margin: 0;
+}
+.cl-meta {
+  font-size: .84rem; color: var(--text-faint); margin-top: .5rem;
+  font-variant-numeric: tabular-nums;
+}
+.cl-blurb {
+  font-family: var(--font-serif); font-size: 1.05rem; line-height: 1.62;
+  color: var(--text); margin-top: 1.1rem; max-width: 58ch;
+}
+.cl-blurb p { margin: 0 0 1em; }
+.cl-blurb p:last-child { margin-bottom: 0; }
+.cl-blurb a { text-decoration: underline; text-underline-offset: 2px; }
+
+.cl-watch {
+  display: inline-flex; align-items: center; gap: .45rem; margin-top: 1.3rem;
+  background: var(--brand-plex); color: var(--on-brand-plex);
+  font-weight: 700; font-size: .88rem; padding: .55rem 1.1rem;
+  border-radius: 10px; box-shadow: var(--shadow-sm);
+}
+.cl-watch:hover {
+  background: color-mix(in srgb, var(--brand-plex) 92%, var(--hover-mix));
+  text-decoration: none;
+}
+
+.cl-foot { margin: 4.5rem 0 1rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
+.cl-back { color: var(--text-dim); font-size: .9rem; }
+
+.cl-loading { min-height: 60vh; }
+
+/* Phone: the row collapses to image-above-text. The gap between rows has to
+   stay clearly larger than the gap inside one, or the page reads as an
+   undifferentiated stack. */
+@media (max-width: 860px) {
+  .cl-rows { gap: 3.2rem; }
+  .cl-row { grid-template-columns: 1fr; gap: 1.1rem; }
+  .cl-blurb, .cl-intro { max-width: none; }
+  .cl-head { margin-bottom: 2.4rem; }
+  .cl-foot { margin-top: 3rem; }
 }

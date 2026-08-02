@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from . import (accounts, auth, backups, colors, config, db, discord, events,
                logsafe, migrations, plex, plex_ratings, seerr, service, stats, tmdb)
+from . import collections as curated
 from . import settings as app_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -897,6 +898,34 @@ async def api_watched(member=Depends(auth.current_member)):
         conn.close()
 
 
+@app.get("/api/collections")
+async def api_collections(member=Depends(auth.current_member)):
+    """Collection index. Drafts are visible only to an admin."""
+    conn = db.connect()
+    try:
+        return {
+            "items": curated.list_collections(
+                conn, include_unpublished=bool(member.get("is_admin"))
+            )
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/collections/{slug}")
+async def api_collection(slug: str, member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        detail = curated.collection_detail(
+            conn, slug, is_admin=bool(member.get("is_admin"))
+        )
+        if not detail:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        return detail
+    finally:
+        conn.close()
+
+
 @app.get("/api/movies/{movie_id}")
 async def api_movie(movie_id: int, member=Depends(auth.current_member)):
     conn = db.connect()
@@ -1376,7 +1405,12 @@ async def api_admin_diagnostics(admin=Depends(auth.require_admin)):
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-_ASSET_RE = re.compile(r'(/static/(?:app\.js|styles\.css))\?v=[^"\']*')
+_ASSET_RE = re.compile(r'(/static/(?:app\.js|collections\.js|styles\.css))\?v=[^"\']*')
+
+# Every script/stylesheet the shell references. All of them feed one shared
+# hash, so a change to any single file busts the cache for the whole set and
+# they can never be served as a mismatched mixture of versions.
+_VERSIONED_ASSETS = ("app.js", "collections.js", "styles.css")
 
 
 def _asset_version() -> str:
@@ -1388,7 +1422,7 @@ def _asset_version() -> str:
     themselves makes a stale cache impossible.
     """
     digest = hashlib.sha256()
-    for name in ("app.js", "styles.css"):
+    for name in _VERSIONED_ASSETS:
         try:
             digest.update((STATIC_DIR / name).read_bytes())
         except OSError:  # missing asset: fall back to the literal markup
