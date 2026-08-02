@@ -146,6 +146,15 @@ class CollectionResolutionTests(unittest.TestCase):
         # A genuine reader still gets nothing.
         self.assertIsNone(coll.collection_detail(self.conn, "test-set", is_admin=False))
 
+    def test_all_lowercase_titles_are_capitalised_but_deliberate_casing_is_kept(self):
+        self.assertEqual(coll.smart_title("david cronenberg"), "David Cronenberg")
+        self.assertEqual(coll.smart_title("night drives"), "Night Drives")
+        # Anything already carrying an uppercase letter is left exactly alone.
+        self.assertEqual(coll.smart_title("eXistenZ"), "eXistenZ")
+        self.assertEqual(coll.smart_title("JFK"), "JFK")
+        self.assertEqual(coll.smart_title("Night Drives"), "Night Drives")
+        self.assertEqual(coll.smart_title(""), "")
+
     def test_slugs_are_url_safe_and_unique(self):
         self.assertEqual(coll.slugify("Films for a Rainy Sunday!"), "films-for-a-rainy-sunday")
         self.assertEqual(coll.slugify("  ***  "), "collection")

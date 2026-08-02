@@ -28,10 +28,11 @@
 /* Source Serif 4 (Adobe, SIL OFL 1.1 — see static/fonts/OFL.md). Self-hosted
    and subset to Latin: no external request, and nothing to fetch from a third
    party on a page a dozen people load through the tunnel.
-   The roman keeps its optical-size axis, which is the reason to use this family
-   at all — the same font serves an 11px caption and a 44px title with the right
-   letterforms for each. Italic is pinned at a text optical size because it only
-   ever appears inside body prose, and the axis roughly doubled the file. */
+
+   Both faces are pinned at a text optical size (56KB the pair). The variable
+   optical-size axis was worth carrying while the serif also set display-size
+   titles; now that structure is sans and the serif is reserved for body prose,
+   it would have been 39KB of range this app never renders. */
 @font-face {
   font-family: "Source Serif 4";
   src: url("/static/fonts/source-serif-4-latin.woff2") format("woff2");
@@ -1503,16 +1504,17 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   font-size: .78rem; text-transform: uppercase; letter-spacing: .15em;
   color: var(--accent-text); margin-bottom: .7rem;
 }
+/* Structure is sans, prose is serif. The serif is reserved strictly for the
+   author's writing, so the thing that looks special on the page is the thing
+   that was actually written rather than the furniture around it. */
 .cl-page-title {
-  font-family: var(--font-serif); font-weight: 600;
-  /* Optical sizing does the real work here: the same file that sets the 1rem
-     blurb sets this, with letterforms cut for display size. */
-  font-size: clamp(2.2rem, 1.4rem + 3.4vw, 3.4rem);
-  line-height: 1.08; letter-spacing: -.02em; margin: 0;
+  font-weight: 700;
+  font-size: clamp(2.1rem, 1.4rem + 3.2vw, 3.2rem);
+  line-height: 1.05; letter-spacing: -.03em; margin: 0;
 }
 .cl-intro {
-  font-family: var(--font-serif); font-size: 1.15rem; line-height: 1.65;
-  color: var(--text-dim); margin-top: 1.4rem; max-width: 62ch;
+  font-family: var(--font-serif); font-size: 1.18rem; line-height: 1.68;
+  color: var(--text); margin-top: 1.4rem; max-width: 60ch;
 }
 .cl-intro p { margin: 0 0 1em; }
 .cl-intro p:last-child { margin-bottom: 0; }
@@ -1539,17 +1541,17 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   color: var(--accent-text); margin-bottom: .55rem;
 }
 .cl-title {
-  font-family: var(--font-serif); font-weight: 600;
-  font-size: clamp(1.7rem, 1.2rem + 1.6vw, 2.3rem);
-  line-height: 1.12; letter-spacing: -.015em; margin: 0;
+  font-weight: 600;
+  font-size: clamp(1.5rem, 1.1rem + 1.3vw, 2rem);
+  line-height: 1.15; letter-spacing: -.022em; margin: 0;
 }
 .cl-meta {
   font-size: .84rem; color: var(--text-faint); margin-top: .5rem;
   font-variant-numeric: tabular-nums;
 }
 .cl-blurb {
-  font-family: var(--font-serif); font-size: 1.05rem; line-height: 1.62;
-  color: var(--text); margin-top: 1.1rem; max-width: 58ch;
+  font-family: var(--font-serif); font-size: 1.08rem; line-height: 1.66;
+  color: var(--text); margin-top: .9rem; max-width: 56ch;
 }
 .cl-blurb p { margin: 0 0 1em; }
 .cl-blurb p:last-child { margin-bottom: 0; }
@@ -1699,9 +1701,15 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   flex: 0 0 auto; background: var(--surface-sunk); box-shadow: var(--shadow-sm);
 }
 .cl-dir-portrait-empty { background: var(--grad-poster); }
-.cl-dir-name { font-family: var(--font-serif); font-size: 1.2rem; font-weight: 600; }
-.cl-dir-dates { color: var(--text-faint); font-size: .85rem; margin-top: .15rem;
+.cl-dir-facts { color: var(--text-dim); font-size: .9rem;
   font-variant-numeric: tabular-nums; }
+
+/* Author-only label above an authored block. Sans and quiet, so it reads as a
+   note about the page rather than part of it. */
+.cl-prose-label {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--text-faint); margin: 1.8rem 0 .5rem;
+}
 
 /* --- coverage (admin) ---
  * The author's to-do list, not a reading surface: plain app typography, dense

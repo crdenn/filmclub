@@ -1065,13 +1065,14 @@ async def api_create_collection(body: CollectionCreate,
     reaches readers before the author has said it is ready."""
     conn = db.connect()
     try:
-        slug = curated.unique_slug(conn, body.title)
+        title = curated.smart_title(body.title)
+        slug = curated.unique_slug(conn, title)
         # A director collection is almost always titled after its subject, so an
         # empty name field means "the title" rather than "no director".
         director_name = ((body.director_name or "").strip()
-                         or (body.title.strip() if body.kind == "director" else ""))
+                         or (title if body.kind == "director" else ""))
         curated.create_collection(
-            conn, slug, body.title.strip(), kind=body.kind,
+            conn, slug, title, kind=body.kind,
             director_name=director_name or None, published=False,
         )
         # Resolve the director once, at creation, so the page has its factual

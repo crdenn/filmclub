@@ -298,15 +298,24 @@
     const born = YEAR(c.director_born);
     const died = YEAR(c.director_died);
     const dates = born ? (died ? `${born}–${died}` : `b. ${born}`) : "";
+    // The name is already the page title; repeating it beside the portrait was
+    // just the same words twice. The portrait carries the facts instead.
+    const n = c.entry_count || 0;
+    const films = n ? `${n} film${n === 1 ? "" : "s"}` : "";
+    const facts = [dates, films].filter(Boolean).join(" · ");
     return `<div class="cl-dir">
       ${c.director_portrait_url
         ? `<img class="cl-dir-portrait" src="${esc(c.director_portrait_url)}" alt="">`
         : `<div class="cl-dir-portrait cl-dir-portrait-empty"></div>`}
-      <div class="cl-dir-facts">
-        <div class="cl-dir-name">${esc(c.director_name || "")}</div>
-        ${dates ? `<div class="cl-dir-dates">${esc(dates)}</div>` : ""}
-      </div>
+      ${facts ? `<div class="cl-dir-facts">${esc(facts)}</div>` : ""}
     </div>`;
+  }
+
+  /* A small sans label above an authored block, for the author only. Two empty
+     serif placeholders stacked together are indistinguishable; a label says
+     which is which without intruding on the reading view once written. */
+  function proseLabel(text) {
+    return isAdmin() ? `<div class="cl-prose-label">${esc(text)}</div>` : "";
   }
 
   /* The author's coverage view: the full filmography as a to-do list. Admin
@@ -365,9 +374,11 @@
         <h1 class="cl-page-title">${esc(c.title)}</h1>
         ${draft}
         ${directorHeader(c)}
-        ${c.kind === "director"
-          ? `<div class="cl-intro" ${editable(c.director_intro, "director_intro",
-              "Write about the director…")}>${markdown(c.director_intro)}</div>` : ""}
+        ${c.kind === "director" ? `
+          ${proseLabel("On the director")}
+          <div class="cl-intro" ${editable(c.director_intro, "director_intro",
+            "Write about the director…")}>${markdown(c.director_intro)}</div>` : ""}
+        ${c.kind === "director" ? proseLabel("On this collection") : ""}
         <div class="cl-intro" ${editable(c.intro, "intro",
           "Introduce this collection…")}>${markdown(c.intro)}</div>
       </header>

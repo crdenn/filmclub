@@ -329,6 +329,20 @@ def delete_collection(conn: sqlite3.Connection, slug: str) -> bool:
     return cur.rowcount > 0
 
 
+def smart_title(text: str) -> str:
+    """Capitalise a title that was typed entirely in lower case.
+
+    Titles are shown large and are the first thing on the page, where "david
+    cronenberg" reads as a bug rather than a style. Anything containing an
+    uppercase letter is left exactly as typed, so deliberate casing — eXistenZ,
+    JFK, a lowercase choice made on purpose — survives.
+    """
+    text = (text or "").strip()
+    if not text or any(c.isupper() for c in text):
+        return text
+    return " ".join(w[:1].upper() + w[1:] if w else w for w in text.split(" "))
+
+
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
 
