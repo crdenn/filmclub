@@ -406,17 +406,23 @@
     return `${previewBar()}
     <article class="cl-page">
       <header class="cl-head">
-        ${eyebrow}
-        <h1 class="cl-page-title">${esc(c.title)}</h1>
-        ${draft}
+        <div class="cl-head-top">
+          <div class="cl-head-title">
+            ${eyebrow}
+            <h1 class="cl-page-title">${esc(c.title)}</h1>
+            ${draft}
+          </div>
+          <div class="cl-head-summary">
+            ${c.kind === "director" ? proseLabel("On this collection") : ""}
+            <div class="cl-intro" ${editable(c.intro, "intro",
+              "Introduce this collection…")}>${markdown(c.intro)}</div>
+          </div>
+        </div>
         ${directorHeader(c)}
         ${c.kind === "director" ? `
           ${proseLabel("On the director")}
           <div class="cl-intro" ${editable(c.director_intro, "director_intro",
             "Write about the director…")}>${markdown(c.director_intro)}</div>` : ""}
-        ${c.kind === "director" ? proseLabel("On this collection") : ""}
-        <div class="cl-intro" ${editable(c.intro, "intro",
-          "Introduce this collection…")}>${markdown(c.intro)}</div>
       </header>
       ${entries.length
         ? `<div class="cl-rows">${entries.map(row).join("")}</div>`

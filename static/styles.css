@@ -1500,6 +1500,18 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
 /* --- collection page head --- */
 .cl-head { margin: .5rem 0 3.5rem; }
+
+/* Title on the left, the collection's own summary on the right, both starting
+   at the same y. An even 1fr/1fr split (rather than sizing the title column to
+   its content) is what keeps a long title wrapping onto a second line instead
+   of pushing into the summary's half — the boundary is fixed regardless of how
+   long the title text is. */
+.cl-head-top {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem 3.2rem; align-items: start;
+}
+.cl-head-summary .cl-intro { margin-top: 0; max-width: none; }
+
 .cl-eyebrow {
   font-size: .78rem; text-transform: uppercase; letter-spacing: .15em;
   color: var(--accent-text); margin-bottom: .7rem;
@@ -1637,6 +1649,10 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .cl-row:nth-child(even) .cl-panel { grid-column: 1; grid-row: 2; }
   .cl-blurb, .cl-intro { max-width: none; }
   .cl-head { margin-bottom: 2.4rem; }
+  /* No side-by-side columns to top-align at this width: stack title above
+     summary and give the summary back its top spacing. */
+  .cl-head-top { grid-template-columns: 1fr; gap: 0; }
+  .cl-head-summary .cl-intro { margin-top: 1.4rem; }
   .cl-foot { margin-top: 3rem; }
 
   /* The hero keeps its shape but stops eating the whole screen; the scrim
