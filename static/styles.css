@@ -1521,20 +1521,34 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
 /* --- rows --- */
 .cl-rows { display: grid; gap: 4.5rem; }
+/* The stills alternate sides, and their inner edges all land on one vertical
+   line down the middle of the page.
+
+   That line is why the split is exactly 50/50. With any other ratio the two
+   inner edges cannot meet: at 41% the left still would end at 41% and the
+   right still would begin at 59%, two different lines. Only half puts both at
+   the same x.
+
+   The separation between image and text is therefore padding on the text side
+   rather than a grid gap — a gap would sit *between* the columns and push the
+   two inner edges apart again by its own width. */
 .cl-row {
   display: grid;
-  /* The still is large enough to carry the row but never the main event; the
-     text column keeps the larger share. */
-  grid-template-columns: minmax(0, 41%) minmax(0, 1fr);
-  gap: 2.2rem; align-items: start;
+  grid-template-columns: 50% minmax(0, 1fr);
+  gap: 0; align-items: start;
 }
+.cl-panel { padding-left: 2.2rem; }
+
 /* Alternate which side the still falls on, so a long page has a rhythm rather
    than one hard column edge running all the way down it. Explicit grid
    placement rather than row-reverse, so the source order stays image-then-text
    for screen readers and for the mobile stack. */
-.cl-row:nth-child(even) { grid-template-columns: minmax(0, 1fr) minmax(0, 41%); }
+.cl-row:nth-child(even) { grid-template-columns: minmax(0, 1fr) 50%; }
 .cl-row:nth-child(even) .cl-still { grid-column: 2; grid-row: 1; }
-.cl-row:nth-child(even) .cl-panel { grid-column: 1; grid-row: 1; }
+.cl-row:nth-child(even) .cl-panel {
+  grid-column: 1; grid-row: 1;
+  padding-left: 0; padding-right: 2.2rem;
+}
 .cl-still {
   aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
   background: var(--surface-sunk); box-shadow: var(--shadow);
@@ -1594,9 +1608,11 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 @media (max-width: 860px) {
   .cl-rows { gap: 3.2rem; }
   .cl-row, .cl-row:nth-child(even) { grid-template-columns: 1fr; gap: 1.1rem; }
-  /* One column: nothing to sit against, so the panel is full width and flush
-     left on every row. */
-  .cl-panel, .cl-row:nth-child(even) .cl-panel { max-width: none; margin-left: 0; }
+  /* One column: nothing to sit against and no centre line to hold, so the panel
+     is full width, flush left, and the separation goes back to the grid gap. */
+  .cl-panel, .cl-row:nth-child(even) .cl-panel {
+    max-width: none; margin-left: 0; padding-left: 0; padding-right: 0;
+  }
   /* Undo the alternation: in a single column every row must be image-above-text,
      or the even ones would put the writing first and read as a mistake. */
   .cl-row:nth-child(even) .cl-still { grid-column: 1; grid-row: 1; }
