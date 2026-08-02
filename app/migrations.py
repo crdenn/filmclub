@@ -164,6 +164,49 @@ def _m9_member_discord_id(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "members", "discord_user_id", "discord_user_id TEXT")
 
 
+def _m10_collections(conn: sqlite3.Connection) -> None:
+    # Curated collections. Purely additive: no existing table is touched, so an
+    # existing database gains two empty tables and behaves exactly as before.
+    # Entries are keyed on tmdb_id, never a Plex ratingKey — see schema.sql.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS collections (
+               id            INTEGER PRIMARY KEY AUTOINCREMENT,
+               slug          TEXT UNIQUE NOT NULL,
+               title         TEXT NOT NULL,
+               kind          TEXT NOT NULL DEFAULT 'picked',
+               intro         TEXT,
+               director_name    TEXT,
+               director_tmdb_id INTEGER,
+               director_intro   TEXT,
+               published     INTEGER NOT NULL DEFAULT 0,
+               created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+               updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+           )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS collection_entries (
+               id            INTEGER PRIMARY KEY AUTOINCREMENT,
+               collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+               tmdb_id       INTEGER NOT NULL,
+               imdb_id       TEXT,
+               title         TEXT NOT NULL,
+               year          INTEGER,
+               runtime       INTEGER,
+               director      TEXT,
+               still_url     TEXT,
+               blurb         TEXT,
+               position      INTEGER NOT NULL DEFAULT 0,
+               created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+               updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+               UNIQUE (collection_id, tmdb_id)
+           )"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_collection_entries_collection
+               ON collection_entries(collection_id, position)"""
+    )
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -175,6 +218,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (7, "member-theme", _m7_member_theme),
     (8, "movie-pitch", _m8_movie_pitch),
     (9, "member-discord-id", _m9_member_discord_id),
+    (10, "collections", _m10_collections),
 ]
 
 

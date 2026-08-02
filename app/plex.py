@@ -179,6 +179,17 @@ def library_match(tmdb_id: int | None, imdb_id: str | None) -> dict | None:
     return {"in_library": True, "deep_link": deep_link, "rotten_tomatoes": rt}
 
 
+def library_ready() -> bool:
+    """True when the library cache holds a successful refresh.
+
+    Callers that must distinguish "this film is not on the server" from "we
+    currently have no idea what is on the server" need this: `library_match`
+    returns None for both, which is fine for hiding an optional badge but wrong
+    for deciding that an author's curated entry is broken.
+    """
+    return bool(_library["ok"])
+
+
 def library_rating_key(tmdb_id: int | None, imdb_id: str | None) -> str | None:
     """Return the cached Plex ratingKey for a movie, when known."""
     rk = _library["rk_tmdb"].get(tmdb_id)
