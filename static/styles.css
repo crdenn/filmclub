@@ -1549,6 +1549,20 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   grid-column: 1; grid-row: 1;
   padding-left: 0; padding-right: 2.2rem;
 }
+
+/* Still on the right: mirror the text so the edge facing the artwork is the
+   straight one. On a still-left row the prose starts hard against the image and
+   frays away from it; without this the mirrored row frays *towards* it, leaving
+   a ragged gap exactly where the two elements should meet.
+   The paragraph is justified rather than right-aligned so it stays readable
+   left-to-right, with text-align-last pulling the final line flush as well —
+   otherwise the one line most visible against the image is the one that misses
+   it. */
+.cl-row:nth-child(even) .cl-panel { text-align: right; }
+.cl-row:nth-child(even) .cl-blurb {
+  text-align: justify; text-align-last: right; margin-left: auto;
+}
+.cl-row:nth-child(even) .cl-row-actions { justify-content: flex-end; }
 .cl-still {
   aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
   background: var(--surface-sunk); box-shadow: var(--shadow);
@@ -1587,10 +1601,8 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .cl-blurb a { text-decoration: underline; text-underline-offset: 2px; }
 
 .cl-watch {
-  display: inline-flex; align-items: center; gap: .45rem; margin-top: 1.3rem;
   background: var(--brand-plex); color: var(--on-brand-plex);
-  font-weight: 700; font-size: .88rem; padding: .55rem 1.1rem;
-  border-radius: 10px; box-shadow: var(--shadow-sm);
+  font-weight: 700; box-shadow: var(--shadow-sm);
 }
 .cl-watch:hover {
   background: color-mix(in srgb, var(--brand-plex) 92%, var(--hover-mix));
@@ -1612,7 +1624,13 @@ select:focus-visible { outline: none; border-color: var(--accent); }
      is full width, flush left, and the separation goes back to the grid gap. */
   .cl-panel, .cl-row:nth-child(even) .cl-panel {
     max-width: none; margin-left: 0; padding-left: 0; padding-right: 0;
+    text-align: left;
   }
+  /* No artwork beside the text to mirror against, so the justification goes too. */
+  .cl-row:nth-child(even) .cl-blurb {
+    text-align: left; text-align-last: auto;
+  }
+  .cl-row:nth-child(even) .cl-row-actions { justify-content: flex-start; }
   /* Undo the alternation: in a single column every row must be image-above-text,
      or the even ones would put the writing first and read as a mistake. */
   .cl-row:nth-child(even) .cl-still { grid-column: 1; grid-row: 1; }
@@ -1633,7 +1651,22 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 /* Admin-only controls on a collection page. Deliberately quiet: this is a
    reading surface, and a destructive action should not compete with the
    writing for attention. */
-.cl-row-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+/* The spacing above the actions belongs to the row, not to one button. It used
+   to sit on .cl-watch, which pushed that button down inside a centred flex line
+   and left the two misaligned. */
+.cl-row-actions {
+  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+  margin-top: 1.3rem;
+}
+
+/* Both actions share one geometry so they cannot drift apart again. The Plex
+   button carries a transparent border rather than none, so the 1px on the
+   outline button does not make it a pixel taller. */
+.cl-watch, .cl-addbacklog {
+  display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+  font-size: .86rem; line-height: 1.2; padding: .58rem 1.05rem;
+  border-radius: 10px; border: 1px solid transparent; margin: 0;
+}
 .cl-missing {
   margin-top: .7rem; font-size: .8rem; color: var(--warn-text);
 }
@@ -1814,9 +1847,8 @@ select:focus-visible { outline: none; border-color: var(--accent); }
  * Deliberately secondary to Watch on Plex: on a page whose purpose is to make
  * you want to see the film, watching it now beats queueing it for later. */
 .cl-addbacklog {
-  background: none; border: 1px solid var(--line); border-radius: 10px;
-  color: var(--text-dim); font-size: .85rem; font-weight: 600;
-  padding: .5rem .95rem;
+  background: none; border-color: var(--line);
+  color: var(--text-dim); font-weight: 600;
 }
 .cl-addbacklog:hover { color: var(--accent-text); border-color: var(--accent); }
 .cl-addbacklog:disabled { opacity: .55; cursor: default; }
