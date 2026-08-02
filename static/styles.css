@@ -1757,3 +1757,9 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 }
 .cl-preview-enter:hover { color: var(--accent-text); }
 .cl-admin-index .cl-preview-enter { margin-left: 1rem; }
+.cl-sync {
+  background: none; border: 1px dashed var(--line); border-radius: 10px;
+  color: var(--text-dim); font-size: .88rem; padding: .6rem 1.1rem; margin-left: .6rem;
+}
+.cl-sync:hover { color: var(--accent-text); border-color: var(--accent); }
+.cl-sync:disabled { opacity: .5; cursor: default; }

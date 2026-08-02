@@ -231,7 +231,8 @@
             <option value="director">Director</option>
           </select>
           <input class="cl-new-director" type="text" maxlength="200" hidden
-                 placeholder="Director name" aria-label="Director name">
+                 placeholder="Director name (defaults to the title)"
+                 aria-label="Director name">
           <button class="btn btn-primary" type="submit">Create</button>
         </form>
       </div>` : "";
@@ -274,7 +275,11 @@
             director_name: kind.value === "director" ? director.value.trim() : null,
           },
         });
-        FC.toast(`Created "${c.title}" — it's a draft until you publish it`);
+        const added = c.sync && c.sync.added;
+        FC.toast(added
+          ? `Created "${c.title}" — ${added} film${added === 1 ? "" : "s"} from Plex, `
+            + `all awaiting a blurb`
+          : `Created "${c.title}" — it's a draft until you publish it`);
         location.hash = `#/collections/${encodeURIComponent(c.slug)}`;
       } catch (e2) {
         submit.disabled = false;
@@ -373,6 +378,10 @@
       ${isAdmin() ? `
         <div class="cl-admin">
           <button class="cl-add-toggle" type="button">+ Add a film</button>
+          ${c.kind === "director"
+            ? `<button class="cl-sync" type="button" data-slug="${esc(c.slug)}"
+                 title="Re-check this director's filmography against the Plex library"
+                 >Sync from Plex</button>` : ""}
           <div class="cl-add" hidden>
             <input class="cl-add-input" type="search" autocomplete="off"
                    placeholder="Search TMDB by title…" aria-label="Search films to add">
@@ -480,6 +489,28 @@
         }
       };
     });
+  }
+
+  function wireSync(slug) {
+    const btn = document.querySelector(".cl-sync");
+    if (!btn) return;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = "Syncing…";
+      try {
+        const r = await api(`/api/collections/${encodeURIComponent(slug)}/sync`,
+          { method: "POST" });
+        FC.toast(r.added
+          ? `Added ${r.added} film${r.added === 1 ? "" : "s"} from Plex`
+          : `Nothing new — ${r.on_plex || 0} of ${r.filmography || 0} on Plex already here`);
+        renderCollections({ arg: slug, preserve: true });
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = label;
+        if (e.message !== "unauth") FC.toast(e.message, true);
+      }
+    };
   }
 
   function wirePublish(slug) {
@@ -618,6 +649,7 @@
         wireAddFilm(c.slug);
         wirePublish(c.slug);
         wireCoverage(c.slug);
+        wireSync(c.slug);
         wirePreview();
       } else {
         const data = await api(`/api/collections${q}`);

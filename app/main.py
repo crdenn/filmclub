@@ -971,6 +971,93 @@ class EntryPatch(BaseModel):
     blurb: str = Field(default="", max_length=20000)
 
 
+async def _sync_director(conn, collection: dict) -> dict:
+    """Populate a director collection from its filmography ∩ the Plex library.
+
+    This is the spec's membership rule made literal: the films by that director
+    that are actually on the server become entries, and the blurb decides which
+    of them a reader ever sees. Entries arrive blank, so the page stays empty to
+    readers until the author writes — nothing half-finished is ever exposed.
+
+    Idempotent: re-running adds only what is new, and never disturbs a blurb.
+    """
+    tmdb_id = collection.get("director_tmdb_id")
+    if not tmdb_id:
+        return {"added": 0, "reason": "no-director"}
+    if not plex.library_ready():
+        # Without a library snapshot we cannot tell what is on the server, and
+        # guessing would either add the director's whole filmography or nothing.
+        return {"added": 0, "reason": "plex-unavailable"}
+
+    films = await tmdb.directed_films(tmdb_id)
+    have = {e["tmdb_id"] for e in curated.entries_for(conn, collection["id"])}
+    wanted = [f for f in films
+              if f["tmdb_id"] not in have
+              and plex.library_match(f["tmdb_id"], None) is not None]
+
+    # Each film needs a full metadata snapshot (runtime, still, imdb id), which
+    # is one TMDB call apiece. Bounded concurrency keeps a 30-film filmography
+    # from opening 30 sockets at once.
+    limit = asyncio.Semaphore(5)
+
+    async def detail(film):
+        async with limit:
+            try:
+                return await tmdb.details(film["tmdb_id"])
+            except Exception as e:  # noqa: BLE001 — one bad film must not fail the sync
+                log.warning("TMDB details for %s failed: %s", film["tmdb_id"], e)
+                return None
+
+    added = 0
+    for meta in await asyncio.gather(*(detail(f) for f in wanted)):
+        if meta is None:
+            continue
+        curated.upsert_entry(conn, collection["id"], meta)
+        added += 1
+    return {"added": added, "on_plex": len(wanted), "filmography": len(films)}
+
+
+@app.post("/api/collections/{slug}/sync")
+async def api_sync_director(slug: str, admin=Depends(auth.require_admin)):
+    """Re-run the director membership query, picking up newly added films."""
+    conn = db.connect()
+    try:
+        collection = curated.get_by_slug(conn, slug)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        if collection["kind"] != "director":
+            raise HTTPException(status_code=400,
+                                detail="Only director collections can be synced")
+        # A collection created before the director was resolvable can be fixed
+        # here rather than needing to be recreated.
+        if not collection.get("director_tmdb_id"):
+            name = (collection.get("director_name") or collection["title"] or "").strip()
+            try:
+                found = await tmdb.find_director(name)
+                if found:
+                    person = await tmdb.person(found["tmdb_id"])
+                    curated.set_director_scaffold(conn, slug, person)
+                    collection = curated.get_by_slug(conn, slug)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Director lookup for %r failed: %s", name, e)
+        try:
+            result = await _sync_director(conn, collection)
+        except Exception as e:  # noqa: BLE001
+            log.error("Director sync for %s failed: %s", slug, e)
+            raise HTTPException(status_code=502, detail="Could not reach TMDB")
+        if result.get("reason") == "no-director":
+            raise HTTPException(
+                status_code=422,
+                detail="Couldn't find that director on TMDB — check the name.")
+        if result.get("reason") == "plex-unavailable":
+            raise HTTPException(
+                status_code=503,
+                detail="Plex library isn't loaded yet, so there's nothing to match against.")
+        return result
+    finally:
+        conn.close()
+
+
 @app.post("/api/collections")
 async def api_create_collection(body: CollectionCreate,
                                 admin=Depends(auth.require_admin)):
@@ -979,23 +1066,31 @@ async def api_create_collection(body: CollectionCreate,
     conn = db.connect()
     try:
         slug = curated.unique_slug(conn, body.title)
-        director_name = (body.director_name or "").strip() or None
+        # A director collection is almost always titled after its subject, so an
+        # empty name field means "the title" rather than "no director".
+        director_name = ((body.director_name or "").strip()
+                         or (body.title.strip() if body.kind == "director" else ""))
         curated.create_collection(
             conn, slug, body.title.strip(), kind=body.kind,
-            director_name=director_name, published=False,
+            director_name=director_name or None, published=False,
         )
         # Resolve the director once, at creation, so the page has its factual
-        # scaffolding without the author entering dates or finding a portrait.
-        # A failure here leaves a usable collection with no scaffolding.
+        # scaffolding without the author entering dates or finding a portrait,
+        # then populate it from the filmography. A failure at either step leaves
+        # a usable collection that can be fixed later with Sync.
+        result = None
         if body.kind == "director" and director_name:
             try:
                 found = await tmdb.find_director(director_name)
                 if found:
                     person = await tmdb.person(found["tmdb_id"])
                     curated.set_director_scaffold(conn, slug, person)
+                    result = await _sync_director(conn, curated.get_by_slug(conn, slug))
             except Exception as e:  # noqa: BLE001 — optional enrichment
-                log.warning("Director lookup for %r failed: %s", director_name, e)
-        return curated.get_by_slug(conn, slug)
+                log.warning("Director setup for %r failed: %s", director_name, e)
+        created = curated.get_by_slug(conn, slug)
+        created["sync"] = result
+        return created
     finally:
         conn.close()
 
