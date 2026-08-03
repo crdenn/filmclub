@@ -1489,292 +1489,334 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .search-results { max-height: 60vh; }
 }
 
-/* ---------- curated collections ----------
+/* ---------- curated collections: the Programme ----------
  *
- * A reading surface, not a browsing one. Everywhere else in the app is a poster
- * grid; here the artwork is subordinate to the writing, so each film is a wide
- * row — still on the left, text panel on the right — and the whole page is one
- * column you scroll top to bottom.
+ * Collections read as a repertory cinema's printed listings, not as another
+ * screen of the app: rules instead of cards, typographic covers instead of
+ * borrowed artwork, roman numerals instead of icons. Identity comes from
+ * stored data (kind, entry_count, a hash of slug) rather than a designer's
+ * choice, so no two collections need to look alike and none of them needed
+ * one drawn by hand.
  *
- * Colour comes entirely from the existing tokens, so these pages follow the
- * light/dark theme like the rest of the app.
+ * Every colour still comes from the existing tokens. The "ink" and "paper"
+ * poster blocks are the same trick either way: background: var(--text) with
+ * color: var(--bg) is a full-contrast polarity swap that is automatically
+ * correct in both light and dark, with nothing new to define.
  */
-.cl-page { max-width: var(--maxw-read); margin: 0 auto; }
+.cl-page { max-width: var(--maxw); margin: 0 auto; }
+.cl-main { min-width: 0; }
 
-/* --- index ---
- * Ordinary app typography on purpose: this is a browsing page like the backlog,
- * and the serif reading treatment is reserved for a collection itself, so
- * opening one feels like stepping into a different kind of page.
- */
-.cl-hero {
-  position: relative; border-radius: 18px; overflow: hidden;
-  margin-bottom: 1.6rem; background: var(--bg-raise); box-shadow: var(--shadow);
+/* --- masthead --- */
+.cl-masthead {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem;
+  margin: .5rem 0 2.6rem; padding: 1rem 0;
+  border-top: 3px solid var(--text); border-bottom: 1px solid var(--line);
 }
-.cl-hero-img {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; object-position: center 35%; opacity: .55;
+.cl-masthead-title {
+  font-family: var(--font-serif); font-weight: 700; text-transform: uppercase;
+  font-size: clamp(2rem, 1.3rem + 3vw, 2.9rem); line-height: 1;
+  letter-spacing: -.02em; margin: 0;
 }
-/* Same two-axis scrim as the This-week hero, so artwork never fights the text. */
-.cl-hero-scrim { position: absolute; inset: 0; background:
-  linear-gradient(90deg, color-mix(in srgb, var(--bg) 97%, transparent) 30%, var(--scrim-mid) 70%, var(--scrim-soft)),
-  linear-gradient(0deg, color-mix(in srgb, var(--bg) 94%, transparent), color-mix(in srgb, var(--bg) 5%, transparent) 60%); }
-.cl-hero-inner {
-  position: relative; display: flex; flex-direction: column; justify-content: flex-end;
-  padding: 2.2rem; min-height: min(220px, 30vh);
+.cl-masthead-right { display: flex; align-items: center; gap: 1.1rem; }
+.cl-masthead-meta {
+  font-size: .74rem; line-height: 1.7; color: var(--text-faint); text-align: right;
+  text-transform: uppercase; letter-spacing: .06em; font-variant-numeric: tabular-nums;
 }
-.cl-hero-eyebrow {
-  text-transform: uppercase; letter-spacing: .16em; font-size: .72rem;
-  font-weight: 700; color: var(--accent-text); margin-bottom: .55rem;
-}
-.cl-hero-title { margin: 0; font-size: 2.4rem; line-height: 1.08; letter-spacing: -.02em; }
-.cl-hero-sub { color: var(--text-dim); font-size: .92rem; margin-top: .5rem; }
 
-.cl-cards { display: grid; gap: 1.4rem 1.15rem; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
-.cl-card {
-  display: flex; flex-direction: column; min-width: 0; color: inherit;
-  border-radius: var(--radius); overflow: hidden;
-  background: var(--bg-raise); border: 1px solid var(--line);
-  transition: transform .12s ease;
+/* --- posters: the typographic identity system ---
+ * Ink/paper polarity, size tier and draft state are the only variables; the
+ * combination is what keeps two collections from looking the same by
+ * accident without a human ever choosing a colour for either one. */
+.cl-poster {
+  position: relative; aspect-ratio: 3/4; border-radius: 4px; padding: 1.5rem;
+  display: flex; flex-direction: column; justify-content: space-between;
+  overflow: hidden;
 }
-.cl-card:hover { transform: translateY(-3px); text-decoration: none; }
-.cl-card-thumb { aspect-ratio: 16/9; background: var(--grad-poster); }
-.cl-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cl-card-body { padding: 1rem 1.1rem 1.2rem; }
-.cl-card-kind {
-  font-size: .7rem; text-transform: uppercase; letter-spacing: .13em;
-  color: var(--accent-text); margin-bottom: .4rem;
+.cl-poster-ink { background: var(--text); color: var(--bg); }
+.cl-poster-paper { background: var(--bg-raise); color: var(--text); border: 1px solid var(--line); }
+.cl-card:hover .cl-poster-ink { background: var(--bg-raise); color: var(--text); border: 1px solid var(--line); }
+.cl-card:hover .cl-poster-paper { background: var(--text); color: var(--bg); border-color: transparent; }
+.cl-poster-eyebrow {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .2em;
+  opacity: .75; position: relative; z-index: 1;
 }
-.cl-card-title {
-  font-size: 1.05rem; font-weight: 600; margin: 0 0 .4rem; line-height: 1.25;
-  display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+.cl-poster-title {
+  font-family: var(--font-serif); font-weight: 700; line-height: .96;
+  letter-spacing: -.02em; margin-top: .9rem; overflow-wrap: break-word;
+  position: relative; z-index: 1;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
 }
-.cl-card-intro { color: var(--text-dim); font-size: .88rem; line-height: 1.5; }
-.cl-card-intro p { margin: 0; }
-.cl-card-count { color: var(--text-faint); font-size: .8rem; margin-top: .6rem; }
+.cl-poster-lg .cl-poster-title { font-size: 2.5rem; }
+.cl-poster-md .cl-poster-title { font-size: 1.9rem; }
+.cl-poster-sm .cl-poster-title { font-size: 1.4rem; }
+.cl-poster-stats {
+  font-size: .72rem; line-height: 1.75; opacity: .82; letter-spacing: .02em;
+  font-variant-numeric: tabular-nums; position: relative; z-index: 1;
+}
+/* A stamp, not a badge — borrowed from a proof sheet rather than a UI kit.
+   currentColor inherits whichever polarity the block is in, so it never
+   needs its own ink/paper variant. */
+.cl-poster-draft { border: 1px dashed color-mix(in srgb, currentColor 35%, transparent); }
+.cl-poster-ink.cl-poster-draft { border-color: color-mix(in srgb, var(--bg) 35%, transparent); }
+.cl-proof {
+  position: absolute; top: 42%; left: -20%; right: -20%; z-index: 0;
+  text-align: center; transform: rotate(-8deg); pointer-events: none;
+  font-size: 1.7rem; font-weight: 700; letter-spacing: .3em; text-transform: uppercase;
+  color: color-mix(in srgb, currentColor 22%, transparent);
+}
+
 .cl-draft {
-  display: inline-block; padding: .1rem .45rem; border-radius: 6px;
+  display: inline-block; padding: .15rem .5rem; border-radius: 6px;
   background: var(--warn); color: var(--on-warn);
-  font-size: .66rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; vertical-align: middle;
+  font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  margin-bottom: .8rem;
 }
 
-/* --- collection page head --- */
-/* The header is a masthead, and has to read as one. A rule closes it off so the
-   list below starts cleanly instead of the page being one continuous column of
-   text from the title down through the first film's blurb. */
-.cl-head {
-  margin: .5rem 0 3.2rem; padding-bottom: 2.4rem;
-  border-bottom: 1px solid var(--line);
+/* --- the owner's own collections, featured in full --- */
+.cl-season {
+  display: grid; grid-template-columns: 3.2rem minmax(0, 1fr); gap: 0 1.4rem;
+  padding: 2.2rem 1.2rem; margin: 0 -1.2rem; border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 45%);
+}
+.cl-season-num {
+  font-variant-numeric: tabular-nums; font-weight: 700; font-size: .78rem;
+  color: var(--accent-text); letter-spacing: .05em; padding-top: .3rem;
+}
+.cl-season-tag {
+  display: block; margin-top: .35rem; font-weight: 400; text-transform: uppercase;
+  letter-spacing: .12em; color: var(--text-faint); font-size: .66rem;
+}
+.cl-season-body {
+  display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
+  gap: 2.2rem; align-items: start; min-width: 0;
+}
+.cl-season-text { min-width: 0; }
+.cl-season-text .cl-intro { font-size: 1.05rem; }
+.cl-season-foot { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; margin-top: 1.4rem; }
+.cl-season-changed { font-size: .78rem; color: var(--text-faint); }
+
+.cl-track { margin-top: 1.6rem; border-top: 1px solid var(--line); font-size: .86rem; }
+.cl-track-row {
+  display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) 4rem 7rem;
+  gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--line); align-items: baseline;
+}
+.cl-track-year { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.cl-track-title {
+  font-family: var(--font-serif); font-size: 1.05rem; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cl-track-runtime { color: var(--text-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.cl-track-tag { text-align: right; font-size: .72rem; color: var(--text-faint); white-space: nowrap; }
+.cl-track-more { padding: .6rem 0; color: var(--text-faint); font-size: .82rem; }
+
+/* --- generated collections: the poster grid --- */
+.cl-section-rule {
+  display: flex; align-items: center; gap: 1rem; margin: 3rem 0 1.2rem;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .16em; color: var(--text-faint);
+}
+.cl-section-rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.cl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.8rem 1.4rem; }
+.cl-card { display: block; color: inherit; }
+.cl-card:hover { text-decoration: none; }
+.cl-card-num {
+  margin-top: .6rem; font-size: .78rem; color: var(--text-faint);
+  font-variant-numeric: tabular-nums; letter-spacing: .04em;
 }
 
-/* Title on the left, the collection's own summary on the right, both starting
-   at the same y. An even 1fr/1fr split (rather than sizing the title column to
-   its content) is what keeps a long title wrapping onto a second line instead
-   of pushing into the summary's half — the boundary is fixed regardless of how
-   long the title text is. */
-.cl-head-top {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1rem 3.2rem; align-items: start;
+.cl-empty { padding: 3rem 0; border-top: 1px solid var(--line); margin-top: 1rem; }
+.cl-empty-text { font-family: var(--font-serif); font-size: 1.2rem; color: var(--text-dim); max-width: 40ch; }
+.cl-empty-start {
+  margin-top: 1.2rem; background: none; border: 1px dashed var(--line); border-radius: 10px;
+  color: var(--accent-text); font-size: .88rem; padding: .6rem 1.1rem;
 }
+.cl-empty-start:hover { border-color: var(--accent); }
 
-/* The summary is a standfirst, not body copy. Set at the same size and colour
-   as the blurbs it sits above, the right-hand column read as one unbroken run
-   of serif from the top of the page into the first film — nothing announced
-   that the header had ended. Smaller, dimmer and on a tighter measure, it
-   introduces the list instead of competing with it. */
-.cl-head-summary .cl-intro {
-  margin-top: .1rem; max-width: 46ch;
-  font-size: 1.02rem; line-height: 1.6; color: var(--text-dim);
-}
+.cl-loading { min-height: 60vh; }
 
-.cl-head-meta {
-  margin-top: 1.1rem; font-size: .84rem; color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
+/* --- collection detail page --- */
+.cl-page-grid { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 3rem; align-items: start; }
 
-.cl-eyebrow {
-  font-size: .78rem; text-transform: uppercase; letter-spacing: .15em;
-  color: var(--accent-text); margin-bottom: .7rem;
+/* Full-bleed hero: the first still standing in for artwork the collection
+   does not otherwise have, grayscaled so the overlaid title stays legible
+   whatever the still looks like. Falls back to the same poster gradient the
+   rest of the app uses for a missing image, so an intro-only draft still has
+   something to show. */
+.cl-dhero {
+  position: relative; border-radius: 6px; overflow: hidden;
+  min-height: min(320px, 42vh); margin-bottom: 2.4rem;
+  background: var(--grad-poster); display: flex; align-items: flex-end;
 }
-/* Structure is sans, prose is serif. The serif is reserved strictly for the
-   author's writing, so the thing that looks special on the page is the thing
-   that was actually written rather than the furniture around it. */
+.cl-dhero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(1.05); }
+.cl-dhero-empty .cl-dhero-scrim {
+  background: linear-gradient(0deg, color-mix(in srgb, var(--bg) 55%, transparent), transparent 70%);
+}
+.cl-dhero-scrim {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg, var(--bg) 8%, color-mix(in srgb, var(--bg) 35%, transparent) 55%, color-mix(in srgb, var(--bg) 8%, transparent)),
+    linear-gradient(0deg, color-mix(in srgb, var(--bg) 65%, transparent), transparent 55%);
+}
+.cl-dhero-num {
+  position: absolute; top: 1.2rem; right: 1.4rem; z-index: 1;
+  font-size: .8rem; font-weight: 700; letter-spacing: .08em;
+  color: var(--text-faint); font-variant-numeric: tabular-nums;
+}
+.cl-dhero-inner { position: relative; z-index: 1; padding: 2rem 2.2rem; }
+.cl-dhero-eyebrow {
+  font-size: .78rem; text-transform: uppercase; letter-spacing: .2em; font-weight: 700;
+  color: var(--accent-text); margin-bottom: .6rem;
+}
 .cl-page-title {
-  font-weight: 700;
-  font-size: clamp(2.1rem, 1.4rem + 3.2vw, 3.2rem);
-  line-height: 1.05; letter-spacing: -.03em; margin: 0;
+  font-family: var(--font-serif); font-weight: 700;
+  font-size: clamp(2.2rem, 1.3rem + 4vw, 4rem);
+  line-height: .95; letter-spacing: -.03em; margin: 0;
 }
-.cl-intro {
-  font-family: var(--font-serif); font-size: 1.18rem; line-height: 1.68;
-  color: var(--text); margin-top: 1.4rem; max-width: 60ch;
+
+.cl-head { margin: 0 0 2.6rem; }
+.cl-head-meta {
+  font-size: .84rem; color: var(--text-faint); margin-top: .2rem;
+  font-variant-numeric: tabular-nums; letter-spacing: .02em;
 }
+.cl-watchable { color: var(--good-text); }
+
+.cl-dir { display: flex; align-items: center; gap: 1rem; margin: .9rem 0 1.6rem; }
+.cl-dir-portrait {
+  width: 64px; height: 64px; border-radius: 50%; object-fit: cover;
+  flex: 0 0 auto; background: var(--surface-sunk); box-shadow: var(--shadow-sm);
+}
+.cl-dir-portrait-empty { background: var(--grad-poster); }
+.cl-dir-facts { min-width: 0; }
+.cl-dir-name { font-family: var(--font-serif); font-weight: 600; font-size: 1.05rem; }
+.cl-dir-dates { color: var(--text-faint); font-size: .84rem; font-variant-numeric: tabular-nums; margin-top: .1rem; }
+
+/* Author-only label above an authored block. Sans and quiet, so it reads as a
+   note about the page rather than part of it. */
+.cl-prose-label {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--text-faint); margin: 1.6rem 0 .5rem;
+}
+
+.cl-intro { font-family: var(--font-serif); font-size: 1.1rem; line-height: 1.62; color: var(--text); }
 .cl-intro p { margin: 0 0 1em; }
 .cl-intro p:last-child { margin-bottom: 0; }
+.cl-intro a { text-decoration: underline; text-underline-offset: 2px; }
+.cl-intro-director { font-size: 1rem; color: var(--text-dim); max-width: 62ch; margin-bottom: 1.2rem; }
+/* The main essay runs two columns with a drop cap, closed off by a rule —
+   the moment the page shifts from "about this" to "the films themselves". */
+.cl-intro-main {
+  columns: 2; column-gap: 3rem; margin-top: 1rem;
+  padding-top: 1.4rem; padding-bottom: 2rem;
+  border-top: 1px solid var(--line); border-bottom: 3px solid var(--text);
+}
+.cl-intro-main p:first-child::first-letter {
+  font-family: var(--font-serif); font-weight: 700; font-size: 3.2rem;
+  line-height: .78; float: left; padding: .05em .12rem 0 0; color: var(--accent-text);
+}
 
-/* --- rows --- */
-.cl-rows { display: grid; gap: 4.5rem; }
-/* The stills alternate sides, and their inner edges all land on one vertical
-   line down the middle of the page.
+/* --- sticky "in this collection" nav ---
+ * Buttons, not links: a same-page scroll must never touch location.hash,
+ * which the app's own router is listening on. */
+.cl-sidebar {
+  position: sticky; top: 1.2rem; font-size: .84rem; color: var(--text-dim);
+  display: flex; flex-direction: column; gap: .1rem;
+}
+.cl-sidebar-label {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--text-faint); margin-bottom: .6rem;
+}
+.cl-nav-link {
+  display: flex; align-items: center; gap: .55rem; background: none; border: none;
+  color: inherit; text-align: left; padding: .38rem 0; font-size: .86rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cl-nav-link:hover { color: var(--text); }
+.cl-nav-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+.cl-nav-dot-on { background: var(--good); }
+.cl-nav-dot-off { background: var(--text-faint); }
+.cl-sidebar-legend {
+  margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: .4rem; font-size: .78rem; color: var(--text-faint);
+}
+.cl-sidebar-legend > div { display: flex; align-items: center; gap: .5rem; }
+.cl-sidebar .cl-back { display: block; margin-top: 1.4rem; }
 
-   That line is why the split is exactly 50/50. With any other ratio the two
-   inner edges cannot meet: at 41% the left still would end at 41% and the
-   right still would begin at 59%, two different lines. Only half puts both at
-   the same x.
-
-   The separation between image and text is therefore padding on the text side
-   rather than a grid gap — a gap would sit *between* the columns and push the
-   two inner edges apart again by its own width. */
+/* --- rows: numeral, prose, small thumbnail --- */
+.cl-rows { display: grid; gap: 2.8rem; margin-top: .5rem; }
 .cl-row {
-  display: grid;
-  grid-template-columns: 50% minmax(0, 1fr);
-  gap: 0; align-items: start;
+  display: grid; grid-template-columns: 3rem minmax(0, 1fr) minmax(180px, 280px);
+  gap: 1.6rem; align-items: start; padding-bottom: 2.8rem; border-bottom: 1px solid var(--line);
 }
-.cl-panel { padding-left: 2.2rem; }
-
-/* Alternate which side the still falls on, so a long page has a rhythm rather
-   than one hard column edge running all the way down it. Explicit grid
-   placement rather than row-reverse, so the source order stays image-then-text
-   for screen readers and for the mobile stack. */
-.cl-row:nth-child(even) { grid-template-columns: minmax(0, 1fr) 50%; }
-.cl-row:nth-child(even) .cl-still { grid-column: 2; grid-row: 1; }
-.cl-row:nth-child(even) .cl-panel {
-  grid-column: 1; grid-row: 1;
-  padding-left: 0; padding-right: 2.2rem;
+.cl-rows .cl-row:last-child { border-bottom: none; padding-bottom: 0; }
+.cl-row[data-missing="1"] { opacity: .6; }
+.cl-row-num {
+  font-family: var(--font-serif); font-size: 1.9rem; line-height: .82; font-weight: 400;
+  color: color-mix(in srgb, var(--text-faint) 85%, transparent);
 }
-
-/* Still on the right: mirror the text so the edge facing the artwork is the
-   straight one. On a still-left row the prose starts hard against the image and
-   frays away from it; without this the mirrored row frays *towards* it, leaving
-   a ragged gap exactly where the two elements should meet.
-   The paragraph is justified rather than right-aligned so it stays readable
-   left-to-right, with text-align-last pulling the final line flush as well —
-   otherwise the one line most visible against the image is the one that misses
-   it. */
-.cl-row:nth-child(even) .cl-panel { text-align: right; }
-.cl-row:nth-child(even) .cl-blurb {
-  text-align: justify; text-align-last: right; margin-left: auto;
-}
-.cl-row:nth-child(even) .cl-row-actions { justify-content: flex-end; }
-.cl-still {
-  aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
-  background: var(--surface-sunk); box-shadow: var(--shadow);
-}
-.cl-still img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cl-still-empty { background: var(--grad-poster); box-shadow: none; }
-
-/* The reading measure lives on the panel rather than on the blurb alone, so
-   the eyebrow, title, metadata and prose all share one left edge. Capping only
-   the prose left the title running wider than the paragraph under it. */
-.cl-panel { padding-top: .2rem; max-width: 56ch; }
-/* Still on the right: push the whole text block over so it sits against the
-   image instead of stranding an empty gutter between the two. The text itself
-   stays ragged-right — right-aligning prose would cost more in readability
-   than the tidy edge is worth. */
-.cl-row:nth-child(even) .cl-panel { margin-left: auto; }
-.cl-director {
-  font-size: .74rem; text-transform: uppercase; letter-spacing: .15em;
-  color: var(--accent-text); margin-bottom: .55rem;
-}
+.cl-panel { min-width: 0; }
+.cl-row-head { display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap; }
 .cl-title {
-  font-weight: 600;
-  font-size: clamp(1.5rem, 1.1rem + 1.3vw, 2rem);
-  line-height: 1.15; letter-spacing: -.022em; margin: 0;
+  font-family: var(--font-serif); font-weight: 700;
+  font-size: clamp(1.4rem, 1.1rem + 1vw, 1.85rem); line-height: 1; letter-spacing: -.02em; margin: 0;
 }
+.cl-title a { color: inherit; }
+.cl-title a:hover { color: var(--accent-text); text-decoration: none; }
 .cl-meta {
-  font-size: .84rem; color: var(--text-faint); margin-top: .5rem;
-  font-variant-numeric: tabular-nums;
+  font-size: .74rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+.cl-meta-missing { color: var(--warn-text); white-space: normal; }
 .cl-blurb {
-  font-family: var(--font-serif); font-size: 1.08rem; line-height: 1.66;
-  color: var(--text); margin-top: .9rem;
+  font-family: var(--font-serif); font-size: 1.05rem; line-height: 1.6;
+  color: var(--text); margin-top: .8rem; max-width: 60ch;
 }
 .cl-blurb p { margin: 0 0 1em; }
 .cl-blurb p:last-child { margin-bottom: 0; }
 .cl-blurb a { text-decoration: underline; text-underline-offset: 2px; }
 
-.cl-watch {
-  background: var(--brand-plex); color: var(--on-brand-plex);
-  font-weight: 700; box-shadow: var(--shadow-sm);
-}
-.cl-watch:hover {
-  background: color-mix(in srgb, var(--brand-plex) 92%, var(--hover-mix));
-  text-decoration: none;
-}
-
-.cl-foot { margin: 4.5rem 0 1rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
-.cl-back { color: var(--text-dim); font-size: .9rem; }
-
-.cl-loading { min-height: 60vh; }
-
-/* Phone: the row collapses to image-above-text. The gap between rows has to
-   stay clearly larger than the gap inside one, or the page reads as an
-   undifferentiated stack. */
-@media (max-width: 860px) {
-  .cl-rows { gap: 3.2rem; }
-  .cl-row, .cl-row:nth-child(even) { grid-template-columns: 1fr; gap: 1.1rem; }
-  /* One column: nothing to sit against and no centre line to hold, so the panel
-     is full width, flush left, and the separation goes back to the grid gap. */
-  .cl-panel, .cl-row:nth-child(even) .cl-panel {
-    max-width: none; margin-left: 0; padding-left: 0; padding-right: 0;
-    text-align: left;
-  }
-  /* No artwork beside the text to mirror against, so the justification goes too. */
-  .cl-row:nth-child(even) .cl-blurb {
-    text-align: left; text-align-last: auto;
-  }
-  .cl-row:nth-child(even) .cl-row-actions { justify-content: flex-start; }
-  /* Undo the alternation: in a single column every row must be image-above-text,
-     or the even ones would put the writing first and read as a mistake. */
-  .cl-row:nth-child(even) .cl-still { grid-column: 1; grid-row: 1; }
-  .cl-row:nth-child(even) .cl-panel { grid-column: 1; grid-row: 2; }
-  .cl-blurb, .cl-intro { max-width: none; }
-  .cl-head { margin-bottom: 2.4rem; padding-bottom: 1.8rem; }
-  /* No side-by-side columns to top-align at this width: stack title above
-     summary and give the summary back its top spacing. */
-  .cl-head-top { grid-template-columns: 1fr; gap: 0; }
-  .cl-head-summary .cl-intro { margin-top: 1.4rem; max-width: none; }
-  .cl-foot { margin-top: 3rem; }
-
-  /* The hero keeps its shape but stops eating the whole screen; the scrim
-     flips to bottom-up, since there is no longer a left column to protect. */
-  .cl-hero-inner { padding: 1.3rem; min-height: min(180px, 26vh); }
-  .cl-hero-title { font-size: 1.8rem; }
-  .cl-hero-scrim { background:
-    linear-gradient(0deg, color-mix(in srgb, var(--bg) 96%, transparent) 25%, var(--scrim-mid)); }
-  .cl-cards { grid-template-columns: 1fr; gap: 1.1rem; }
-}
-
-/* Admin-only controls on a collection page. Deliberately quiet: this is a
-   reading surface, and a destructive action should not compete with the
-   writing for attention. */
-/* The spacing above the actions belongs to the row, not to one button. It used
-   to sit on .cl-watch, which pushed that button down inside a centred flex line
-   and left the two misaligned. */
-.cl-row-actions {
-  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
-  margin-top: 1.3rem;
-}
-
-/* Both actions share one geometry so they cannot drift apart again. The Plex
-   button carries a transparent border rather than none, so the 1px on the
-   outline button does not make it a pixel taller. */
+.cl-row-actions { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-top: 1.1rem; }
 .cl-watch, .cl-addbacklog {
   display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
-  font-size: .86rem; line-height: 1.2; padding: .58rem 1.05rem;
-  border-radius: 10px; border: 1px solid transparent; margin: 0;
+  font-size: .84rem; line-height: 1.2; padding: .55rem 1rem;
+  border-radius: 8px; border: 1px solid transparent;
 }
-.cl-missing {
-  margin-top: .7rem; font-size: .8rem; color: var(--warn-text);
+.cl-watch { background: var(--brand-plex); color: var(--on-brand-plex); font-weight: 700; box-shadow: var(--shadow-sm); }
+.cl-watch:hover { background: color-mix(in srgb, var(--brand-plex) 92%, var(--hover-mix)); text-decoration: none; }
+.cl-addbacklog { background: none; border-color: var(--line); color: var(--text-dim); font-weight: 600; }
+.cl-addbacklog:hover { color: var(--accent-text); border-color: var(--accent); }
+.cl-addbacklog:disabled { opacity: .55; cursor: default; }
+.cl-seen { font-size: .82rem; color: var(--good-text); }
+
+.cl-inlist { display: inline-flex; align-items: center; gap: .4rem; font-size: .82rem; color: var(--text-faint); }
+.cl-inlist::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.cl-inlist:hover { color: var(--accent-text); text-decoration: none; }
+.cl-inlist-scheduled { color: var(--warn-text); }
+.cl-inlist-watched { color: var(--good-text); }
+
+.cl-row-thumb { display: block; aspect-ratio: 16/9; border-radius: 5px; overflow: hidden; background: var(--surface-sunk); }
+.cl-row-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cl-row-thumb-empty { background: var(--grad-poster); }
+.cl-row-thumb.cl-linked { transition: transform .12s ease; }
+.cl-row-thumb.cl-linked:hover { transform: translateY(-3px); }
+
+.cl-remove { background: none; border: none; padding: 0; color: var(--text-faint); font-size: .8rem; text-decoration: underline; text-underline-offset: 2px; }
+.cl-remove:hover { color: var(--bad-text); }
+.cl-remove:disabled { opacity: .5; cursor: default; }
+
+/* --- footer --- */
+.cl-foot {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;
+  margin: 3rem 0 1rem; padding-top: 1.4rem; border-top: 1px solid var(--line);
 }
-.cl-remove, .cl-delete {
-  background: none; border: none; padding: 0;
-  color: var(--text-faint); font-size: .82rem; text-decoration: underline;
-  text-underline-offset: 2px;
+.cl-back { color: var(--text-dim); font-size: .88rem; }
+.cl-back-mobile { display: none; }
+.cl-foot-admin { display: flex; align-items: center; gap: 1.2rem; }
+.cl-publish, .cl-delete {
+  background: none; border: none; padding: 0; color: var(--text-faint);
+  font-size: .82rem; text-decoration: underline; text-underline-offset: 2px;
 }
-.cl-remove { margin-top: 1.3rem; }
-.cl-remove:hover, .cl-delete:hover { color: var(--bad-text); }
-.cl-remove:disabled, .cl-delete:disabled { opacity: .5; cursor: default; }
-.cl-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.cl-publish:hover { color: var(--accent-text); }
+.cl-delete:hover { color: var(--bad-text); }
+.cl-publish:disabled, .cl-delete:disabled { opacity: .5; cursor: default; }
 
 /* --- in-place editing (admin only) ---
  * Styling for the editor component in static/editor/, which ships no CSS of
@@ -1814,6 +1856,12 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   color: var(--text-dim); font-size: .88rem; padding: .6rem 1.1rem;
 }
 .cl-add-toggle:hover { color: var(--accent-text); border-color: var(--accent); }
+.cl-sync {
+  background: none; border: 1px dashed var(--line); border-radius: 10px;
+  color: var(--text-dim); font-size: .88rem; padding: .6rem 1.1rem; margin-left: .6rem;
+}
+.cl-sync:hover { color: var(--accent-text); border-color: var(--accent); }
+.cl-sync:disabled { opacity: .5; cursor: default; }
 
 .cl-add { margin-top: 1rem; max-width: 520px; }
 .cl-add-input {
@@ -1837,35 +1885,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .cl-add-meta { display: flex; flex-direction: column; min-width: 0; gap: .1rem; }
 .cl-add-title { font-size: .92rem; font-weight: 600; }
 .cl-add-sub { font-size: .8rem; color: var(--text-dim); }
-
-.cl-foot-admin { display: flex; align-items: center; gap: 1.2rem; }
-.cl-publish {
-  background: none; border: none; padding: 0; color: var(--text-faint);
-  font-size: .82rem; text-decoration: underline; text-underline-offset: 2px;
-}
-.cl-publish:hover { color: var(--accent-text); }
-.cl-publish:disabled, .cl-delete:disabled { opacity: .5; cursor: default; }
-
-@media (max-width: 860px) {
-  .cl-foot { flex-direction: column; align-items: flex-start; gap: .9rem; }
-}
-
-/* --- director scaffolding --- */
-.cl-dir { display: flex; align-items: center; gap: 1.1rem; margin-top: 1.6rem; }
-.cl-dir-portrait {
-  width: 76px; height: 76px; border-radius: 50%; object-fit: cover;
-  flex: 0 0 auto; background: var(--surface-sunk); box-shadow: var(--shadow-sm);
-}
-.cl-dir-portrait-empty { background: var(--grad-poster); }
-.cl-dir-facts { color: var(--text-dim); font-size: .9rem;
-  font-variant-numeric: tabular-nums; }
-
-/* Author-only label above an authored block. Sans and quiet, so it reads as a
-   note about the page rather than part of it. */
-.cl-prose-label {
-  font-size: .68rem; text-transform: uppercase; letter-spacing: .14em;
-  color: var(--text-faint); margin: 1.8rem 0 .5rem;
-}
 
 /* --- coverage (admin) ---
  * The author's to-do list, not a reading surface: plain app typography, dense
@@ -1920,47 +1939,10 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   font-size: .82rem; text-decoration: underline; text-underline-offset: 2px;
 }
 .cl-preview-enter:hover { color: var(--accent-text); }
-.cl-sync {
-  background: none; border: 1px dashed var(--line); border-radius: 10px;
-  color: var(--text-dim); font-size: .88rem; padding: .6rem 1.1rem; margin-left: .6rem;
-}
-.cl-sync:hover { color: var(--accent-text); border-color: var(--accent); }
-.cl-sync:disabled { opacity: .5; cursor: default; }
 
-/* --- backlog control on a collection row ---
- * Deliberately secondary to Watch on Plex: on a page whose purpose is to make
- * you want to see the film, watching it now beats queueing it for later. */
-.cl-addbacklog {
-  background: none; border-color: var(--line);
-  color: var(--text-dim); font-weight: 600;
-}
-.cl-addbacklog:hover { color: var(--accent-text); border-color: var(--accent); }
-.cl-addbacklog:disabled { opacity: .55; cursor: default; }
-
-/* Already on the club's list: a statement of fact that happens to be a link to
-   the film's page, not a second button competing with the first. */
-.cl-inlist {
-  display: inline-flex; align-items: center; gap: .4rem;
-  font-size: .82rem; color: var(--text-faint);
-}
-.cl-inlist::before {
-  content: ""; width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor; flex: 0 0 auto;
-}
-.cl-inlist:hover { color: var(--accent-text); text-decoration: none; }
-.cl-inlist-scheduled { color: var(--warn-text); }
-.cl-inlist-watched { color: var(--good-text); }
-
-/* Artwork and title link through to the film's normal detail page when the
-   club is also tracking it. */
-.cl-still.cl-linked { display: block; transition: transform .12s ease; }
-.cl-still.cl-linked:hover { transform: translateY(-3px); }
-.cl-title a { color: inherit; }
-.cl-title a:hover { color: var(--accent-text); text-decoration: none; }
-
-/* Owner-only palette switcher in the user menu. Set apart from the menu items
-   above it, because it changes what the whole club sees rather than acting on
-   this account. */
+/* Owner-only palette switcher in the user menu (app.js). Set apart from the
+   menu items above it, because it changes what the whole club sees rather
+   than acting on this account. Not collections-specific, just co-located. */
 .me-menu-section {
   padding: .45rem .6rem .3rem; margin-top: .25rem;
   border-top: 1px solid var(--line);
@@ -1970,9 +1952,32 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   color: var(--text-faint); margin-bottom: .4rem;
 }
 
-/* Owner actions sit in the hero's corner, out of the reading path. */
-.cl-hero-menu { position: absolute; top: .9rem; right: .9rem; z-index: 5; }
-.cl-hero-menu .btn {
-  background: var(--overlay-plate); border-color: transparent; color: var(--on-overlay);
+@media (max-width: 860px) {
+  .cl-masthead { flex-direction: column; align-items: flex-start; gap: .7rem; }
+  .cl-masthead-right { width: 100%; justify-content: space-between; }
+  .cl-masthead-meta { text-align: left; }
+
+  .cl-season { grid-template-columns: 2.1rem minmax(0, 1fr); margin: 0; padding-left: 0; padding-right: 0; }
+  .cl-season-body { grid-template-columns: 1fr; }
+  .cl-season-cover .cl-poster { aspect-ratio: 16/10; }
+  .cl-track-row { grid-template-columns: 2.4rem minmax(0, 1fr) auto; }
+  .cl-track-runtime { display: none; }
+
+  .cl-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+  .cl-page-grid { grid-template-columns: 1fr; gap: 0; }
+  .cl-sidebar { display: none; }
+  .cl-back-mobile { display: inline-block; margin-bottom: 1.2rem; }
+
+  .cl-dhero { min-height: min(220px, 32vh); }
+  .cl-dhero-inner { padding: 1.3rem; }
+
+  .cl-intro-main { columns: 1; }
+  .cl-intro-main p:first-child::first-letter { font-size: 2.5rem; }
+
+  .cl-row { grid-template-columns: 1fr; gap: .8rem; padding-bottom: 2.2rem; }
+  .cl-row-num { display: none; }
+  .cl-row-thumb { order: -1; max-width: none; }
+
+  .cl-foot { flex-direction: column; align-items: flex-start; gap: .9rem; }
 }
-.cl-hero-menu .btn:hover { background: var(--overlay-fill); }

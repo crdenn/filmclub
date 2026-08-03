@@ -356,5 +356,132 @@ class DirectorCoverageTests(unittest.TestCase):
         self.assertEqual(c["director_died"], "1998-09-06")
 
 
+class IndexPayloadTests(unittest.TestCase):
+    """The Programme index: aggregate stats, owner attribution, the
+    mine/generated split, and the ordinal used on both the index and the
+    detail hero."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="filmclub-index-")
+        self._old_db_path = config.DB_PATH
+        config.DB_PATH = Path(self.tmp.name) / "filmclub.db"
+        db.init_db()
+        self.conn = db.connect()
+        self._old_library = dict(plex._library)
+        plex._library.update(tmdb={11, 22}, imdb=set(), rk_tmdb={11: "5", 22: "6"},
+                             rk_imdb={}, rt_tmdb={}, rt_imdb={}, machine_id="m", ok=True)
+
+        db.execute(self.conn,
+                   "INSERT INTO members (plex_id, username, color, is_owner) "
+                   "VALUES ('owner-1', 'chrisplex', '#abcabc', 1)")
+        db.execute(self.conn,
+                   "UPDATE members SET display_name = 'Chris' WHERE plex_id = 'owner-1'")
+
+        self.mine = coll.create_collection(self.conn, "mine", "Mine", origin="authored",
+                                           published=True)
+        coll.upsert_entry(self.conn, self.mine, _meta(11, "On The Server", year=1995,
+                                                       runtime=100), blurb="Written.")
+        coll.upsert_entry(self.conn, self.mine, _meta(33, "Never Suggested", year=2005,
+                                                       runtime=90), blurb="Written.")
+
+        self.gen = coll.create_collection(self.conn, "gen", "Generated", origin="generated",
+                                          published=True)
+        coll.upsert_entry(self.conn, self.gen, _meta(22, "Also On Server", year=1988,
+                                                      runtime=110), blurb="Written.")
+
+    def tearDown(self):
+        self.conn.close()
+        plex._library.clear()
+        plex._library.update(self._old_library)
+        config.DB_PATH = self._old_db_path
+        self.tmp.cleanup()
+
+    def test_owner_name_prefers_display_name(self):
+        self.assertEqual(coll.owner_name(self.conn), "Chris")
+        db.execute(self.conn, "UPDATE members SET display_name = NULL WHERE is_owner = 1")
+        self.assertEqual(coll.owner_name(self.conn), "chrisplex")
+
+    def test_stats_are_computed_over_the_full_stored_set(self):
+        entries = coll.entries_for(self.conn, self.mine)
+        stats = coll._stats(entries, blurb_gated=False)
+        self.assertEqual(stats["film_count"], 2)
+        self.assertEqual(stats["runtime_minutes"], 190)
+        self.assertEqual((stats["year_from"], stats["year_to"]), (1995, 2005))
+        self.assertEqual(stats["on_plex"], 1)
+        self.assertEqual(stats["missing"], 1)
+        self.assertIsNone(stats["written"])  # not blurb-gated: not tracked
+
+    def test_written_is_only_reported_when_blurb_gated(self):
+        entries = coll.entries_for(self.conn, self.mine)
+        stats = coll._stats(entries, blurb_gated=True)
+        self.assertEqual(stats["written"], 2)
+
+    def test_stats_report_none_not_false_for_an_unreachable_library(self):
+        plex._library["ok"] = False
+        entries = coll.entries_for(self.conn, self.mine)
+        stats = coll._stats(entries, blurb_gated=False)
+        self.assertIsNone(stats["on_plex"])
+        self.assertIsNone(stats["missing"])
+
+    def test_index_payload_splits_by_origin(self):
+        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        self.assertEqual([c["slug"] for c in payload["mine"]], ["mine"])
+        self.assertEqual([c["slug"] for c in payload["generated"]], ["gen"])
+        self.assertEqual(payload["owner_name"], "Chris")
+        self.assertEqual(payload["total_films"], 3)
+
+    def test_mine_collections_carry_a_gated_row_listing(self):
+        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        rows = payload["mine"][0]["rows"]
+        self.assertEqual({r["title"] for r in rows}, {"On The Server", "Never Suggested"})
+
+    def test_generated_collections_carry_no_row_listing(self):
+        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        self.assertNotIn("rows", payload["generated"][0])
+
+    def test_owner_name_is_none_when_nothing_is_authored(self):
+        db.execute(self.conn, "DELETE FROM collections WHERE slug = 'mine'")
+        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        self.assertEqual(payload["mine"], [])
+        self.assertIsNone(payload["owner_name"])
+
+    def test_slug_position_is_mine_first_then_generated(self):
+        self.assertEqual(coll.slug_position(self.conn, "mine", is_admin=True, preview=False), 1)
+        self.assertEqual(coll.slug_position(self.conn, "gen", is_admin=True, preview=False), 2)
+
+    def test_slug_position_is_none_for_an_unpublished_slug_to_a_reader(self):
+        coll.update_collection(self.conn, "gen", {"published": False})
+        self.assertIsNone(
+            coll.slug_position(self.conn, "gen", is_admin=False, preview=False))
+
+    def test_last_changed_takes_the_latest_of_collection_or_any_entry(self):
+        c = coll.get_by_slug(self.conn, "mine")
+        entries = coll.entries_for(self.conn, self.mine)
+        # A bare collection row with no later entry edit: its own timestamp wins.
+        self.assertEqual(coll._last_changed(c, []), c["updated_at"])
+        # An entry touched after the collection was created sorts later.
+        db.execute(self.conn,
+                   "UPDATE collection_entries SET updated_at = '2999-01-01 00:00:00' "
+                   "WHERE collection_id = ? AND tmdb_id = 11", (self.mine,))
+        entries = coll.entries_for(self.conn, self.mine)
+        self.assertEqual(coll._last_changed(c, entries), "2999-01-01 00:00:00")
+
+    def test_club_average_rating_is_attached_for_a_watched_film(self):
+        db.execute(self.conn,
+                   "INSERT INTO movies (tmdb_id, title, status) VALUES (11, 'On The Server', 'watched')")
+        movie_id = db.query_one(self.conn, "SELECT id FROM movies WHERE tmdb_id = 11")["id"]
+        db.execute(self.conn,
+                   "INSERT INTO members (plex_id, username, color) VALUES ('m2', 'Bob', '#111111')")
+        member_id = db.query_one(self.conn, "SELECT id FROM members WHERE plex_id = 'm2'")["id"]
+        db.execute(self.conn,
+                   "INSERT INTO ratings (movie_id, member_id, score) VALUES (?, ?, 4.5)",
+                   (movie_id, member_id))
+        entries = coll.entries_for(self.conn, self.mine)
+        coll.attach_club_state(self.conn, entries)
+        by_title = {e["title"]: e for e in entries}
+        self.assertEqual(by_title["On The Server"]["club_avg_rating"], 4.5)
+        self.assertIsNone(by_title["Never Suggested"]["club_avg_rating"])
+
+
 if __name__ == "__main__":
     unittest.main()

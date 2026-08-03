@@ -927,12 +927,9 @@ async def api_collections(preview: bool = False,
     """
     conn = db.connect()
     try:
-        return {
-            "items": curated.list_collections(
-                conn,
-                include_unpublished=bool(member.get("is_admin")) and not preview,
-            )
-        }
+        return curated.index_payload(
+            conn, is_admin=bool(member.get("is_admin")), preview=preview
+        )
     finally:
         conn.close()
 
@@ -947,6 +944,11 @@ async def api_collection(slug: str, preview: bool = False,
                                            preview=preview)
         if not detail:
             raise HTTPException(status_code=404, detail="Collection not found")
+
+        detail["position"] = curated.slug_position(conn, slug, is_admin=is_admin,
+                                                    preview=preview)
+        if detail["origin"] == "authored":
+            detail["owner_name"] = curated.owner_name(conn)
 
         # The filmography is only ever needed for the author's coverage view, so
         # a reader's page load never waits on TMDB. Failure degrades to no

@@ -81,11 +81,17 @@
     return h ? `${h}h ${m % 60}m` : `${m}m`;
   }
 
-  function meta(entry) {
-    return [entry.year, runtime(entry.runtime)].filter(Boolean).join(" · ");
+  // ---------- rows ----------
+  /* Roman numerals for row position — up to any real collection size (a
+     40-film retrospective is still just XL). */
+  const ROMAN = [[1000,"M"],[900,"CM"],[500,"D"],[400,"CD"],[100,"C"],[90,"XC"],
+    [50,"L"],[40,"XL"],[10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]];
+  function toRoman(n) {
+    let out = "", v = Math.max(1, Math.floor(n));
+    for (const [val, sym] of ROMAN) { while (v >= val) { out += sym; v -= val; } }
+    return out;
   }
 
-  // ---------- rows ----------
   /* A film the club is also tracking has a normal detail page, so the artwork
      and title link to it exactly as they do from the backlog. A film that has
      never been suggested has no such page — the Add button below is what
@@ -94,7 +100,7 @@
     const inner = entry.still_url
       ? `<img src="${esc(entry.still_url)}" alt="" loading="lazy" decoding="async">`
       : "";
-    const cls = `cl-still${entry.still_url ? "" : " cl-still-empty"}`;
+    const cls = `cl-row-thumb${entry.still_url ? "" : " cl-row-thumb-empty"}`;
     return entry.movie_id
       ? `<a class="${cls} cl-linked" href="#/movie/${entry.movie_id}"
            aria-label="${esc(entry.title)}">${inner}</a>`
@@ -131,6 +137,17 @@
     if (!entry.plex_link) return "";
     return `<a class="cl-watch" href="${esc(entry.plex_link)}"
        target="_blank" rel="noopener">▶ Watch on Plex</a>`;
+  }
+
+  /* A watched film's real club rating, when there is one — reuses the same
+     average the movie detail page already computes, rather than sending a
+     reader off to find out. Falls back to the ordinary backlog control (which
+     already renders a plain "Watched" state) when there's no rating yet. */
+  function ctaAction(entry) {
+    if (entry.movie_status === "watched" && entry.club_avg_rating != null) {
+      return `<span class="cl-seen">Seen by the club · ${entry.club_avg_rating.toFixed(1)} avg</span>`;
+    }
+    return backlogControl(entry);
   }
 
   /* Preview mode: an admin looking at their own pages exactly as a reader
@@ -171,13 +188,14 @@
 
   const ICON_MORE = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`;
 
-  /* Owner actions for the index live in the hero corner rather than as buttons
-     above the list. They are occasional — a collection is created rarely and
-     previewed rarely — and standing controls in the reading path made the page
-     look like a form. Same overflow pattern the movie detail page uses. */
+  /* Owner actions for the index live in the masthead corner rather than as
+     buttons above the list. They are occasional — a collection is created
+     rarely and previewed rarely — and standing controls in the reading path
+     made the page look like a form. Same overflow pattern the movie detail
+     page uses. */
   function indexMenu() {
     if (!isAdmin()) return "";
-    return `<div class="cl-hero-menu overflow-anchor">
+    return `<div class="cl-masthead-menu overflow-anchor">
       <button type="button" class="btn icon-btn" id="cl-index-more"
         aria-haspopup="true" aria-expanded="false" aria-label="Collection actions">${ICON_MORE}</button>
       <div class="overflow-menu" id="cl-index-menu" hidden>
@@ -185,6 +203,41 @@
         <button type="button" class="overflow-menu-item" id="cl-index-preview">Preview as reader</button>
       </div>
     </div>`;
+  }
+
+  /* A cheap deterministic hash, used only to decide which of two visual
+     polarities (ink block / paper block) a generated card gets. Not a
+     security or identity mechanism — collisions are fine, the only goal is
+     that the same slug always lands on the same side and two adjacent cards
+     don't usually match. */
+  function hashSlug(slug) {
+    let h = 0;
+    for (let i = 0; i < String(slug || "").length; i++) {
+      h = (h * 31 + slug.charCodeAt(i)) >>> 0;
+    }
+    return h;
+  }
+
+  /* Long titles break a poster-sized type block, so the size steps down
+     rather than overflowing or being clamped mid-word. Tiers, not a formula —
+     a formula invites a title that lands exactly on a seam and looks broken. */
+  function posterSizeTier(title) {
+    const len = String(title || "").length;
+    if (len > 28) return "cl-poster-sm";
+    if (len > 16) return "cl-poster-md";
+    return "cl-poster-lg";
+  }
+
+  /* SQLite's datetime('now') is UTC with no offset marker; appending "Z" is
+     what tells Date() that, so a reader on any timezone sees the right day. */
+  function lastChangedLabel(iso) {
+    if (!iso) return "";
+    const d = new Date(String(iso).replace(" ", "T") + "Z");
+    if (isNaN(d)) return "";
+    const days = (Date.now() - d.getTime()) / 86400000;
+    return days < 6.5
+      ? d.toLocaleDateString(undefined, { weekday: "short" })
+      : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
   function previewToggle() {
@@ -210,86 +263,155 @@
       + (raw.trim() ? "" : ` data-blank="1"`);
   }
 
-  function row(entry) {
-    const director = entry.director
-      ? `<div class="cl-director">${esc(entry.director)}</div>` : "";
-    const line = meta(entry);
+  function row(entry, position) {
+    // Year/runtime/director condensed into one caption line rather than a
+    // separate eyebrow above the title — a listings line, not a byline.
+    const line = [entry.year, runtime(entry.runtime), entry.director]
+      .filter(Boolean).join(" · ");
     // An entry that no longer resolves on Plex is only ever rendered for an
     // admin, so labelling it here cannot leak anything to a reader.
-    const missing = entry.plex_state === "missing"
-      ? `<div class="cl-missing">Not on the server — hidden from readers</div>` : "";
+    const missing = entry.plex_state === "missing";
+    const caption = missing
+      ? `<span class="cl-meta cl-meta-missing">Not on the server — hidden from readers</span>`
+      : (line ? `<span class="cl-meta">${esc(line)}</span>` : "");
     const remove = isAdmin() && canAuthor
       ? `<button class="cl-remove" data-entry="${entry.id}"
            data-title="${esc(entry.title)}" title="Remove from this collection">Remove</button>`
       : "";
-    return `<article class="cl-row">
-      ${still(entry)}
+    return `<article class="cl-row" id="cl-entry-${entry.id}"${missing ? ` data-missing="1"` : ""}>
+      <div class="cl-row-num">${toRoman(position)}</div>
       <div class="cl-panel">
-        ${director}
-        ${titleMarkup(entry)}
-        ${line ? `<div class="cl-meta">${esc(line)}</div>` : ""}
-        ${missing}
+        <div class="cl-row-head">
+          ${titleMarkup(entry)}
+          ${caption}
+        </div>
         <div class="cl-blurb" ${editable(entry.blurb, `entry:${entry.id}`,
           "Why is this worth watching?")}>${markdown(entry.blurb)}</div>
         <div class="cl-row-actions">
-          ${watchButton(entry)}${backlogControl(entry)}${remove}
+          ${watchButton(entry)}${ctaAction(entry)}${remove}
         </div>
       </div>
+      ${still(entry)}
     </article>`;
   }
 
   // ---------- pages ----------
-  /* The index is a normal app page: same sans typography, same card idiom as
-     the backlog and watched grids. The serif reading treatment belongs to a
-     collection itself, so that opening one feels like stepping into something
-     different rather than more of the same. */
-  function indexHero(items) {
-    const cover = (items.find((c) => c.cover_url) || {}).cover_url;
-    const films = items.reduce((n, c) => n + (c.entry_count || 0), 0);
-    const sub = items.length
-      ? `${items.length} ${items.length === 1 ? "collection" : "collections"}`
-        + `${films ? ` · ${films} ${films === 1 ? "film" : "films"}` : ""}`
-      : "Nothing here yet";
-    return `<div class="cl-hero">
-      ${cover ? `<img class="cl-hero-img" src="${esc(cover)}" alt="">` : ""}
-      <div class="cl-hero-scrim"></div>
-      ${indexMenu()}
-      <div class="cl-hero-inner">
-        <div class="cl-hero-eyebrow">Film Club</div>
-        <h1 class="cl-hero-title">Collections</h1>
-        <div class="cl-hero-sub">${esc(sub)}</div>
+  /* A generated card's poster block: pure typography, no image. The eyebrow
+     comes from the one real taxonomy the data has (`kind`) rather than an
+     invented subcategory ("theme · runtime", "theme · form") the schema has
+     no way to actually distinguish. */
+  function posterStats(c) {
+    const bits = [`${c.film_count} film${c.film_count === 1 ? "" : "s"}`];
+    if (c.year_from && c.year_to) {
+      bits.push(c.year_from === c.year_to ? String(c.year_from) : `${c.year_from}–${c.year_to}`);
+    }
+    if (c.on_plex != null) bits.push(`${c.on_plex} on the server`);
+    if (c.written != null) bits.push(`${c.written} of ${c.film_count} written`);
+    return bits;
+  }
+
+  function generatedCard(c, position) {
+    const eyebrow = c.kind === "director" ? "Retrospective" : "Theme";
+    const draft = !c.published;
+    // Deterministic per collection, not per render: the same season always
+    // gets the same polarity, so it doesn't flicker between visits.
+    const polarity = hashSlug(c.slug) % 2 === 0 ? "cl-poster-ink" : "cl-poster-paper";
+    return `<a class="cl-card" href="#/collections/${encodeURIComponent(c.slug)}">
+      <div class="cl-poster ${polarity} ${posterSizeTier(c.title)}${draft ? " cl-poster-draft" : ""}">
+        ${draft ? `<div class="cl-proof">Proof</div>` : ""}
+        <div class="cl-poster-eyebrow">${esc(eyebrow)}${draft ? " · Unpublished" : ""}</div>
+        <div class="cl-poster-title">${esc(c.title)}</div>
+        <div class="cl-poster-stats">${posterStats(c).map(esc).join("<br>")}</div>
+      </div>
+      <div class="cl-card-num">No. ${String(position).padStart(2, "0")}</div>
+    </a>`;
+  }
+
+  /* The owner's own collection, featured in full — a big typographic cover
+     plus the actual track listing, reusing the same gating collection_detail
+     already applies. Any number of authored collections get this treatment,
+     not just one; the design assumed a single "curator's season" but nothing
+     about the product limits an owner to writing just one. */
+  function mineSeason(c, position, ownerName) {
+    const eyebrow = `Curated by ${ownerName || "the owner"}`;
+    const draft = !c.published;
+    const stats = posterStats(c).concat(
+      c.runtime_minutes ? [`${runtime(c.runtime_minutes)} total`] : []
+    );
+
+    const rows = c.rows || [];
+    const shown = rows.slice(0, 8);
+    const track = shown.length
+      ? `<div class="cl-track">${shown.map((r) => `
+          <div class="cl-track-row">
+            <span class="cl-track-year">${esc(r.year || "")}</span>
+            <span class="cl-track-title">${esc(r.title)}</span>
+            <span class="cl-track-runtime">${esc(runtime(r.runtime))}</span>
+            <span class="cl-track-tag">${
+              r.plex_state === "resolved" ? "▶ Plex"
+                : r.plex_state === "missing" ? "Not on server" : ""}</span>
+          </div>`).join("")}${rows.length > 8
+            ? `<div class="cl-track-more">…and ${rows.length - 8} more</div>` : ""}
+        </div>`
+      : `<div class="empty">Nothing to show here yet.</div>`;
+
+    return `<div class="cl-season">
+      <div class="cl-season-num">${String(position).padStart(2, "0")}<span class="cl-season-tag">Mine</span></div>
+      <div class="cl-season-body">
+        <div class="cl-season-cover">
+          <div class="cl-poster cl-poster-ink cl-poster-lg">
+            ${draft ? `<div class="cl-proof">Proof</div>` : ""}
+            <div class="cl-poster-eyebrow">${esc(eyebrow)}${draft ? " · Unpublished" : ""}</div>
+            <div class="cl-poster-title">${esc(c.title)}</div>
+            <div class="cl-poster-stats">${stats.map(esc).join("<br>")}</div>
+          </div>
+        </div>
+        <div class="cl-season-text">
+          <div class="cl-intro">${markdown(excerpt(c.intro, 400))}</div>
+          ${track}
+          <div class="cl-season-foot">
+            <a class="btn btn-primary" href="#/collections/${encodeURIComponent(c.slug)}">Read the season →</a>
+            <span class="cl-season-changed">Edited in place · last changed ${esc(lastChangedLabel(c.last_changed))}</span>
+          </div>
+        </div>
       </div>
     </div>`;
   }
 
-  function indexPage(items) {
-    const cards = items.map((c) => {
-      const draft = c.published ? "" : `<span class="cl-draft">Draft</span>`;
-      const kind = c.kind === "director" && c.director_name
-        ? `<div class="cl-card-kind">Director · ${esc(c.director_name)}</div>` : "";
-      const count = c.entry_count
-        ? `${c.entry_count} ${c.entry_count === 1 ? "film" : "films"}` : "";
-      return `<a class="cl-card" href="#/collections/${encodeURIComponent(c.slug)}">
-        <div class="cl-card-thumb">
-          ${c.cover_url ? `<img src="${esc(c.cover_url)}" alt="" loading="lazy">` : ""}
-        </div>
-        <div class="cl-card-body">
-          ${kind}
-          <h2 class="cl-card-title">${esc(c.title)}${draft}</h2>
-          <div class="cl-card-intro">${markdown(excerpt(c.intro, 190))}</div>
-          ${count ? `<div class="cl-card-count">${esc(count)}</div>` : ""}
-        </div>
-      </a>`;
-    }).join("");
+  function indexPage(payload) {
+    const mine = payload.mine || [];
+    const generated = payload.generated || [];
+    const seasons = mine.length + generated.length;
+    const monthYear = new Date()
+      .toLocaleDateString(undefined, { month: "long", year: "numeric" }).toUpperCase();
+    const metaLine = seasons
+      ? `${monthYear} · ${seasons} season${seasons === 1 ? "" : "s"} · `
+        + `${payload.total_films} film${payload.total_films === 1 ? "" : "s"}`
+      : monthYear;
 
-    // No standing admin furniture on the index at all now — New collection
-    // lives only in the hero menu, as a modal, so a rare action never occupies
-    // permanent space above the list.
+    let n = 0;
+    const mineHtml = mine.map((c) => mineSeason(c, ++n, payload.owner_name)).join("");
+    const generatedHtml = generated.length ? `
+      <div class="cl-section-rule"><span>Also programmed — assembled from your library</span></div>
+      <div class="cl-grid">${generated.map((c) => generatedCard(c, ++n)).join("")}</div>` : "";
+
+    const empty = !seasons ? `
+      <div class="cl-empty">
+        <div class="cl-empty-text">No seasons programmed yet.</div>
+        ${isAdmin() ? `<button class="cl-empty-start" type="button" id="cl-empty-start">Start the first one</button>` : ""}
+      </div>` : "";
+
     return `${previewBar()}
-      ${indexHero(items)}
-      ${items.length
-        ? `<div class="cl-cards">${cards}</div>`
-        : `<div class="empty">No collections yet.</div>`}`;
+      <div class="cl-masthead">
+        <h1 class="cl-masthead-title">Collections</h1>
+        <div class="cl-masthead-right">
+          <div class="cl-masthead-meta">Film Club<br>${esc(metaLine)}</div>
+          ${indexMenu()}
+        </div>
+      </div>
+      ${mineHtml}
+      ${generatedHtml}
+      ${empty}`;
   }
 
   /* The index overflow menu. Follows the same open/close behaviour as the
@@ -324,6 +446,9 @@
 
     const newBtn = document.querySelector("#cl-index-new");
     if (newBtn) newBtn.onclick = () => { close(); showNewCollectionModal(); };
+
+    const start = document.querySelector("#cl-empty-start");
+    if (start) start.onclick = () => showNewCollectionModal();
   }
 
   /* New-collection is a real modal in #modal-root — the same host and pattern
@@ -405,25 +530,84 @@
 
   const YEAR = (iso) => (String(iso || "").match(/^(\d{4})/) || [])[1] || "";
 
-  /* A director's factual scaffolding, from TMDB: portrait and dates. Having
-     these on the page is what frees the author's prose from having to be a
-     summary of facts. */
-  function directorHeader(c) {
+  /* Which words appear over the hero and above the intro depend on why the
+     collection exists — the one taxonomy the data actually has — rather than
+     an invented editorial subcategory. */
+  function heroEyebrow(c) {
+    if (c.origin === "authored") {
+      return c.owner_name ? `Curated by ${c.owner_name}` : "Curated";
+    }
+    return c.kind === "director" ? "Retrospective" : "Theme";
+  }
+
+  /* Full-bleed hero: the first still standing in for the collection's own
+     artwork (it has none of its own), grayscaled and scrimmed so the title
+     overlaid on it stays legible regardless of what the still looks like. */
+  function detailHero(c) {
+    const heroStill = (c.entries || []).find((e) => e.still_url);
+    const img = heroStill
+      ? `<img class="cl-dhero-img" src="${esc(heroStill.still_url)}" alt="">` : "";
+    const pos = c.position
+      ? `<div class="cl-dhero-num">No. ${String(c.position).padStart(2, "0")}</div>` : "";
+    return `<div class="cl-dhero${heroStill ? "" : " cl-dhero-empty"}">
+      ${img}
+      <div class="cl-dhero-scrim"></div>
+      ${pos}
+      <div class="cl-dhero-inner">
+        <div class="cl-dhero-eyebrow">${esc(heroEyebrow(c))}</div>
+        <h1 class="cl-page-title">${esc(c.title)}</h1>
+      </div>
+    </div>`;
+  }
+
+  /* A director's factual scaffolding, from TMDB: portrait and dates. A
+     compact strip above the prose rather than folded into the hero — the hero
+     image is a film still, not a portrait, so the two don't share a frame. */
+  function directorFacts(c) {
     if (c.kind !== "director") return "";
     const born = YEAR(c.director_born);
     const died = YEAR(c.director_died);
     const dates = born ? (died ? `${born}–${died}` : `b. ${born}`) : "";
-    // The name is already the page title; repeating it beside the portrait was
-    // just the same words twice. The portrait carries the facts instead.
-    const n = c.entry_count || 0;
-    const films = n ? `${n} film${n === 1 ? "" : "s"}` : "";
-    const facts = [dates, films].filter(Boolean).join(" · ");
     return `<div class="cl-dir">
       ${c.director_portrait_url
         ? `<img class="cl-dir-portrait" src="${esc(c.director_portrait_url)}" alt="">`
         : `<div class="cl-dir-portrait cl-dir-portrait-empty"></div>`}
-      ${facts ? `<div class="cl-dir-facts">${esc(facts)}</div>` : ""}
+      <div class="cl-dir-facts">
+        <div class="cl-dir-name">${esc(c.director_name || "")}</div>
+        ${dates ? `<div class="cl-dir-dates">${esc(dates)}</div>` : ""}
+      </div>
     </div>`;
+  }
+
+  /* Sticky "in this collection" nav. Deliberately not real anchor links —
+     collections.js runs on the same page as the app's own hash router, and an
+     href="#cl-entry-…" would fire its hashchange listener and trigger a full
+     app re-render for what should be a same-page scroll. A plain button with
+     scrollIntoView sidesteps the router entirely. */
+  function sidebarNav(entries) {
+    if (!entries.length) return "";
+    const links = entries.map((e) => `
+      <button type="button" class="cl-nav-link" data-target="cl-entry-${e.id}">
+        <span class="cl-nav-dot cl-nav-dot-${e.plex_state === "resolved" ? "on" : "off"}"></span>${esc(e.title)}
+      </button>`).join("");
+    return `<aside class="cl-sidebar">
+      <div class="cl-sidebar-label">In this collection</div>
+      ${links}
+      <div class="cl-sidebar-legend">
+        <div><span class="cl-nav-dot cl-nav-dot-on"></span>on Plex</div>
+        <div><span class="cl-nav-dot cl-nav-dot-off"></span>not on the server</div>
+      </div>
+      <a class="cl-back" href="#/collections">← All collections</a>
+    </aside>`;
+  }
+
+  function wireSidebarNav() {
+    document.querySelectorAll(".cl-nav-link").forEach((btn) => {
+      btn.onclick = () => {
+        const el = document.getElementById(btn.dataset.target);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+    });
   }
 
   /* A small sans label above an authored block, for the author only. Two empty
@@ -476,84 +660,84 @@
     </div>`;
   }
 
-  /* A small factual line under the title. It earns its place twice: it tells a
-     reader what they are committing to before they scroll, and it gives the
-     title column something to sit on — without it the left half is a large
-     heading above a void. */
+  /* The facts line under the hero: what a reader is committing to before they
+     scroll. "Watchable now" counts only entries actually resolved on Plex —
+     computed from the already-gated `entries`, so it can never overclaim
+     relative to what is literally rendered below it. */
   function headerMeta(c, entries) {
     const n = entries.length;
     const mins = entries.reduce((t, e) => t + (Number(e.runtime) || 0), 0);
     const years = entries.map((e) => Number(e.year)).filter(Boolean);
-    const bits = [];
-    if (n) bits.push(`${n} film${n === 1 ? "" : "s"}`);
+    const onPlex = entries.filter((e) => e.plex_state === "resolved").length;
+
+    const parts = [];
+    if (n) parts.push(esc(`${n} film${n === 1 ? "" : "s"}`));
     if (mins) {
       const h = Math.floor(mins / 60);
-      bits.push(h ? `${h}h ${mins % 60}m` : `${mins}m`);
+      parts.push(esc(h ? `${h}h ${mins % 60}m` : `${mins}m`));
     }
     if (years.length > 1) {
       const lo = Math.min(...years), hi = Math.max(...years);
-      if (lo !== hi) bits.push(`${lo}–${hi}`);
+      if (lo !== hi) parts.push(esc(`${lo}–${hi}`));
     }
-    return bits.length ? `<div class="cl-head-meta">${esc(bits.join(" · "))}</div>` : "";
+    const line = parts.join(" · ");
+    const watchable = onPlex
+      ? `<span class="cl-watchable">${onPlex} watchable now</span>` : "";
+    if (!line && !watchable) return "";
+    return `<div class="cl-head-meta">${line}${line && watchable ? " · " : ""}${watchable}</div>`;
   }
 
   function collectionPage(c) {
     const entries = c.entries || [];
     // A draft is only ever served to an admin, so this badge is not a leak.
     const draft = c.published ? "" : `<span class="cl-draft">Draft</span>`;
-    const eyebrow = c.kind === "director" && c.director_name
-      ? `<div class="cl-eyebrow">Director</div>` : "";
 
     return `${previewBar()}
-    <article class="cl-page">
-      <header class="cl-head">
-        <div class="cl-head-top">
-          <div class="cl-head-title">
-            ${eyebrow}
-            <h1 class="cl-page-title">${esc(c.title)}</h1>
-            ${draft}
-            ${headerMeta(c, entries)}
-          </div>
-          <div class="cl-head-summary">
-            ${c.kind === "director" ? proseLabel("On this collection") : ""}
-            <div class="cl-intro" ${editable(c.intro, "intro",
-              "Introduce this collection…")}>${markdown(c.intro)}</div>
-          </div>
+    <article class="cl-page cl-page-grid">
+      ${sidebarNav(entries)}
+      <div class="cl-main">
+        ${detailHero(c)}
+        <div class="cl-head">
+          ${draft}
+          ${headerMeta(c, entries)}
+          ${directorFacts(c)}
+          ${c.kind === "director" ? `
+            ${proseLabel("On the director")}
+            <div class="cl-intro cl-intro-director" ${editable(c.director_intro, "director_intro",
+              "Write about the director…")}>${markdown(c.director_intro)}</div>` : ""}
+          ${c.kind === "director" ? proseLabel("On this collection") : ""}
+          <div class="cl-intro cl-intro-main" ${editable(c.intro, "intro",
+            "Introduce this collection…")}>${markdown(c.intro)}</div>
         </div>
-        ${directorHeader(c)}
-        ${c.kind === "director" ? `
-          ${proseLabel("On the director")}
-          <div class="cl-intro" ${editable(c.director_intro, "director_intro",
-            "Write about the director…")}>${markdown(c.director_intro)}</div>` : ""}
-      </header>
-      ${entries.length
-        ? `<div class="cl-rows">${entries.map(row).join("")}</div>`
-        : `<div class="empty">Nothing to show here yet.</div>`}
-      ${coveragePanel(c)}
-      ${isAdmin() && canAuthor ? `
-        <div class="cl-admin">
-          <button class="cl-add-toggle" type="button">+ Add a film</button>
-          ${c.kind === "director"
-            ? `<button class="cl-sync" type="button" data-slug="${esc(c.slug)}"
-                 title="Re-check this director's filmography against the Plex library"
-                 >Sync from Plex</button>` : ""}
-          <div class="cl-add" hidden>
-            <input class="cl-add-input" type="search" autocomplete="off"
-                   placeholder="Search TMDB by title…" aria-label="Search films to add">
-            <div class="cl-add-results"></div>
-          </div>
-        </div>` : ""}
-      <div class="cl-foot">
-        <a class="cl-back" href="#/collections">← All collections</a>
-        ${isAdmin()
-          ? `<span class="cl-foot-admin">
-               ${previewToggle()}
-               <button class="cl-publish" data-slug="${esc(c.slug)}"
-                 data-published="${c.published ? "1" : "0"}">${
-                   c.published ? "Unpublish" : "Publish"}</button>
-               <button class="cl-delete" data-slug="${esc(c.slug)}"
-                 data-title="${esc(c.title)}">Delete collection</button>
-             </span>` : ""}
+        ${entries.length
+          ? `<div class="cl-rows">${entries.map((e, i) => row(e, i + 1)).join("")}</div>`
+          : `<div class="empty">Nothing to show here yet.</div>`}
+        ${coveragePanel(c)}
+        ${isAdmin() && canAuthor ? `
+          <div class="cl-admin">
+            <button class="cl-add-toggle" type="button">+ Add a film</button>
+            ${c.kind === "director"
+              ? `<button class="cl-sync" type="button" data-slug="${esc(c.slug)}"
+                   title="Re-check this director's filmography against the Plex library"
+                   >Sync from Plex</button>` : ""}
+            <div class="cl-add" hidden>
+              <input class="cl-add-input" type="search" autocomplete="off"
+                     placeholder="Search TMDB by title…" aria-label="Search films to add">
+              <div class="cl-add-results"></div>
+            </div>
+          </div>` : ""}
+        <div class="cl-foot">
+          <a class="cl-back cl-back-mobile" href="#/collections">← All collections</a>
+          ${isAdmin()
+            ? `<span class="cl-foot-admin">
+                 ${previewToggle()}
+                 <button class="cl-publish" data-slug="${esc(c.slug)}"
+                   data-published="${c.published ? "1" : "0"}">${
+                     c.published ? "Unpublish" : "Publish"}</button>
+                 <button class="cl-delete" data-slug="${esc(c.slug)}"
+                   data-title="${esc(c.title)}">Delete collection</button>
+               </span>` : ""}
+        </div>
       </div>
     </article>`;
   }
@@ -839,10 +1023,11 @@
         wireCoverage(c.slug);
         wireSync(c.slug);
         wireAddToBacklog();
+        wireSidebarNav();
         wirePreview();
       } else {
         const data = await api(`/api/collections${q}`);
-        paintView("collections", indexPage(data.items || []), preserve);
+        paintView("collections", indexPage(data), preserve);
         wireIndexMenu();
         wirePreview();
       }

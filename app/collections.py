@@ -49,6 +49,10 @@ def attach_club_state(conn: sqlite3.Connection, entries: list[dict]) -> None:
     the club's list, the page should link to its normal detail page and say
     where it stands, rather than pretending the two are unrelated.
 
+    A watched film also gets the club's real average rating, so a row can say
+    "seen by the club, 4.2 avg" instead of just linking off — the average
+    already exists for the movie detail page; this reuses the same fact.
+
     One query for the whole page rather than one per row.
     """
     ids = [e["tmdb_id"] for e in entries if e.get("tmdb_id")]
@@ -57,15 +61,24 @@ def attach_club_state(conn: sqlite3.Connection, entries: list[dict]) -> None:
         marks = ",".join("?" * len(ids))
         rows = db.query_all(
             conn,
-            f"SELECT id, tmdb_id, status FROM movies WHERE tmdb_id IN ({marks})",
+            f"""SELECT m.id, m.tmdb_id, m.status,
+                       (SELECT AVG(r.score) FROM ratings r WHERE r.movie_id = m.id) AS avg_rating
+                  FROM movies m WHERE m.tmdb_id IN ({marks})""",
             tuple(ids),
         )
-        found = {r["tmdb_id"]: {"movie_id": r["id"], "movie_status": r["status"]}
-                 for r in rows}
+        found = {
+            r["tmdb_id"]: {
+                "movie_id": r["id"],
+                "movie_status": r["status"],
+                "club_avg_rating": round(r["avg_rating"], 1) if r["avg_rating"] is not None else None,
+            }
+            for r in rows
+        }
     for entry in entries:
         state = found.get(entry.get("tmdb_id"))
         entry["movie_id"] = state["movie_id"] if state else None
         entry["movie_status"] = state["movie_status"] if state else None
+        entry["club_avg_rating"] = state["club_avg_rating"] if state else None
 
 
 def resolve_entry(entry: dict) -> dict:
@@ -100,26 +113,113 @@ def resolve_entry(entry: dict) -> dict:
 
 
 def list_collections(conn: sqlite3.Connection, *, include_unpublished: bool = False) -> list[dict]:
-    """All collections, newest first. Drafts are admin-only.
-
-    Each row carries the artwork of its first entry, so the index can show a
-    cover without a second round trip. ``entry_count`` counts stored entries,
-    not the publicly visible subset — the index is a table of contents, not a
-    claim about what a reader will see.
-    """
-    sql = """
-        SELECT c.*,
-               (SELECT e.still_url FROM collection_entries e
-                     WHERE e.collection_id = c.id AND e.still_url IS NOT NULL
-                     ORDER BY e.position, e.id LIMIT 1) AS cover_url,
-               (SELECT COUNT(*) FROM collection_entries e2
-                     WHERE e2.collection_id = c.id) AS entry_count
-          FROM collections c
-    """
+    """All collections, newest first. Drafts are admin-only."""
+    sql = "SELECT * FROM collections"
     if not include_unpublished:
-        sql += " WHERE c.published = 1"
-    sql += " ORDER BY c.created_at DESC, c.id DESC"
+        sql += " WHERE published = 1"
+    sql += " ORDER BY created_at DESC, id DESC"
     return [collection_base(r) for r in db.query_all(conn, sql)]
+
+
+def owner_name(conn: sqlite3.Connection) -> str | None:
+    """The site's single owner, for attributing an authored collection to a
+    person rather than a database column. Schema guarantees at most one
+    (``idx_members_single_owner``), so this is unambiguous."""
+    row = db.query_one(
+        conn, "SELECT display_name, username FROM members WHERE is_owner = 1 LIMIT 1"
+    )
+    if not row:
+        return None
+    return (row["display_name"] or "").strip() or row["username"]
+
+
+def _stats(entries: list[dict], *, blurb_gated: bool) -> dict:
+    """Aggregate facts about a collection's stored entries, for a listing a
+    reader is deciding whether to open rather than reading in full.
+
+    Computed over every stored entry, not the gated subset a reader would
+    actually see — the index is a table of contents, not a claim about
+    current visibility. Where the two diverge, ``on_plex``/``missing`` and
+    ``written`` say so explicitly instead of the total silently overstating
+    what is readable right now.
+    """
+    resolved = [resolve_entry(e) for e in entries]
+    plex_ok = plex.library_ready()
+    on_plex = sum(1 for e in resolved if e["plex_state"] == RESOLVED) if plex_ok else None
+    missing = sum(1 for e in resolved if e["plex_state"] == MISSING) if plex_ok else None
+    years = [e["year"] for e in entries if e.get("year")]
+    written = sum(1 for e in entries if str(e.get("blurb") or "").strip())
+    return {
+        "film_count": len(entries),
+        "runtime_minutes": sum(e.get("runtime") or 0 for e in entries),
+        "year_from": min(years) if years else None,
+        "year_to": max(years) if years else None,
+        "on_plex": on_plex,
+        "missing": missing,
+        "written": written if blurb_gated else None,
+    }
+
+
+def _last_changed(collection: dict, entries: list[dict]) -> str:
+    """The most recent edit to a collection or any of its entries.
+
+    ``collections.updated_at`` alone misses an edited blurb (only
+    ``collection_entries.updated_at`` moves) or an added/removed film, so this
+    takes the latest of everything. SQLite's ``datetime('now')`` format sorts
+    correctly as a plain string, so no parsing is needed.
+    """
+    stamps = [collection.get("updated_at") or ""]
+    stamps += [e.get("updated_at") or "" for e in entries]
+    return max(stamps)
+
+
+def slug_position(conn: sqlite3.Connection, slug: str, *, is_admin: bool,
+                  preview: bool) -> int | None:
+    """1-based position of a collection in the index order: every authored
+    collection first, then generated, each newest first — matching
+    ``index_payload``'s own mine-then-generated split. Purely a display
+    numeral; returns None if the slug is not in the visible set at all."""
+    include_unpublished = is_admin and not preview
+    sql = "SELECT slug FROM collections"
+    if not include_unpublished:
+        sql += " WHERE published = 1"
+    sql += " ORDER BY (origin != 'authored'), created_at DESC, id DESC"
+    slugs = [r["slug"] for r in db.query_all(conn, sql)]
+    return slugs.index(slug) + 1 if slug in slugs else None
+
+
+def index_payload(conn: sqlite3.Connection, *, is_admin: bool, preview: bool) -> dict:
+    """Assemble the whole collections index in one call.
+
+    Split into ``mine`` (the owner's own writing) and ``generated`` (assembled
+    for them), matching the product's own distinction rather than an editorial
+    one invented for the page. ``mine`` collections additionally carry a
+    ``rows`` listing of individual films — reusing ``collection_detail``'s
+    existing gating rather than a second implementation of it, so a listing
+    can never show a reader a title withheld from them (an unpublished draft,
+    an unwritten director entry).
+    """
+    include_unpublished = is_admin and not preview
+    collections = list_collections(conn, include_unpublished=include_unpublished)
+
+    mine, generated = [], []
+    for c in collections:
+        entries = entries_for(conn, c["id"])
+        c.update(_stats(entries, blurb_gated=c["kind"] == "director"))
+        if c["origin"] == "authored":
+            full = collection_detail(conn, c["slug"], is_admin=is_admin, preview=preview)
+            c["rows"] = full["entries"] if full else []
+            c["last_changed"] = _last_changed(c, entries)
+            mine.append(c)
+        else:
+            generated.append(c)
+
+    return {
+        "mine": mine,
+        "generated": generated,
+        "owner_name": owner_name(conn) if mine else None,
+        "total_films": sum(c["film_count"] for c in collections),
+    }
 
 
 def get_by_slug(conn: sqlite3.Connection, slug: str) -> dict | None:
