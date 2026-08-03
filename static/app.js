@@ -2568,8 +2568,12 @@
       try { data = await api("/api/admin/members"); }
       catch (error) { adminError(error, preserve); return; }
       const members = data.members;
+      // A curator badge only means something for someone who isn't already
+      // admin/owner — admin already covers it, and hiding it there keeps the
+      // column reading as one clear rank rather than a pile of overlapping tags.
       const typeBadge = (m) => m.is_owner ? `<span class="elig-tag elig-eligible">Owner</span>`
         : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:var(--accent-soft)">Admin</span>`
+        : m.can_curate_collections ? `<span class="elig-tag" style="color:var(--good-text);background:var(--good-soft)">Curator</span>`
         : `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Member</span>`;
       const rowActions = (member) => {
         const items = [];
@@ -2577,6 +2581,13 @@
           items.push(member.is_admin
             ? `<button type="button" class="overflow-menu-item admin-toggle" data-id="${member.id}" data-val="0">Remove admin</button>`
             : `<button type="button" class="overflow-menu-item admin-toggle" data-id="${member.id}" data-val="1">Make admin</button>`);
+        }
+        // Redundant once someone is admin (admin already covers every
+        // collection), so the toggle only appears where it does something.
+        if (!member.is_owner && !member.is_admin) {
+          items.push(member.can_curate_collections
+            ? `<button type="button" class="overflow-menu-item curator-toggle" data-id="${member.id}" data-val="0">Remove collection access</button>`
+            : `<button type="button" class="overflow-menu-item curator-toggle" data-id="${member.id}" data-val="1">Grant collection access</button>`);
         }
         if ((member.identity_providers || []).includes("local")) {
           items.push(`<button type="button" class="overflow-menu-item password-reset-btn" data-id="${member.id}">Reset password</button>`);
@@ -2609,6 +2620,8 @@
       paintView("admin", adminLayout("users", content), preserve);
       app.querySelectorAll(".admin-toggle").forEach(button => button.onclick = () =>
         setAdmin(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
+      app.querySelectorAll(".curator-toggle").forEach(button => button.onclick = () =>
+        setCurator(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
       app.querySelectorAll(".password-reset-btn").forEach(button => button.onclick = () =>
         createPasswordReset(parseInt(button.dataset.id, 10), members.find(member => member.id === parseInt(button.dataset.id, 10))?.username));
       app.querySelectorAll(".discord-id-btn").forEach(button => button.onclick = () =>
@@ -2900,6 +2913,15 @@
     try {
       await api(`/api/admin/members/${id}/admin`, { method: "POST", body: { is_admin: value } });
       toast(value ? "Admin granted" : "Admin removed");
+      renderAdmin("users", true);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function setCurator(id, value) {
+    try {
+      await api(`/api/admin/members/${id}/curator`,
+        { method: "POST", body: { can_curate_collections: value } });
+      toast(value ? "Collection access granted" : "Collection access removed");
       renderAdmin("users", true);
     } catch (e) { toast(e.message, true); }
   }

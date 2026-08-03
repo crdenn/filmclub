@@ -81,6 +81,7 @@ def member_public(row: sqlite3.Row | dict) -> dict | None:
         "color": d["color"],
         "is_admin": bool(d.get("is_admin")),
         "is_owner": bool(d.get("is_owner")),
+        "can_curate_collections": bool(d.get("can_curate_collections")),
     }
 
 

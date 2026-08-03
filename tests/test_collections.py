@@ -14,7 +14,7 @@ os.environ.setdefault("SESSION_SECRET", "collections-test-secret")
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="filmclub-collections-bootstrap-"))
 
 from app import collections as coll  # noqa: E402
-from app import config, db, plex  # noqa: E402
+from app import config, db, plex, service  # noqa: E402
 
 
 def _meta(tmdb_id: int, title: str, **extra) -> dict:
@@ -372,13 +372,15 @@ class IndexPayloadTests(unittest.TestCase):
                              rk_imdb={}, rt_tmdb={}, rt_imdb={}, machine_id="m", ok=True)
 
         db.execute(self.conn,
-                   "INSERT INTO members (plex_id, username, color, is_owner) "
-                   "VALUES ('owner-1', 'chrisplex', '#abcabc', 1)")
+                   "INSERT INTO members (plex_id, username, color, is_owner, is_admin) "
+                   "VALUES ('owner-1', 'chrisplex', '#abcabc', 1, 1)")
         db.execute(self.conn,
                    "UPDATE members SET display_name = 'Chris' WHERE plex_id = 'owner-1'")
+        self.owner = db.row_to_dict(db.query_one(
+            self.conn, "SELECT * FROM members WHERE plex_id = 'owner-1'"))
 
         self.mine = coll.create_collection(self.conn, "mine", "Mine", origin="authored",
-                                           published=True)
+                                           published=True, created_by=self.owner["id"])
         coll.upsert_entry(self.conn, self.mine, _meta(11, "On The Server", year=1995,
                                                        runtime=100), blurb="Written.")
         coll.upsert_entry(self.conn, self.mine, _meta(33, "Never Suggested", year=2005,
@@ -396,10 +398,35 @@ class IndexPayloadTests(unittest.TestCase):
         config.DB_PATH = self._old_db_path
         self.tmp.cleanup()
 
-    def test_owner_name_prefers_display_name(self):
-        self.assertEqual(coll.owner_name(self.conn), "Chris")
+    def test_set_member_curator_toggles_the_flag(self):
+        db.execute(self.conn,
+                   "INSERT INTO members (plex_id, username, color) VALUES ('c1', 'Curator', '#222222')")
+        member_id = db.query_one(self.conn, "SELECT id FROM members WHERE plex_id = 'c1'")["id"]
+        self.assertFalse(db.query_one(
+            self.conn, "SELECT can_curate_collections FROM members WHERE id = ?",
+            (member_id,))["can_curate_collections"])
+
+        service.set_member_curator(self.conn, member_id, True)
+        self.assertTrue(db.query_one(
+            self.conn, "SELECT can_curate_collections FROM members WHERE id = ?",
+            (member_id,))["can_curate_collections"])
+
+        service.set_member_curator(self.conn, member_id, False)
+        self.assertFalse(db.query_one(
+            self.conn, "SELECT can_curate_collections FROM members WHERE id = ?",
+            (member_id,))["can_curate_collections"])
+
+    def test_set_member_curator_rejects_an_unknown_member(self):
+        with self.assertRaises(ValueError):
+            service.set_member_curator(self.conn, 999999, True)
+
+    def test_creator_name_prefers_display_name(self):
+        self.assertEqual(coll.creator_name(self.conn, self.owner["id"]), "Chris")
         db.execute(self.conn, "UPDATE members SET display_name = NULL WHERE is_owner = 1")
-        self.assertEqual(coll.owner_name(self.conn), "chrisplex")
+        self.assertEqual(coll.creator_name(self.conn, self.owner["id"]), "chrisplex")
+
+    def test_creator_name_is_none_for_no_member(self):
+        self.assertIsNone(coll.creator_name(self.conn, None))
 
     def test_stats_are_computed_over_the_full_stored_set(self):
         entries = coll.entries_for(self.conn, self.mine)
@@ -436,35 +463,35 @@ class IndexPayloadTests(unittest.TestCase):
         self.assertEqual(stats["stills_overflow"], 5)
 
     def test_index_payload_splits_by_origin(self):
-        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        payload = coll.index_payload(self.conn, member=self.owner, preview=False)
         self.assertEqual([c["slug"] for c in payload["mine"]], ["mine"])
         self.assertEqual([c["slug"] for c in payload["generated"]], ["gen"])
-        self.assertEqual(payload["owner_name"], "Chris")
+        self.assertEqual(payload["mine"][0]["creator_name"], "Chris")
         self.assertEqual(payload["total_films"], 3)
 
     def test_mine_collections_carry_a_gated_row_listing(self):
-        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        payload = coll.index_payload(self.conn, member=self.owner, preview=False)
         rows = payload["mine"][0]["rows"]
         self.assertEqual({r["title"] for r in rows}, {"On The Server", "Never Suggested"})
 
     def test_generated_collections_carry_no_row_listing(self):
-        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        payload = coll.index_payload(self.conn, member=self.owner, preview=False)
         self.assertNotIn("rows", payload["generated"][0])
 
-    def test_owner_name_is_none_when_nothing_is_authored(self):
+    def test_mine_is_empty_when_nothing_is_authored(self):
         db.execute(self.conn, "DELETE FROM collections WHERE slug = 'mine'")
-        payload = coll.index_payload(self.conn, is_admin=True, preview=False)
+        payload = coll.index_payload(self.conn, member=self.owner, preview=False)
         self.assertEqual(payload["mine"], [])
-        self.assertIsNone(payload["owner_name"])
 
     def test_slug_position_is_mine_first_then_generated(self):
-        self.assertEqual(coll.slug_position(self.conn, "mine", is_admin=True, preview=False), 1)
-        self.assertEqual(coll.slug_position(self.conn, "gen", is_admin=True, preview=False), 2)
+        self.assertEqual(coll.slug_position(self.conn, "mine", member=self.owner, preview=False), 1)
+        self.assertEqual(coll.slug_position(self.conn, "gen", member=self.owner, preview=False), 2)
 
     def test_slug_position_is_none_for_an_unpublished_slug_to_a_reader(self):
         coll.update_collection(self.conn, "gen", {"published": False})
+        reader = {**self.owner, "is_admin": False, "is_owner": False}
         self.assertIsNone(
-            coll.slug_position(self.conn, "gen", is_admin=False, preview=False))
+            coll.slug_position(self.conn, "gen", member=reader, preview=False))
 
     def test_last_changed_takes_the_latest_of_collection_or_any_entry(self):
         c = coll.get_by_slug(self.conn, "mine")
@@ -477,6 +504,38 @@ class IndexPayloadTests(unittest.TestCase):
                    "WHERE collection_id = ? AND tmdb_id = 11", (self.mine,))
         entries = coll.entries_for(self.conn, self.mine)
         self.assertEqual(coll._last_changed(c, entries), "2999-01-01 00:00:00")
+
+    def test_can_manage_is_true_for_any_admin_regardless_of_creator(self):
+        collection = coll.get_by_slug(self.conn, "mine")
+        someone_else = {"id": 999, "is_admin": True, "can_curate_collections": False}
+        self.assertTrue(coll.can_manage(collection, someone_else))
+
+    def test_can_manage_is_scoped_to_the_curators_own_collection(self):
+        collection = coll.get_by_slug(self.conn, "mine")
+        creator = {"id": self.owner["id"], "is_admin": False, "can_curate_collections": True}
+        other_curator = {"id": self.owner["id"] + 1, "is_admin": False,
+                         "can_curate_collections": True}
+        self.assertTrue(coll.can_manage(collection, creator))
+        self.assertFalse(coll.can_manage(collection, other_curator))
+
+    def test_can_manage_is_false_for_a_generated_collection_without_admin(self):
+        generated = coll.get_by_slug(self.conn, "gen")
+        curator = {"id": self.owner["id"], "is_admin": False, "can_curate_collections": True}
+        self.assertFalse(coll.can_manage(generated, curator))
+
+    def test_a_curator_sees_only_their_own_drafts_in_the_index(self):
+        db.execute(self.conn,
+                   "INSERT INTO members (plex_id, username, color, can_curate_collections) "
+                   "VALUES ('cur-1', 'Curator', '#333333', 1)")
+        curator_row = db.row_to_dict(db.query_one(
+            self.conn, "SELECT * FROM members WHERE plex_id = 'cur-1'"))
+        coll.update_collection(self.conn, "mine", {"published": False})
+        coll.create_collection(self.conn, "curators-draft", "Curator's Draft",
+                               origin="authored", published=False,
+                               created_by=curator_row["id"])
+
+        payload = coll.index_payload(self.conn, member=curator_row, preview=False)
+        self.assertEqual([c["slug"] for c in payload["mine"]], ["curators-draft"])
 
     def test_club_average_rating_is_attached_for_a_watched_film(self):
         db.execute(self.conn,

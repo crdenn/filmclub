@@ -121,16 +121,36 @@ def list_collections(conn: sqlite3.Connection, *, include_unpublished: bool = Fa
     return [collection_base(r) for r in db.query_all(conn, sql)]
 
 
-def owner_name(conn: sqlite3.Connection) -> str | None:
-    """The site's single owner, for attributing an authored collection to a
-    person rather than a database column. Schema guarantees at most one
-    (``idx_members_single_owner``), so this is unambiguous."""
+def creator_name(conn: sqlite3.Connection, member_id: int | None) -> str | None:
+    """Attribute an authored collection to the person who actually created it.
+
+    More than one member can author a collection now (the site owner, or
+    anyone granted ``can_curate_collections``), so this is looked up per
+    collection rather than assuming a single site-wide owner."""
+    if not member_id:
+        return None
     row = db.query_one(
-        conn, "SELECT display_name, username FROM members WHERE is_owner = 1 LIMIT 1"
+        conn, "SELECT display_name, username FROM members WHERE id = ?", (member_id,)
     )
     if not row:
         return None
     return (row["display_name"] or "").strip() or row["username"]
+
+
+def can_manage(collection: dict, member: dict) -> bool:
+    """Whether ``member`` may edit, publish, or delete this specific
+    collection — the authorization decision every mutation endpoint composes
+    with ``_require_authored`` (which blocks editing a generated collection
+    outright, for anyone).
+
+    True for any admin, regardless of who created it. For a curator, true
+    only when they created this collection themselves: ``created_by`` is the
+    stored fact that decides it, never a client-supplied claim.
+    """
+    if member.get("is_admin"):
+        return True
+    return (bool(member.get("can_curate_collections"))
+            and collection.get("created_by") == member.get("id"))
 
 
 def _stats(entries: list[dict], *, blurb_gated: bool) -> dict:
@@ -181,41 +201,72 @@ def _last_changed(collection: dict, entries: list[dict]) -> str:
     return max(stamps)
 
 
-def slug_position(conn: sqlite3.Connection, slug: str, *, is_admin: bool,
+def _effective_viewer(member: dict, *, preview: bool) -> dict:
+    """``member`` with admin/curator rights suppressed under preview, so every
+    visibility and permission check in this module can key off one dict
+    instead of threading ``preview`` through each condition separately."""
+    if not preview:
+        return member
+    viewer = dict(member)
+    viewer["is_admin"] = False
+    viewer["can_curate_collections"] = False
+    return viewer
+
+
+def slug_position(conn: sqlite3.Connection, slug: str, *, member: dict,
                   preview: bool) -> int | None:
     """1-based position of a collection in the index order: every authored
     collection first, then generated, each newest first — matching
-    ``index_payload``'s own mine-then-generated split. Purely a display
-    numeral; returns None if the slug is not in the visible set at all."""
-    include_unpublished = is_admin and not preview
-    sql = "SELECT slug FROM collections"
+    ``index_payload``'s own mine-then-generated split and visibility rules
+    (a curator's own draft counts; another member's does not). Purely a
+    display numeral; returns None if the slug is not in the visible set."""
+    viewer = _effective_viewer(member, preview=preview)
+    include_unpublished = bool(viewer.get("is_admin") or viewer.get("can_curate_collections"))
+
+    sql = "SELECT slug, published, created_by, origin FROM collections"
     if not include_unpublished:
         sql += " WHERE published = 1"
     sql += " ORDER BY (origin != 'authored'), created_at DESC, id DESC"
-    slugs = [r["slug"] for r in db.query_all(conn, sql)]
+    rows = db.query_all(conn, sql)
+    if include_unpublished and not viewer.get("is_admin"):
+        rows = [r for r in rows if r["published"] or r["created_by"] == viewer.get("id")]
+    slugs = [r["slug"] for r in rows]
     return slugs.index(slug) + 1 if slug in slugs else None
 
 
-def index_payload(conn: sqlite3.Connection, *, is_admin: bool, preview: bool) -> dict:
+def index_payload(conn: sqlite3.Connection, *, member: dict, preview: bool) -> dict:
     """Assemble the whole collections index in one call.
 
-    Split into ``mine`` (the owner's own writing) and ``generated`` (assembled
-    for them), matching the product's own distinction rather than an editorial
-    one invented for the page. ``mine`` collections additionally carry a
-    ``rows`` listing of individual films — reusing ``collection_detail``'s
-    existing gating rather than a second implementation of it, so a listing
-    can never show a reader a title withheld from them (an unpublished draft,
-    an unwritten director entry).
+    Split into ``mine`` (authored — someone's own writing, whether the site
+    owner or a curator) and ``generated`` (assembled for them), matching the
+    product's own distinction rather than an editorial one invented for the
+    page. ``mine`` collections additionally carry a ``rows`` listing of
+    individual films — reusing ``collection_detail``'s existing gating rather
+    than a second implementation of it, so a listing can never show a reader
+    a title withheld from them (an unpublished draft, an unwritten director
+    entry).
+
+    A curator sees their own unpublished drafts here, same as an admin would,
+    but not another member's — ``can_manage`` (via ``created_by``) is what
+    decides that, not a blanket "is this person any kind of privileged user".
     """
-    include_unpublished = is_admin and not preview
+    viewer = _effective_viewer(member, preview=preview)
+    include_unpublished = bool(viewer.get("is_admin") or viewer.get("can_curate_collections"))
     collections = list_collections(conn, include_unpublished=include_unpublished)
+    if include_unpublished and not viewer.get("is_admin"):
+        collections = [c for c in collections
+                       if c["published"] or c.get("created_by") == viewer.get("id")]
 
     mine, generated = [], []
     for c in collections:
         entries = entries_for(conn, c["id"])
         c.update(_stats(entries, blurb_gated=c["kind"] == "director"))
+        manage = can_manage(c, viewer)
+        c["can_manage"] = manage
+        c["editable"] = manage and c["origin"] == "authored"
         if c["origin"] == "authored":
-            full = collection_detail(conn, c["slug"], is_admin=is_admin, preview=preview)
+            c["creator_name"] = creator_name(conn, c.get("created_by"))
+            full = collection_detail(conn, c["slug"], is_admin=manage, preview=preview)
             c["rows"] = full["entries"] if full else []
             c["last_changed"] = _last_changed(c, entries)
             mine.append(c)
@@ -225,7 +276,6 @@ def index_payload(conn: sqlite3.Connection, *, is_admin: bool, preview: bool) ->
     return {
         "mine": mine,
         "generated": generated,
-        "owner_name": owner_name(conn) if mine else None,
         "total_films": sum(c["film_count"] for c in collections),
     }
 
@@ -506,14 +556,15 @@ def create_collection(conn: sqlite3.Connection, slug: str, title: str, *,
                       director_name: str | None = None,
                       director_tmdb_id: int | None = None,
                       published: bool = False,
-                      origin: str = "authored") -> int:
+                      origin: str = "authored",
+                      created_by: int | None = None) -> int:
     cur = db.execute(
         conn,
         """INSERT INTO collections
                (slug, title, kind, intro, director_name, director_tmdb_id,
-                published, origin)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                published, origin, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (slug, title, kind, intro, director_name, director_tmdb_id,
-         1 if published else 0, origin),
+         1 if published else 0, origin, created_by),
     )
     return cur.lastrowid

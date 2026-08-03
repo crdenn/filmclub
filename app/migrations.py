@@ -225,6 +225,26 @@ def _m12_collection_origin(conn: sqlite3.Connection) -> None:
                            "origin TEXT NOT NULL DEFAULT 'authored'")
 
 
+def _m13_collection_curators(conn: sqlite3.Connection) -> None:
+    # Lets the owner grant a member collection-management rights without full
+    # admin access. Independent of is_admin; an admin's authority already
+    # covers every collection and never depends on this flag.
+    _add_column_if_missing(conn, "members", "can_curate_collections",
+                           "can_curate_collections INTEGER NOT NULL DEFAULT 0")
+    # Per-collection ownership, needed now that more than one person can
+    # author a collection: attribution and edit rights both key off this.
+    _add_column_if_missing(conn, "collections", "created_by",
+                           "created_by INTEGER REFERENCES members(id) ON DELETE SET NULL")
+    # Every 'authored' collection created before this column existed was, in
+    # practice, written by the site owner — there was no other way to make
+    # one. Backfilling keeps their attribution and edit rights unchanged
+    # rather than silently becoming ownerless.
+    conn.execute(
+        """UPDATE collections SET created_by = (SELECT id FROM members WHERE is_owner = 1 LIMIT 1)
+               WHERE origin = 'authored' AND created_by IS NULL"""
+    )
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -239,6 +259,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (10, "collections", _m10_collections),
     (11, "director-scaffold", _m11_director_scaffold),
     (12, "collection-origin", _m12_collection_origin),
+    (13, "collection-curators", _m13_collection_curators),
 ]
 
 

@@ -246,6 +246,10 @@ class AdminFlagIn(BaseModel):
     is_admin: bool
 
 
+class CuratorFlagIn(BaseModel):
+    can_curate_collections: bool
+
+
 class DiscordIdIn(BaseModel):
     # Discord snowflake ids are numeric strings; blank clears it.
     discord_user_id: str | None = Field(default=None, max_length=32, pattern=r"^\d*$")
@@ -920,16 +924,14 @@ async def api_set_dark_palette(body: DarkPaletteIn, admin=Depends(auth.require_a
 @app.get("/api/collections")
 async def api_collections(preview: bool = False,
                           member=Depends(auth.current_member)):
-    """Collection index. Drafts are visible only to an admin.
+    """Collection index. Drafts are visible only to their author or an admin.
 
-    ``preview`` lets an admin request the reader's view of the index, drafts
-    included in the hiding.
+    ``preview`` lets an admin or curator request the reader's view of the
+    index, drafts included in the hiding.
     """
     conn = db.connect()
     try:
-        return curated.index_payload(
-            conn, is_admin=bool(member.get("is_admin")), preview=preview
-        )
+        return curated.index_payload(conn, member=member, preview=preview)
     finally:
         conn.close()
 
@@ -939,21 +941,29 @@ async def api_collection(slug: str, preview: bool = False,
                          member=Depends(auth.current_member)):
     conn = db.connect()
     try:
-        is_admin = bool(member.get("is_admin"))
-        detail = curated.collection_detail(conn, slug, is_admin=is_admin,
+        raw = curated.get_by_slug(conn, slug)
+        can_manage = bool(raw and curated.can_manage(raw, member))
+        detail = curated.collection_detail(conn, slug, is_admin=can_manage,
                                            preview=preview)
         if not detail:
             raise HTTPException(status_code=404, detail="Collection not found")
 
-        detail["position"] = curated.slug_position(conn, slug, is_admin=is_admin,
+        detail["position"] = curated.slug_position(conn, slug, member=member,
                                                     preview=preview)
+        # ``can_manage`` covers publish/delete/sync, which apply to a generated
+        # collection too. ``editable`` is the narrower "may edit its content"
+        # flag the client uses for the blurb/intro editor and Add/Remove: a
+        # generated collection stays fully read-only regardless of who's
+        # looking, matching ``_require_authored`` on the write side.
+        detail["can_manage"] = can_manage and not preview
+        detail["editable"] = detail["can_manage"] and detail["origin"] == "authored"
         if detail["origin"] == "authored":
-            detail["owner_name"] = curated.owner_name(conn)
+            detail["creator_name"] = curated.creator_name(conn, detail.get("created_by"))
 
         # The filmography is only ever needed for the author's coverage view, so
         # a reader's page load never waits on TMDB. Failure degrades to no
         # coverage panel rather than breaking the page.
-        if (is_admin and not preview
+        if (can_manage and not preview
                 and detail["kind"] == "director" and detail.get("director_tmdb_id")):
             try:
                 films = await tmdb.directed_films(detail["director_tmdb_id"])
@@ -1047,13 +1057,15 @@ async def _sync_director(conn, collection: dict) -> dict:
 
 
 @app.post("/api/collections/{slug}/sync")
-async def api_sync_director(slug: str, admin=Depends(auth.require_admin)):
+async def api_sync_director(slug: str, member=Depends(auth.require_curator)):
     """Re-run the director membership query, picking up newly added films."""
     conn = db.connect()
     try:
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.can_manage(collection, member):
+            raise HTTPException(status_code=403, detail="Not your collection")
         if collection["kind"] != "director":
             raise HTTPException(status_code=400,
                                 detail="Only director collections can be synced")
@@ -1089,7 +1101,7 @@ async def api_sync_director(slug: str, admin=Depends(auth.require_admin)):
 
 @app.post("/api/collections")
 async def api_create_collection(body: CollectionCreate,
-                                admin=Depends(auth.require_admin)):
+                                member=Depends(auth.require_curator)):
     """Create a collection. New ones start unpublished so nothing half-written
     reaches readers before the author has said it is ready."""
     conn = db.connect()
@@ -1103,6 +1115,7 @@ async def api_create_collection(body: CollectionCreate,
         curated.create_collection(
             conn, slug, title, kind=body.kind,
             director_name=director_name or None, published=False,
+            created_by=member["id"],
         )
         # Resolve the director once, at creation, so the page has its factual
         # scaffolding without the author entering dates or finding a portrait,
@@ -1127,13 +1140,15 @@ async def api_create_collection(body: CollectionCreate,
 
 @app.post("/api/collections/{slug}/entries")
 async def api_add_collection_entry(slug: str, body: EntryCreate,
-                                   admin=Depends(auth.require_admin)):
+                                   member=Depends(auth.require_curator)):
     """Add a film by TMDB id, snapshotting its metadata like `movies` does."""
     conn = db.connect()
     try:
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.can_manage(collection, member):
+            raise HTTPException(status_code=403, detail="Not your collection")
         _require_authored(collection)
         try:
             meta = await tmdb.details(body.tmdb_id)
@@ -1149,13 +1164,15 @@ async def api_add_collection_entry(slug: str, body: EntryCreate,
 
 @app.patch("/api/collections/{slug}")
 async def api_patch_collection(slug: str, body: CollectionPatch,
-                               admin=Depends(auth.require_admin)):
+                               member=Depends(auth.require_curator)):
     fields = body.model_dump(exclude_none=True)
     conn = db.connect()
     try:
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.can_manage(collection, member):
+            raise HTTPException(status_code=403, detail="Not your collection")
         # Publishing is management and stays available; rewriting the text of a
         # generated collection is not, and the UI hiding the editor is not on
         # its own a guarantee.
@@ -1168,12 +1185,14 @@ async def api_patch_collection(slug: str, body: CollectionPatch,
 
 @app.patch("/api/collections/{slug}/entries/{entry_id}")
 async def api_patch_collection_entry(slug: str, entry_id: int, body: EntryPatch,
-                                     admin=Depends(auth.require_admin)):
+                                     member=Depends(auth.require_curator)):
     conn = db.connect()
     try:
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.can_manage(collection, member):
+            raise HTTPException(status_code=403, detail="Not your collection")
         _require_authored(collection)
         if not curated.update_entry(conn, collection["id"], entry_id, body.blurb):
             raise HTTPException(status_code=404, detail="Entry not found")
@@ -1183,9 +1202,14 @@ async def api_patch_collection_entry(slug: str, entry_id: int, body: EntryPatch,
 
 
 @app.delete("/api/collections/{slug}")
-async def api_delete_collection(slug: str, admin=Depends(auth.require_admin)):
+async def api_delete_collection(slug: str, member=Depends(auth.require_curator)):
     conn = db.connect()
     try:
+        collection = curated.get_by_slug(conn, slug)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.can_manage(collection, member):
+            raise HTTPException(status_code=403, detail="Not your collection")
         if not curated.delete_collection(conn, slug):
             raise HTTPException(status_code=404, detail="Collection not found")
         return {"ok": True}
@@ -1195,12 +1219,14 @@ async def api_delete_collection(slug: str, admin=Depends(auth.require_admin)):
 
 @app.delete("/api/collections/{slug}/entries/{entry_id}")
 async def api_delete_collection_entry(slug: str, entry_id: int,
-                                      admin=Depends(auth.require_admin)):
+                                      member=Depends(auth.require_curator)):
     conn = db.connect()
     try:
         collection = curated.get_by_slug(conn, slug)
         if not collection:
             raise HTTPException(status_code=404, detail="Collection not found")
+        if not curated.can_manage(collection, member):
+            raise HTTPException(status_code=403, detail="Not your collection")
         _require_authored(collection)
         if not curated.delete_entry(conn, collection["id"], entry_id):
             raise HTTPException(status_code=404, detail="Entry not found")
@@ -1600,6 +1626,21 @@ async def api_admin_set_admin(member_id: int, body: AdminFlagIn, admin=Depends(a
     conn = db.connect()
     try:
         service.set_member_admin(conn, member_id, body.is_admin)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/members/{member_id}/curator")
+async def api_admin_set_curator(member_id: int, body: CuratorFlagIn,
+                                admin=Depends(auth.require_admin)):
+    """Grant/revoke collection-curation rights on a member — narrower than
+    admin: a curator manages only the collections they create."""
+    conn = db.connect()
+    try:
+        service.set_member_curator(conn, member_id, body.can_curate_collections)
         return {"ok": True}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

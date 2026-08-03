@@ -82,7 +82,8 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (9, "member-discord-id"),
                                 (10, "collections"),
                                 (11, "director-scaffold"),
-                                (12, "collection-origin")])
+                                (12, "collection-origin"),
+                                (13, "collection-curators")])
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
@@ -92,6 +93,8 @@ class MigrationRunnerTests(unittest.TestCase):
         self.assertIn("slug", _columns(self.db_path, "collections"))
         self.assertIn("tmdb_id", _columns(self.db_path, "collection_entries"))
         self.assertIn("director_portrait_url", _columns(self.db_path, "collections"))
+        self.assertIn("can_curate_collections", _columns(self.db_path, "members"))
+        self.assertIn("created_by", _columns(self.db_path, "collections"))
 
     def test_upgrades_old_shaped_db_and_preserves_data(self):
         self._make_old_shaped_db()
@@ -165,6 +168,39 @@ class MigrationRunnerTests(unittest.TestCase):
         # The failed version is not recorded and its DDL was rolled back.
         self.assertEqual(migrations.current_version(self.db_path), migrations.latest_version())
         self.assertNotIn("temp_col", _columns(self.db_path, "movies"))
+
+    def test_collection_curator_backfill_assigns_the_owner(self):
+        """A pre-migration authored collection had no way to record who wrote
+        it beyond "the owner" — the backfill has to make that literal.
+
+        Calls the migration function directly (unlike the rest of this file,
+        which exercises migrations only through migrations.run()): the
+        function is idempotent by construction — an ADD COLUMN that no-ops
+        once present, plus a plain conditional UPDATE — so invoking it again
+        against a row inserted after the real migration already ran is a
+        faithful stand-in for "a row that predates the column existing,"
+        without simulating an entire old-shaped database just for this.
+        """
+        db.init_db()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO members (plex_id, username, color, is_owner) "
+                "VALUES ('dev:Owner', 'Owner', '#abcabc', 1)")
+            conn.execute(
+                "INSERT INTO collections (slug, title, origin, created_by) "
+                "VALUES ('x', 'X', 'authored', NULL)")
+            conn.commit()
+            migrations._m13_collection_curators(conn)
+            conn.commit()
+            owner_id, created_by = conn.execute(
+                "SELECT (SELECT id FROM members WHERE is_owner = 1), "
+                "       (SELECT created_by FROM collections WHERE slug = 'x')"
+            ).fetchone()
+            self.assertIsNotNone(created_by)
+            self.assertEqual(created_by, owner_id)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

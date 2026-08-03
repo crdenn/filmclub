@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS members (
     color        TEXT NOT NULL,      -- deterministic hex, derived from plex_id
     is_admin     INTEGER NOT NULL DEFAULT 0,  -- can access the admin panel
     is_owner     INTEGER NOT NULL DEFAULT 0,  -- first setup owner; cannot be demoted
+    -- Can create and manage their own curated collections without admin
+    -- access. Deliberately narrower than is_admin: this grants nothing
+    -- outside collections, and only over collections this member created
+    -- (collections.created_by) — an admin's authority is unrestricted by
+    -- comparison and does not depend on this flag.
+    can_curate_collections INTEGER NOT NULL DEFAULT 0,
     theme        TEXT NOT NULL DEFAULT 'system', -- 'system' | 'dark' | 'light'
     discord_user_id TEXT,             -- admin-entered, for @mentions in reminder digests
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
@@ -115,13 +121,21 @@ CREATE TABLE IF NOT EXISTS collections (
     director_portrait_url TEXT,
     director_born    TEXT,                -- ISO date
     director_died    TEXT,
-    published     INTEGER NOT NULL DEFAULT 0,  -- 0 = admin-only draft
-    -- Who wrote this. 'authored' collections are the owner's own and carry the
-    -- full editing surface; 'generated' ones were assembled for them and are
-    -- read-only in the UI, so there is no editing furniture on a page nobody
-    -- intends to edit. Deliberately a stored fact rather than inferred, since
-    -- nothing about the content itself distinguishes the two.
+    published     INTEGER NOT NULL DEFAULT 0,  -- 0 = admin-only/curator-only draft
+    -- Who wrote this. 'authored' collections are a person's own writing and
+    -- carry the full editing surface, gated to created_by (see below) unless
+    -- the viewer is an admin; 'generated' ones were assembled by the app and
+    -- are read-only in the UI regardless of who's viewing, so there is no
+    -- editing furniture on a page nobody is meant to edit. Deliberately a
+    -- stored fact rather than inferred, since nothing about the content
+    -- itself distinguishes the two.
     origin        TEXT NOT NULL DEFAULT 'authored',  -- 'authored' | 'generated'
+    -- The member who created this collection. NULL for every 'generated' one
+    -- (nobody personally owns those) and for an 'authored' one predating this
+    -- column (migration backfills those to the site owner). ON DELETE SET
+    -- NULL rather than CASCADE, matching movies.suggested_by: removing a
+    -- member must not delete their writing.
+    created_by    INTEGER REFERENCES members(id) ON DELETE SET NULL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

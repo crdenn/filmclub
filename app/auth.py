@@ -257,3 +257,17 @@ def require_admin(member: dict = Depends(current_member)) -> dict:
     if not member.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return member
+
+
+def require_curator(member: dict = Depends(current_member)) -> dict:
+    """FastAPI dependency: allow an admin or a designated collection curator.
+
+    This only gets someone past the door of the collections endpoints; it is
+    not by itself authorization to touch a *specific* collection. Route
+    handlers still check ownership (collections.can_manage) for anything past
+    creating a new one — a curator's rights are scoped to what they made, an
+    admin's are not.
+    """
+    if not (member.get("is_admin") or member.get("can_curate_collections")):
+        raise HTTPException(status_code=403, detail="Collection access required")
+    return member

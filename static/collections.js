@@ -156,14 +156,24 @@
     try { localStorage.setItem(PREVIEW_KEY, on ? "1" : "0"); } catch (e) { /* private mode */ }
   }
 
-  const reallyAdmin = () => !!(FC.me && FC.me.is_admin);
+  /* "Admin" here means "has any privileged access to the collections module" —
+     a full admin or a member granted can_curate_collections. It is the door,
+     not the room: which specific collections a curator may actually touch is
+     a separate, per-collection question (see canAuthor/canManage below). */
+  const reallyAdmin = () => !!(FC.me && (FC.me.is_admin || FC.me.can_curate_collections));
   const isAdmin = () => reallyAdmin() && !previewing();
 
-  /* Authoring controls belong only to collections the owner wrote. A generated
-     one is read-only, so it carries no editor, no Add, and no Remove — there is
-     no point dressing a page in furniture nobody intends to use. Set per render
-     from the collection being shown; management actions (publish, delete) are
-     governed by isAdmin() alone and stay available on both kinds. */
+  /* Two different per-collection permissions, both computed server-side and
+     read off the collection payload rather than re-derived here:
+       - canManage: may publish, unpublish, or delete this collection. True
+         for an admin on anything, or a curator on their own — applies to a
+         generated collection too (its data can be managed even though its
+         content can't be).
+       - canAuthor: may edit its blurb/intro, add/remove films, or sync its
+         filmography. The narrower of the two: additionally false for a
+         generated collection, which stays fully read-only for everyone,
+         admin included. */
+  let canManage = false;
   let canAuthor = false;
 
   /* Shown only to a real admin, and deliberately fixed to the viewport: in
@@ -266,7 +276,7 @@
      by its contents, not by whichever film happens to sit at position 0.
      Every fact in the row is one a reader would actually use: how long it is,
      what years it spans, and how much of it is watchable tonight. */
-  function indexRow(c, position, isMine, ownerName) {
+  function indexRow(c, position, isMine) {
     const draft = !c.published;
     const kind = c.kind === "director"
       ? `<div class="cl-row-index-kind">Director</div>` : "";
@@ -291,9 +301,9 @@
       const missingStr = c.missing ? esc(` · ${c.missing} missing`) : "";
       stats.push(`<span class="cl-stat-good">${c.on_plex} on Plex</span>${missingStr}`);
     }
-    if (isMine && ownerName) {
+    if (isMine && c.creator_name) {
       const changed = c.last_changed ? ` · ${esc(lastChangedLabel(c.last_changed))}` : "";
-      stats.push(`<span class="cl-stat-accent">Written by ${esc(ownerName)}${changed}</span>`);
+      stats.push(`<span class="cl-stat-accent">Written by ${esc(c.creator_name)}${changed}</span>`);
     }
 
     const stills = c.stills || [];
@@ -308,7 +318,7 @@
 
     return `<div class="cl-row-index${isMine ? " cl-row-mine" : ""}${draft ? " cl-row-draft" : ""}">
       <div class="cl-row-index-num">${String(position).padStart(2, "0")}${
-        isMine ? `<br><span class="cl-row-mine-tag">Mine</span>` : ""}</div>
+        isMine ? `<br><span class="cl-row-mine-tag">Authored</span>` : ""}</div>
       <a class="cl-row-index-body" href="#/collections/${encodeURIComponent(c.slug)}">
         <div class="cl-row-index-head">
           <div class="cl-row-index-main">
@@ -330,7 +340,7 @@
     const seasons = mine.length + generated.length;
 
     let n = 0;
-    const mineHtml = mine.map((c) => indexRow(c, ++n, true, payload.owner_name)).join("");
+    const mineHtml = mine.map((c) => indexRow(c, ++n, true)).join("");
     // "assembled from" rather than the mock's "generated weekly": there is no
     // scheduled regeneration, only the admin-triggered Sync button, and the
     // copy should not claim a cadence the product doesn't have.
@@ -546,7 +556,7 @@
      only — it is the reason a director page can grow gradually without ever
      looking half-finished to a reader. */
   function coveragePanel(c) {
-    if (!isAdmin() || c.kind !== "director") return "";
+    if (!isAdmin() || !canAuthor || c.kind !== "director") return "";
     const cov = c.coverage;
     if (!cov) {
       return `<div class="cl-cov"><div class="cl-cov-head">Filmography</div>
@@ -610,8 +620,8 @@
     if (onPlex) line2parts.push(`<span class="cl-watchable">${onPlex} watchable now</span>`);
     // Attribution belongs here, as a fact in the stat block, rather than as a
     // standalone byline — it's true of the collection, not a headline about it.
-    if (c.origin === "authored" && c.owner_name) {
-      line2parts.push(`written by ${esc(c.owner_name)}`);
+    if (c.origin === "authored" && c.creator_name) {
+      line2parts.push(`written by ${esc(c.creator_name)}`);
     }
     const line2 = line2parts.join(" · ");
 
@@ -671,11 +681,12 @@
           ${isAdmin()
             ? `<span class="cl-foot-admin">
                  ${previewToggle()}
-                 <button class="cl-publish" data-slug="${esc(c.slug)}"
-                   data-published="${c.published ? "1" : "0"}">${
-                     c.published ? "Unpublish" : "Publish"}</button>
-                 <button class="cl-delete" data-slug="${esc(c.slug)}"
-                   data-title="${esc(c.title)}">Delete collection</button>
+                 ${canManage ? `
+                   <button class="cl-publish" data-slug="${esc(c.slug)}"
+                     data-published="${c.published ? "1" : "0"}">${
+                       c.published ? "Unpublish" : "Publish"}</button>
+                   <button class="cl-delete" data-slug="${esc(c.slug)}"
+                     data-title="${esc(c.title)}">Delete collection</button>` : ""}
                </span>` : ""}
         </div>
       </div>
@@ -954,6 +965,7 @@
     try {
       if (arg) {
         const c = await api(`/api/collections/${encodeURIComponent(arg)}${q}`);
+        canManage = c.can_manage !== false;
         canAuthor = c.editable !== false;
         paintView("collections", collectionPage(c), preserve);
         wireAdminActions(c.slug);

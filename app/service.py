@@ -745,6 +745,7 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
             "plex_id": m["plex_id"],
             "is_admin": bool(m.get("is_admin")) or owner,
             "is_owner": owner,
+            "can_curate_collections": bool(m.get("can_curate_collections")),
             "identity_providers": providers,
             "created_at": m.get("created_at"),
             "counts": {"suggested": suggested, "suggested_watched": watched_sug, "ratings": ratings},
@@ -761,6 +762,17 @@ def set_member_admin(conn: sqlite3.Connection, member_id: int, value: bool) -> N
     if (row["is_owner"] or row["plex_id"] in config.ADMIN_PLEX_IDS) and not value:
         raise ValueError("Can't remove admin from the owner account")
     db.execute(conn, "UPDATE members SET is_admin = ? WHERE id = ?",
+               (1 if value else 0, member_id))
+
+
+def set_member_curator(conn: sqlite3.Connection, member_id: int, value: bool) -> None:
+    """Grant/revoke collection-curation rights. Independent of is_admin, and
+    carries no risk symmetrical to demoting an admin — it grants nothing
+    outside collections and only over collections that member created — so
+    unlike set_member_admin there is no owner-protection case to guard."""
+    if not db.query_one(conn, "SELECT id FROM members WHERE id = ?", (member_id,)):
+        raise ValueError("Member not found")
+    db.execute(conn, "UPDATE members SET can_curate_collections = ? WHERE id = ?",
                (1 if value else 0, member_id))
 
 
