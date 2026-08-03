@@ -1946,7 +1946,11 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 }
 
 @media (max-width: 860px) {
-  .cl-index-head { flex-direction: column; align-items: flex-start; gap: .8rem; }
+  /* Stay a row, menu pinned top-right next to the title — stacking into a
+     column (an earlier version of this rule) left the button and its dropdown
+     sitting under the title on the left, where the dropdown then had nothing
+     to align its right edge against and ran off the viewport. */
+  .cl-index-head { align-items: flex-start; }
   .cl-row-index { grid-template-columns: 2rem minmax(0, 1fr); padding-left: .6rem; padding-right: .6rem; margin: 0 -.6rem; }
   .cl-row-index-head { grid-template-columns: 1fr; gap: .6rem; }
   .cl-row-index-stats { text-align: left; }
