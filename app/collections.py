@@ -149,6 +149,11 @@ def _stats(entries: list[dict], *, blurb_gated: bool) -> dict:
     missing = sum(1 for e in resolved if e["plex_state"] == MISSING) if plex_ok else None
     years = [e["year"] for e in entries if e.get("year")]
     written = sum(1 for e in entries if str(e.get("blurb") or "").strip())
+    # A contact sheet: a handful of real stills so a reader judges a collection
+    # by what's actually in it. Drawn from every stored entry, same as the
+    # numbers above — a still is just a picture, not a spoiler of unwritten
+    # prose, so there is nothing here for the gated view to protect.
+    with_stills = [e for e in entries if e.get("still_url")]
     return {
         "film_count": len(entries),
         "runtime_minutes": sum(e.get("runtime") or 0 for e in entries),
@@ -157,6 +162,9 @@ def _stats(entries: list[dict], *, blurb_gated: bool) -> dict:
         "on_plex": on_plex,
         "missing": missing,
         "written": written if blurb_gated else None,
+        "stills": [{"still_url": e["still_url"], "title": e["title"]}
+                  for e in with_stills[:6]],
+        "stills_overflow": max(0, len(with_stills) - 6),
     }
 
 

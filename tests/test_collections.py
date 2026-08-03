@@ -423,6 +423,18 @@ class IndexPayloadTests(unittest.TestCase):
         self.assertIsNone(stats["on_plex"])
         self.assertIsNone(stats["missing"])
 
+    def test_stats_include_a_contact_sheet_capped_at_six(self):
+        for tmdb_id in range(200, 209):
+            coll.upsert_entry(self.conn, self.mine,
+                              _meta(tmdb_id, f"Film {tmdb_id}",
+                                   backdrop_url=f"https://x/{tmdb_id}.jpg"))
+        entries = coll.entries_for(self.conn, self.mine)
+        stats = coll._stats(entries, blurb_gated=False)
+        self.assertEqual(len(stats["stills"]), 6)
+        self.assertTrue(all(s["still_url"] for s in stats["stills"]))
+        # 2 original + 9 new = 11 with stills; 6 shown, 5 overflow.
+        self.assertEqual(stats["stills_overflow"], 5)
+
     def test_index_payload_splits_by_origin(self):
         payload = coll.index_payload(self.conn, is_admin=True, preview=False)
         self.assertEqual([c["slug"] for c in payload["mine"]], ["mine"])
