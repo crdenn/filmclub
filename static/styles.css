@@ -1532,6 +1532,29 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   letter-spacing: .06em; vertical-align: middle; margin-left: .5rem;
 }
 
+/* --- arrange-collections modal --- */
+.cl-arrange { list-style: none; margin: 0; padding: 0; }
+.cl-arrange-row {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .55rem .2rem; border-bottom: 1px solid var(--line);
+}
+.cl-arrange-row:last-child { border-bottom: none; }
+.cl-arrange-num {
+  font-variant-numeric: tabular-nums; color: var(--text-dim);
+  font-size: .8rem; min-width: 1.6rem;
+}
+.cl-arrange-title { flex: 1; min-width: 0; }
+.cl-arrange-moves { display: flex; gap: .3rem; flex: none; }
+.cl-arrange-moves button {
+  width: 2rem; height: 2rem; border-radius: 8px; line-height: 1;
+  border: 1px solid var(--line); background: var(--bg-raise);
+  color: var(--text); font-size: 1rem;
+}
+.cl-arrange-moves button:disabled { opacity: .35; }
+.cl-arrange-note {
+  margin: .9rem 0 0; color: var(--text-dim); font-size: .82rem;
+}
+
 /* --- index rows --- */
 .cl-index-rows { display: flex; flex-direction: column; }
 .cl-row-index {

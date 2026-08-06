@@ -183,6 +183,10 @@ unknown slug refuses the whole arrangement rather than half-applying it.
 This is about the front page only — to reorder *films within* a collection, use
 `apply` with `reorder: true`.
 
+I can also do this myself in the browser (Collections → ⋯ → Arrange
+collections), so don't feel you have to be asked. If I say "put the funny one
+first", just run `order` — you have the whole list from `list`.
+
 ## Working notes
 
 - The app runs migrations at startup, so after any deploy the container restarts

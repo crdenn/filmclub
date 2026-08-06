@@ -190,6 +190,7 @@
         aria-haspopup="true" aria-expanded="false" aria-label="Collection actions">${ICON_MORE}</button>
       <div class="overflow-menu" id="cl-index-menu" hidden>
         <button type="button" class="overflow-menu-item" id="cl-index-new">New collection…</button>
+        <button type="button" class="overflow-menu-item" id="cl-index-arrange">Arrange collections…</button>
         <button type="button" class="overflow-menu-item" id="cl-index-preview">Preview as reader</button>
       </div>
     </div>`;
@@ -389,6 +390,9 @@
     const newBtn = document.querySelector("#cl-index-new");
     if (newBtn) newBtn.onclick = () => { close(); showNewCollectionModal(); };
 
+    const arrange = document.querySelector("#cl-index-arrange");
+    if (arrange) arrange.onclick = () => { close(); showArrangeModal(); };
+
     const start = document.querySelector("#cl-empty-start");
     if (start) start.onclick = () => showNewCollectionModal();
   }
@@ -465,6 +469,107 @@
         location.hash = `#/collections/${encodeURIComponent(c.slug)}`;
       } catch (e2) {
         submit.disabled = false; submit.textContent = "Create";
+        message.textContent = e2.message;
+      }
+    };
+  }
+
+  /* Arranging the index. Up/down buttons rather than drag-and-drop: HTML5 drag
+     does not work on touch at all, and a pointer-based implementation is a lot
+     of fiddly code for a list of eight things that is reordered rarely. The
+     whole arrangement is sent in one request on Save, so a half-applied order
+     is not a state the server can end up in. */
+  let lastIndex = null;   // the most recent index payload, for the modal's list
+
+  function showArrangeModal() {
+    const root = document.getElementById("modal-root");
+    if (!root || !lastIndex) return;
+    const mine = lastIndex.mine || [];
+    const generated = lastIndex.generated || [];
+    // Displayed order is authored-then-generated, and the server keeps that
+    // split regardless of sort_order, so say so rather than letting someone
+    // drag across the boundary and wonder why it did not take.
+    const split = mine.length && generated.length;
+    let items = mine.concat(generated).map(
+      (c) => ({ slug: c.slug, title: c.title, published: c.published }));
+
+    const rows = () => items.map((c, i) => `
+      <li class="cl-arrange-row">
+        <span class="cl-arrange-num">${String(i + 1).padStart(2, "0")}</span>
+        <span class="cl-arrange-title">${esc(c.title)}${
+          c.published ? "" : `<span class="cl-draft">Draft</span>`}</span>
+        <span class="cl-arrange-moves">
+          <button type="button" class="cl-arrange-up" data-i="${i}"
+            aria-label="Move ${esc(c.title)} up"${i === 0 ? " disabled" : ""}>↑</button>
+          <button type="button" class="cl-arrange-down" data-i="${i}"
+            aria-label="Move ${esc(c.title)} down"${
+              i === items.length - 1 ? " disabled" : ""}>↓</button>
+        </span>
+      </li>`).join("");
+
+    root.innerHTML = `<div class="modal-backdrop" id="cl-arr-backdrop"><div class="modal">
+      <div class="modal-head"><h2>Arrange collections</h2>
+        <button class="modal-close" id="cl-arr-close" type="button">×</button></div>
+      <div class="modal-body">
+        <ol class="cl-arrange" id="cl-arrange-list">${rows()}</ol>
+        ${split ? `<p class="cl-arrange-note">Collections you wrote always appear
+          above generated ones, so the two groups stay separate.</p>` : ""}
+        <div class="setup-actions">
+          <span id="cl-arr-message"></span>
+          <button class="btn btn-primary" id="cl-arr-save" type="button">Save order</button>
+        </div>
+      </div>
+    </div></div>`;
+
+    const list = document.getElementById("cl-arrange-list");
+    const close = () => { root.innerHTML = ""; };
+    document.getElementById("cl-arr-close").onclick = close;
+    document.getElementById("cl-arr-backdrop").onclick = (e) => {
+      if (e.target.id === "cl-arr-backdrop") close();
+    };
+
+    function repaint(focusSlug, direction) {
+      list.innerHTML = rows();
+      wireMoves();
+      // Keep the keyboard on the button that was just pressed, so a run of
+      // presses moves one item instead of walking focus down the list.
+      if (focusSlug) {
+        const at = items.findIndex((c) => c.slug === focusSlug);
+        const sel = direction === "up" ? ".cl-arrange-up" : ".cl-arrange-down";
+        const btn = list.querySelectorAll(sel)[at];
+        if (btn && !btn.disabled) btn.focus();
+      }
+    }
+
+    function move(from, to) {
+      if (to < 0 || to >= items.length) return;
+      const slug = items[from].slug;
+      items.splice(to, 0, items.splice(from, 1)[0]);
+      repaint(slug, to < from ? "up" : "down");
+    }
+
+    function wireMoves() {
+      list.querySelectorAll(".cl-arrange-up").forEach((b) => {
+        b.onclick = () => move(Number(b.dataset.i), Number(b.dataset.i) - 1);
+      });
+      list.querySelectorAll(".cl-arrange-down").forEach((b) => {
+        b.onclick = () => move(Number(b.dataset.i), Number(b.dataset.i) + 1);
+      });
+    }
+    wireMoves();
+
+    document.getElementById("cl-arr-save").onclick = async (e) => {
+      const btn = e.currentTarget;
+      const message = document.getElementById("cl-arr-message");
+      btn.disabled = true; btn.textContent = "Saving…";
+      try {
+        await api("/api/collections/order",
+          { method: "POST", body: { slugs: items.map((c) => c.slug) } });
+        close();
+        FC.toast("Order saved");
+        renderCollections({ arg: null, preserve: true });
+      } catch (e2) {
+        btn.disabled = false; btn.textContent = "Save order";
         message.textContent = e2.message;
       }
     };
@@ -967,6 +1072,7 @@
         wirePreview();
       } else {
         const data = await api(`/api/collections${q}`);
+        lastIndex = data;
         paintView("collections", indexPage(data), preserve);
         wireIndexMenu();
         wirePreview();

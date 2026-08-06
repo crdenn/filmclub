@@ -979,6 +979,32 @@ def _require_authored(collection: dict, changing=True) -> None:
             detail="This collection was generated for you and isn't editable.")
 
 
+class CollectionOrderIn(BaseModel):
+    # The whole arrangement, in order. Bounded so a malformed client cannot
+    # ask us to run an unbounded number of UPDATEs.
+    slugs: list[str] = Field(max_length=200)
+
+
+@app.post("/api/collections/order")
+async def api_set_collection_order(body: CollectionOrderIn,
+                                   admin=Depends(auth.require_admin)):
+    """Arrange the collections index. Ordering is site furniture rather than
+    authorship, so this is admin-only and independent of who wrote what."""
+    conn = db.connect()
+    try:
+        placed = curated.set_index_order(conn, body.slugs)
+        missing = [s for s in body.slugs if s not in placed]
+        if missing:
+            # Naming a slug that no longer exists means the client is working
+            # from a stale index; say so rather than silently half-applying.
+            raise HTTPException(
+                status_code=409,
+                detail=f"No longer present: {', '.join(missing)}. Reload and try again.")
+        return {"ok": True, "order": placed}
+    finally:
+        conn.close()
+
+
 class CollectionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     kind: Literal["picked", "director"] = "picked"
