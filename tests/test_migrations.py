@@ -83,7 +83,9 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (10, "collections"),
                                 (11, "director-scaffold"),
                                 (12, "collection-origin"),
-                                (13, "collection-curators")])
+                                (13, "collection-sort-order"),
+                                (14, "collection-curators")])
+        self.assertIn("sort_order", _columns(self.db_path, "collections"))
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
@@ -191,7 +193,7 @@ class MigrationRunnerTests(unittest.TestCase):
                 "INSERT INTO collections (slug, title, origin, created_by) "
                 "VALUES ('x', 'X', 'authored', NULL)")
             conn.commit()
-            migrations._m13_collection_curators(conn)
+            migrations._m14_collection_curators(conn)
             conn.commit()
             owner_id, created_by = conn.execute(
                 "SELECT (SELECT id FROM members WHERE is_owner = 1), "

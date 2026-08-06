@@ -136,6 +136,11 @@ CREATE TABLE IF NOT EXISTS collections (
     -- NULL rather than CASCADE, matching movies.suggested_by: removing a
     -- member must not delete their writing.
     created_by    INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    -- Manual running order for the index. NULL means unplaced, and unplaced
+    -- collections sort newest-first after everything arranged by hand, so a
+    -- new collection appears at the top of the leftovers rather than being
+    -- silently buried at the end.
+    sort_order    INTEGER,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

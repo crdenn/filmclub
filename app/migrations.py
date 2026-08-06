@@ -225,7 +225,15 @@ def _m12_collection_origin(conn: sqlite3.Connection) -> None:
                            "origin TEXT NOT NULL DEFAULT 'authored'")
 
 
-def _m13_collection_curators(conn: sqlite3.Connection) -> None:
+def _m13_collection_sort_order(conn: sqlite3.Connection) -> None:
+    # Manual running order for the index. Deliberately nullable: NULL means
+    # "unplaced", and unplaced collections keep the previous behaviour of
+    # sorting newest-first *after* everything the owner has arranged by hand.
+    # That way adding this column reorders nothing until somebody asks it to.
+    _add_column_if_missing(conn, "collections", "sort_order", "sort_order INTEGER")
+
+
+def _m14_collection_curators(conn: sqlite3.Connection) -> None:
     # Lets the owner grant a member collection-management rights without full
     # admin access. Independent of is_admin; an admin's authority already
     # covers every collection and never depends on this flag.
@@ -259,7 +267,8 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (10, "collections", _m10_collections),
     (11, "director-scaffold", _m11_director_scaffold),
     (12, "collection-origin", _m12_collection_origin),
-    (13, "collection-curators", _m13_collection_curators),
+    (13, "collection-sort-order", _m13_collection_sort_order),
+    (14, "collection-curators", _m14_collection_curators),
 ]
 
 
