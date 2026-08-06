@@ -466,6 +466,54 @@ class IndexPayloadTests(unittest.TestCase):
         self.assertIsNone(
             coll.slug_position(self.conn, "gen", is_admin=False, preview=False))
 
+    def test_index_order_defaults_to_newest_first_when_nothing_is_placed(self):
+        slugs = [c["slug"] for c in coll.list_collections(self.conn, include_unpublished=True)]
+        self.assertEqual(slugs, ["gen", "mine"])  # gen was created second
+
+    def test_set_index_order_places_named_collections_in_order(self):
+        coll.set_index_order(self.conn, ["mine", "gen"])
+        slugs = [c["slug"] for c in coll.list_collections(self.conn, include_unpublished=True)]
+        self.assertEqual(slugs, ["mine", "gen"])
+
+        coll.set_index_order(self.conn, ["gen", "mine"])
+        slugs = [c["slug"] for c in coll.list_collections(self.conn, include_unpublished=True)]
+        self.assertEqual(slugs, ["gen", "mine"])
+
+    def test_unplaced_collections_follow_the_placed_ones(self):
+        coll.create_collection(self.conn, "later", "Later", origin="generated",
+                               published=True)
+        coll.set_index_order(self.conn, ["mine"])
+        slugs = [c["slug"] for c in coll.list_collections(self.conn, include_unpublished=True)]
+        # 'mine' was placed by hand; the rest keep newest-first behind it.
+        self.assertEqual(slugs[0], "mine")
+        self.assertEqual(slugs[1:], ["later", "gen"])
+
+    def test_reordering_clears_a_previous_arrangement(self):
+        """A slug dropped from a later call must not keep a stale number, or
+        the index would hold an ordering nobody asked for."""
+        coll.set_index_order(self.conn, ["mine", "gen"])
+        coll.set_index_order(self.conn, ["gen"])
+        rows = coll.list_collections(self.conn, include_unpublished=True)
+        by_slug = {c["slug"]: c for c in rows}
+        self.assertEqual(by_slug["gen"]["sort_order"], 0)
+        self.assertIsNone(by_slug["mine"]["sort_order"])
+
+    def test_set_index_order_reports_only_slugs_that_matched(self):
+        placed = coll.set_index_order(self.conn, ["mine", "does-not-exist"])
+        self.assertEqual(placed, ["mine"])
+
+    def test_slug_position_follows_the_hand_placed_order(self):
+        coll.create_collection(self.conn, "second-authored", "Second", origin="authored",
+                               published=True)
+        coll.set_index_order(self.conn, ["second-authored", "mine"])
+        # Authored still sorts ahead of generated; within it, the hand order holds.
+        self.assertEqual(coll.slug_position(self.conn, "second-authored",
+                                            is_admin=True, preview=False), 1)
+        self.assertEqual(coll.slug_position(self.conn, "mine",
+                                            is_admin=True, preview=False), 2)
+        self.assertEqual(coll.slug_position(self.conn, "gen",
+                                            is_admin=True, preview=False), 3)
+
     def test_last_changed_takes_the_latest_of_collection_or_any_entry(self):
         c = coll.get_by_slug(self.conn, "mine")
         entries = coll.entries_for(self.conn, self.mine)

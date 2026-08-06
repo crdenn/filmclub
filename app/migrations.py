@@ -226,6 +226,14 @@ def _m12_collection_origin(conn: sqlite3.Connection) -> None:
 
 
 # Ordered list of migrations. Append new ones with the next integer version.
+def _m13_collection_sort_order(conn: sqlite3.Connection) -> None:
+    # Manual running order for the index. Deliberately nullable: NULL means
+    # "unplaced", and unplaced collections keep the previous behaviour of
+    # sorting newest-first *after* everything the owner has arranged by hand.
+    # That way adding this column reorders nothing until somebody asks it to.
+    _add_column_if_missing(conn, "collections", "sort_order", "sort_order INTEGER")
+
+
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
     (2, "app-settings", _m2_app_settings),
@@ -239,6 +247,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (10, "collections", _m10_collections),
     (11, "director-scaffold", _m11_director_scaffold),
     (12, "collection-origin", _m12_collection_origin),
+    (13, "collection-sort-order", _m13_collection_sort_order),
 ]
 
 

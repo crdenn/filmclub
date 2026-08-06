@@ -122,6 +122,11 @@ CREATE TABLE IF NOT EXISTS collections (
     -- intends to edit. Deliberately a stored fact rather than inferred, since
     -- nothing about the content itself distinguishes the two.
     origin        TEXT NOT NULL DEFAULT 'authored',  -- 'authored' | 'generated'
+    -- Manual running order for the index. NULL means unplaced, and unplaced
+    -- collections sort newest-first after everything arranged by hand, so a
+    -- new collection appears at the top of the leftovers rather than being
+    -- silently buried at the end.
+    sort_order    INTEGER,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -8,6 +8,11 @@ work as one reviewable document:
     $EDITOR westerns.json
     python -m app.collection_tool apply < westerns.json
 
+``order`` arranges the index itself — the running order of the collections on
+the front page, not the films inside one:
+
+    python -m app.collection_tool order night-drives westerns gloved-hands
+
 ``dump`` emits exactly the shape ``apply`` accepts, so editing an existing
 collection is a round trip rather than a different procedure from creating one.
 Both are idempotent: re-applying an unchanged payload reports no changes and
@@ -117,7 +122,8 @@ async def _apply(spec: dict, *, dry_run: bool) -> int:
             collection_id = existing["id"]
             # Only fields actually present in the payload are touched, so a
             # partial payload cannot silently blank an intro it omitted.
-            fields = {k: spec[k] for k in ("title", "intro", "published")
+            fields = {k: spec[k] for k in ("title", "intro", "published",
+                                           "sort_order")
                       if k in spec}
             differing = {k: v for k, v in fields.items()
                          if (bool(v) if k == "published" else v) != existing.get(k)}
@@ -217,13 +223,37 @@ def _dump(slug: str) -> int:
         conn.close()
 
 
+def _order(slugs: list[str]) -> int:
+    """Arrange the index. Slugs not named fall in behind, newest first."""
+    conn = db.connect()
+    try:
+        known = {c["slug"] for c in coll.list_collections(conn, include_unpublished=True)}
+        unknown = [s for s in slugs if s not in known]
+        if unknown:
+            # Refuse the whole arrangement rather than silently dropping a
+            # typo'd slug and leaving a running order nobody asked for.
+            print(f"unknown slug(s): {', '.join(unknown)}", file=sys.stderr)
+            print(f"known: {', '.join(sorted(known))}", file=sys.stderr)
+            return 1
+        coll.set_index_order(conn, slugs)
+        print("index order:")
+        for i, c in enumerate(coll.list_collections(conn, include_unpublished=True), 1):
+            placed = " " if c.get("sort_order") is None else "*"
+            print(f" {placed}{i:2}. {c['slug']:34} {c['title']}")
+        print("\n  * = placed by hand; the rest follow, newest first")
+        return 0
+    finally:
+        conn.close()
+
+
 def _list() -> int:
     conn = db.connect()
     try:
         for c in coll.list_collections(conn, include_unpublished=True):
             n = len(coll.entries_for(conn, c["id"]))
             state = "published" if c["published"] else "draft"
-            print(f"{c['slug']:34} {c['origin']:9} {state:9} {n:3} films  {c['title']}")
+            placed = " " if c.get("sort_order") is None else "*"
+            print(f"{placed}{c['slug']:34} {c['origin']:9} {state:9} {n:3} films  {c['title']}")
         return 0
     finally:
         conn.close()
@@ -239,10 +269,15 @@ def main(argv=None) -> int:
     apply_p = sub.add_parser("apply", help="create or update from JSON on stdin")
     apply_p.add_argument("--dry-run", action="store_true",
                          help="report what would change without writing")
+    order = sub.add_parser("order", help="set the running order of the index")
+    order.add_argument("slugs", nargs="+",
+                       help="slugs in the order they should appear")
 
     args = parser.parse_args(argv)
     if args.command == "list":
         return _list()
+    if args.command == "order":
+        return _order(args.slugs)
     if args.command == "dump":
         return _dump(args.slug)
 

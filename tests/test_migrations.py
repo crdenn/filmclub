@@ -82,7 +82,9 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (9, "member-discord-id"),
                                 (10, "collections"),
                                 (11, "director-scaffold"),
-                                (12, "collection-origin")])
+                                (12, "collection-origin"),
+                                (13, "collection-sort-order")])
+        self.assertIn("sort_order", _columns(self.db_path, "collections"))
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))

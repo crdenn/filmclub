@@ -112,13 +112,48 @@ def resolve_entry(entry: dict) -> dict:
     return resolved
 
 
+# The index's running order, shared by every query that needs to agree with it.
+# Hand-placed collections first, in the order they were placed; everything
+# unplaced falls in behind, newest first. Keeping this in one constant is what
+# stops `slug_position` from disagreeing with the list it claims to index.
+INDEX_ORDER = "(sort_order IS NULL), sort_order, created_at DESC, id DESC"
+
+
 def list_collections(conn: sqlite3.Connection, *, include_unpublished: bool = False) -> list[dict]:
-    """All collections, newest first. Drafts are admin-only."""
+    """All collections in index order. Drafts are admin-only."""
     sql = "SELECT * FROM collections"
     if not include_unpublished:
         sql += " WHERE published = 1"
-    sql += " ORDER BY created_at DESC, id DESC"
+    sql += f" ORDER BY {INDEX_ORDER}"
     return [collection_base(r) for r in db.query_all(conn, sql)]
+
+
+def set_index_order(conn: sqlite3.Connection, slugs: list[str]) -> list[str]:
+    """Arrange the index by hand. Returns the slugs that matched a collection.
+
+    Every slug named is placed in the order given. Anything not named is reset
+    to unplaced rather than left holding a stale number, so the arrangement is
+    exactly what was asked for and the remainder keeps its newest-first
+    default — no invisible ordering left over from a previous call.
+    """
+    placed = []
+    for position, slug in enumerate(slugs):
+        cur = db.execute(
+            conn,
+            "UPDATE collections SET sort_order = ?, updated_at = datetime('now')"
+            " WHERE slug = ?",
+            (position, slug),
+        )
+        if cur.rowcount:
+            placed.append(slug)
+    if placed:
+        marks = ",".join("?" * len(placed))
+        db.execute(
+            conn,
+            f"UPDATE collections SET sort_order = NULL WHERE slug NOT IN ({marks})",
+            placed,
+        )
+    return placed
 
 
 def owner_name(conn: sqlite3.Connection) -> str | None:
@@ -184,14 +219,14 @@ def _last_changed(collection: dict, entries: list[dict]) -> str:
 def slug_position(conn: sqlite3.Connection, slug: str, *, is_admin: bool,
                   preview: bool) -> int | None:
     """1-based position of a collection in the index order: every authored
-    collection first, then generated, each newest first — matching
+    collection first, then generated, each in ``INDEX_ORDER`` — matching
     ``index_payload``'s own mine-then-generated split. Purely a display
     numeral; returns None if the slug is not in the visible set at all."""
     include_unpublished = is_admin and not preview
     sql = "SELECT slug FROM collections"
     if not include_unpublished:
         sql += " WHERE published = 1"
-    sql += " ORDER BY (origin != 'authored'), created_at DESC, id DESC"
+    sql += f" ORDER BY (origin != 'authored'), {INDEX_ORDER}"
     slugs = [r["slug"] for r in db.query_all(conn, sql)]
     return slugs.index(slug) + 1 if slug in slugs else None
 
@@ -419,7 +454,8 @@ def coverage(entries: list[dict], filmography: list[dict]) -> dict:
 
 def update_collection(conn: sqlite3.Connection, slug: str, fields: dict) -> bool:
     """Patch authored fields on a collection. Unknown keys are ignored."""
-    allowed = ("title", "intro", "director_intro", "director_name", "published")
+    allowed = ("title", "intro", "director_intro", "director_name", "published",
+               "sort_order")
     sets, params = [], []
     for key in allowed:
         if key not in fields:
