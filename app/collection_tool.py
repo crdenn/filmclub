@@ -29,10 +29,14 @@ Payload shape (only ``slug`` and ``films`` are required on apply):
       "origin":    "generated",    # or "authored"
       "published": true,
       "prune":     false,          # true = delete entries absent from `films`
+      "reorder":   false,          # true = payload order becomes running order
       "films": [
         {"tmdb": 11048, "blurb": "Ford shot Monument Valley for the last…"}
       ]
     }
+
+A payload may list only the films it changes: entries it does not mention keep
+their blurb, their position, and their place in the collection.
 """
 import argparse
 import asyncio
@@ -47,19 +51,26 @@ from . import db, tmdb
 _TMDB_LIMIT = 5
 
 
-def _load(stream) -> dict:
-    spec = json.load(stream)
-    if not isinstance(spec, dict):
-        raise SystemExit("payload must be a JSON object")
-    if not spec.get("slug"):
-        raise SystemExit("payload needs a 'slug'")
-    films = spec.get("films")
-    if not isinstance(films, list):
-        raise SystemExit("payload needs a 'films' array")
-    for i, film in enumerate(films):
-        if not isinstance(film, dict) or not film.get("tmdb"):
-            raise SystemExit(f"films[{i}] needs a numeric 'tmdb' id")
-    return spec
+def _load(stream) -> list[dict]:
+    """Read one payload, or an array of them.
+
+    A pass over several collections at once — a spoiler sweep, a house-style
+    edit — is one document and one command rather than one per collection.
+    """
+    payload = json.load(stream)
+    specs = payload if isinstance(payload, list) else [payload]
+    for spec in specs:
+        if not isinstance(spec, dict):
+            raise SystemExit("each payload must be a JSON object")
+        if not spec.get("slug"):
+            raise SystemExit("payload needs a 'slug'")
+        films = spec.get("films")
+        if not isinstance(films, list):
+            raise SystemExit(f"{spec['slug']}: payload needs a 'films' array")
+        for i, film in enumerate(films):
+            if not isinstance(film, dict) or not film.get("tmdb"):
+                raise SystemExit(f"{spec['slug']}: films[{i}] needs a 'tmdb' id")
+    return specs
 
 
 async def _fetch(films: list[dict]) -> list[tuple[dict, dict | None]]:
@@ -122,17 +133,24 @@ async def _apply(spec: dict, *, dry_run: bool) -> int:
                   (coll.entries_for(conn, collection_id) if collection_id else [])}
         keep: set[int] = set()
 
-        for position, (film, meta) in enumerate(results):
+        # Order is only rewritten when the payload asks for it. A partial
+        # payload — "here are the three blurbs I rewrote" — is the common edit,
+        # and taking its length as the new running order would silently shuffle
+        # every film the author didn't mention. Left alone, upsert_entry keeps
+        # an existing entry where it is and appends a genuinely new one.
+        reorder = bool(spec.get("reorder"))
+        for index, (film, meta) in enumerate(results):
             if meta is None:
                 continue
             keep.add(meta["tmdb_id"])
             blurb = film.get("blurb")
             prior = before.get(meta["tmdb_id"])
+            position = film.get("position", index if reorder else None)
             if prior is None:
                 changes.append(f"+ {meta['title']} ({meta.get('year')})")
             elif blurb is not None and blurb != prior.get("blurb"):
                 changes.append(f"~ {meta['title']} blurb rewritten")
-            elif prior.get("position") != position:
+            elif position is not None and prior.get("position") != position:
                 changes.append(f"~ {meta['title']} moved to {position}")
             if not dry_run and collection_id:
                 coll.upsert_entry(conn, collection_id, meta,
@@ -227,7 +245,13 @@ def main(argv=None) -> int:
         return _list()
     if args.command == "dump":
         return _dump(args.slug)
-    return asyncio.run(_apply(_load(sys.stdin), dry_run=args.dry_run))
+
+    async def run_all(specs):
+        # Sequential, not gathered: each payload prints its own report, and a
+        # batch is far easier to read as one block per collection.
+        return max([await _apply(s, dry_run=args.dry_run) for s in specs] or [0])
+
+    return asyncio.run(run_all(_load(sys.stdin)))
 
 
 if __name__ == "__main__":

@@ -128,6 +128,29 @@ class CollectionToolTests(unittest.TestCase):
         self.assertEqual([e["title"] for e in entries], ["First Film", "Second Film"])
         self.assertEqual(entries[0]["blurb"], "Keep.")
 
+    def test_a_partial_edit_does_not_reorder_the_films_it_omits(self):
+        """The common edit is "here are the two blurbs I rewrote". Treating
+        that payload's length as the new running order would shuffle the rest."""
+        self._apply({"slug": "westerns", "reorder": True,
+                     "films": [{"tmdb": 1}, {"tmdb": 2}, {"tmdb": 3}]})
+        self.assertEqual([e["title"] for e in self._entries("westerns")],
+                         ["First Film", "Second Film", "Third Film"])
+
+        # Rewrite only the third film's blurb.
+        self._apply({"slug": "westerns", "films": [{"tmdb": 3, "blurb": "Rewritten."}]})
+        entries = self._entries("westerns")
+        self.assertEqual([e["title"] for e in entries],
+                         ["First Film", "Second Film", "Third Film"])
+        self.assertEqual(entries[2]["blurb"], "Rewritten.")
+
+    def test_reorder_applies_the_payload_order(self):
+        self._apply({"slug": "westerns", "reorder": True,
+                     "films": [{"tmdb": 1}, {"tmdb": 2}]})
+        self._apply({"slug": "westerns", "reorder": True,
+                     "films": [{"tmdb": 2}, {"tmdb": 1}]})
+        self.assertEqual([e["title"] for e in self._entries("westerns")],
+                         ["Second Film", "First Film"])
+
     def test_dry_run_reports_without_writing(self):
         self._apply({"slug": "westerns", "title": "Westerns",
                      "films": [{"tmdb": 1}]}, dry_run=True)
@@ -164,6 +187,23 @@ class CollectionToolTests(unittest.TestCase):
             collection_tool._load(io.StringIO('{"slug": "x"}'))
         with self.assertRaises(SystemExit):
             collection_tool._load(io.StringIO('{"slug": "x", "films": [{"blurb": "no id"}]}'))
+
+    def test_load_accepts_a_single_payload_or_an_array(self):
+        one = collection_tool._load(io.StringIO('{"slug": "a", "films": []}'))
+        many = collection_tool._load(
+            io.StringIO('[{"slug": "a", "films": []}, {"slug": "b", "films": []}]'))
+        self.assertEqual([s["slug"] for s in one], ["a"])
+        self.assertEqual([s["slug"] for s in many], ["a", "b"])
+
+    def test_a_batch_applies_every_collection_in_it(self):
+        specs = collection_tool._load(io.StringIO(json.dumps([
+            {"slug": "one", "title": "One", "films": [{"tmdb": 1, "blurb": "A."}]},
+            {"slug": "two", "title": "Two", "films": [{"tmdb": 2, "blurb": "B."}]},
+        ])))
+        for spec in specs:
+            self._apply(spec)
+        self.assertEqual(self._entries("one")[0]["blurb"], "A.")
+        self.assertEqual(self._entries("two")[0]["blurb"], "B.")
 
 
 if __name__ == "__main__":
