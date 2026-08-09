@@ -246,6 +246,11 @@ class AdminFlagIn(BaseModel):
     is_admin: bool
 
 
+class AdminDisplayNameIn(BaseModel):
+    # Same rules as ProfileIn.display_name; blank/whitespace/null clears it.
+    display_name: str | None = Field(default=None, max_length=40)
+
+
 class DiscordIdIn(BaseModel):
     # Discord snowflake ids are numeric strings; blank clears it.
     discord_user_id: str | None = Field(default=None, max_length=32, pattern=r"^\d*$")
@@ -1629,6 +1634,22 @@ async def api_admin_set_admin(member_id: int, body: AdminFlagIn, admin=Depends(a
         return {"ok": True}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/members/{member_id}/display-name")
+async def api_admin_set_display_name(member_id: int, body: AdminDisplayNameIn,
+                                     admin=Depends(auth.require_admin)):
+    """Admin override for a member's display name — the same field members can
+    set for themselves via PATCH /api/me, settable here for anyone."""
+    conn = db.connect()
+    try:
+        row = db.query_one(conn, "SELECT id FROM members WHERE id = ?", (member_id,))
+        if not row:
+            raise HTTPException(status_code=404, detail="Member not found")
+        service.set_display_name(conn, member_id, body.display_name)
+        return {"ok": True}
     finally:
         conn.close()
 

@@ -2581,6 +2581,7 @@
         if ((member.identity_providers || []).includes("local")) {
           items.push(`<button type="button" class="overflow-menu-item password-reset-btn" data-id="${member.id}">Reset password</button>`);
         }
+        items.push(`<button type="button" class="overflow-menu-item display-name-btn" data-id="${member.id}">${member.display_name ? "Edit display name" : "Set display name"}</button>`);
         items.push(`<button type="button" class="overflow-menu-item discord-id-btn" data-id="${member.id}">${member.discord_user_id ? "Edit Discord ID" : "Set Discord ID"}</button>`);
         return `<div class="admin-actions"><div class="overflow-anchor row-menu">
           <button type="button" class="btn icon-btn row-menu-toggle" data-id="${member.id}" aria-haspopup="true" aria-expanded="false" aria-label="More actions">${ICON_MORE}</button>
@@ -2611,6 +2612,8 @@
         setAdmin(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
       app.querySelectorAll(".password-reset-btn").forEach(button => button.onclick = () =>
         createPasswordReset(parseInt(button.dataset.id, 10), members.find(member => member.id === parseInt(button.dataset.id, 10))?.username));
+      app.querySelectorAll(".display-name-btn").forEach(button => button.onclick = () =>
+        showDisplayNameModal(members.find(member => member.id === parseInt(button.dataset.id, 10))));
       app.querySelectorAll(".discord-id-btn").forEach(button => button.onclick = () =>
         showDiscordIdModal(members.find(member => member.id === parseInt(button.dataset.id, 10))));
       wireRowMenus();
@@ -2902,6 +2905,44 @@
       toast(value ? "Admin granted" : "Admin removed");
       renderAdmin("users", true);
     } catch (e) { toast(e.message, true); }
+  }
+
+  function showDisplayNameModal(member) {
+    if (!member) return;
+    const root = $("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="display-name-backdrop"><div class="modal">
+      <div class="modal-head"><h2>Display name — ${esc(member.plex_username)}</h2><button class="modal-close" id="display-name-close" type="button">×</button></div>
+      <form class="modal-body" id="display-name-form">
+        <label><span>Display name</span>
+          <input class="search-input" id="display-name-value" value="${esc(member.display_name || "")}"
+            placeholder="${esc(member.plex_username)}" maxlength="40" autocomplete="off">
+        </label>
+        <p class="profile-hint">Shown in place of their Plex username everywhere in the club. Leave blank to use their Plex username instead.</p>
+        <div class="setup-actions"><span id="display-name-message"></span><button class="btn btn-primary" type="submit">Save</button></div>
+      </form>
+    </div></div>`;
+    const close = () => { root.innerHTML = ""; };
+    $("#display-name-close").onclick = close;
+    $("#display-name-backdrop").onclick = (event) => {
+      if (event.target.id === "display-name-backdrop") close();
+    };
+    const form = $("#display-name-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button[type=submit]");
+      const message = $("#display-name-message");
+      const value = $("#display-name-value").value.trim();
+      button.disabled = true; button.textContent = "Saving…";
+      try {
+        await api(`/api/admin/members/${member.id}/display-name`, { method: "POST", body: { display_name: value || null } });
+        close();
+        toast("Display name saved");
+        renderAdmin("users", true);
+      } catch (e) {
+        message.textContent = e.message;
+        button.disabled = false; button.textContent = "Save";
+      }
+    };
   }
 
   function showDiscordIdModal(member) {

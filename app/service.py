@@ -738,6 +738,7 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
             # chosen display name if set, otherwise the raw Plex username.
             "username": display or m["username"],
             "plex_username": m["username"],
+            "display_name": display,
             "email": m.get("email"),
             "thumb": m.get("thumb"),
             "discord_user_id": m.get("discord_user_id"),

@@ -110,6 +110,28 @@ class AccountApiTests(unittest.TestCase):
         member = guest.get("/api/me").json()
         self.assertEqual(member["username"], "Member")
 
+        renamed = self.client.post(
+            f"/api/admin/members/{member['id']}/display-name", json={"display_name": "Big M"}
+        )
+        self.assertEqual(renamed.status_code, 200)
+        admin_members = self.client.get("/api/admin/members").json()["members"]
+        member_row = next(m for m in admin_members if m["id"] == member["id"])
+        self.assertEqual(member_row["display_name"], "Big M")
+        self.assertEqual(member_row["username"], "Big M")
+        self.assertEqual(member_row["plex_username"], "Member")
+        self.assertEqual(guest.get("/api/me").json()["username"], "Big M")
+
+        cleared = self.client.post(
+            f"/api/admin/members/{member['id']}/display-name", json={"display_name": ""}
+        )
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(guest.get("/api/me").json()["username"], "Member")
+
+        missing = self.client.post(
+            "/api/admin/members/999999/display-name", json={"display_name": "Nope"}
+        )
+        self.assertEqual(missing.status_code, 404)
+
         reset = self.client.post(
             f"/api/admin/members/{member['id']}/password-reset", json={"ttl_hours": 1}
         )
