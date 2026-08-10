@@ -475,7 +475,11 @@ def todo_counts(conn: sqlite3.Connection, member_id: int) -> dict:
     """Per-member reminder counts for the nav badges.
 
     `backlog` = suggested films this member hasn't marked seen/not-seen (no
-    prior_views row). `watched` = watched films this member hasn't rated.
+    prior_views row). `watched` = watched films this member hasn't rated,
+    restricted to films discussed on or after this member joined — someone who
+    joined after a discussion isn't nagged to rate films from before their
+    time. They can still rate those voluntarily from the Watched page; this
+    only affects the reminder.
     """
     backlog_unmarked = db.query_one(
         conn,
@@ -485,17 +489,20 @@ def todo_counts(conn: sqlite3.Connection, member_id: int) -> dict:
         (member_id,))["c"]
     watched_unrated = db.query_one(
         conn,
-        """SELECT COUNT(*) c FROM movies m WHERE m.status = 'watched'
+        """SELECT COUNT(*) c FROM movies m
+           JOIN members mem ON mem.id = ?
+           WHERE m.status = 'watched' AND date(m.watched_at) >= date(mem.created_at)
            AND NOT EXISTS (SELECT 1 FROM ratings r
                            WHERE r.movie_id = m.id AND r.member_id = ?)""",
-        (member_id,))["c"]
+        (member_id, member_id))["c"]
     return {"backlog": backlog_unmarked, "watched": watched_unrated}
 
 
 def todo_details(conn: sqlite3.Connection, member_id: int, *, cap: int = 5) -> dict:
     """Per-member reminder detail: which specific films are outstanding.
 
-    Same eligibility rules as todo_counts, but returns titles (oldest first,
+    Same eligibility rules as todo_counts (including the joined-before-the-
+    discussion cutoff on `watched`), but returns titles (oldest first,
     capped) instead of a bare count, for surfaces that need to say *what* is
     outstanding, not just *how many* (e.g. the Discord reminder digest).
     """
@@ -508,11 +515,13 @@ def todo_details(conn: sqlite3.Connection, member_id: int, *, cap: int = 5) -> d
         (member_id,))
     watched_rows = db.query_all(
         conn,
-        """SELECT m.title FROM movies m WHERE m.status = 'watched'
+        """SELECT m.title FROM movies m
+           JOIN members mem ON mem.id = ?
+           WHERE m.status = 'watched' AND date(m.watched_at) >= date(mem.created_at)
            AND NOT EXISTS (SELECT 1 FROM ratings r
                            WHERE r.movie_id = m.id AND r.member_id = ?)
            ORDER BY m.watched_at, m.id""",
-        (member_id,))
+        (member_id, member_id))
 
     def _shape(rows):
         titles = [r["title"] for r in rows]

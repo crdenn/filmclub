@@ -83,14 +83,19 @@ class DiscordReminderTests(unittest.TestCase):
         config.DISCORD_REMINDER_HOUR = self.old_hour
         self.tmp.cleanup()
 
-    def add_member(self, plex_id="uuid-1", username="Alice", discord_user_id=None):
+    def add_member(self, plex_id="uuid-1", username="Alice", discord_user_id=None,
+                   created_at=None):
         cur = self.conn.execute(
             """INSERT INTO members (plex_id, username, color, discord_user_id)
                VALUES (?, ?, '#123456', ?)""",
             (plex_id, username, discord_user_id),
         )
+        member_id = cur.lastrowid
+        if created_at:
+            self.conn.execute(
+                "UPDATE members SET created_at = ? WHERE id = ?", (created_at, member_id))
         self.conn.commit()
-        return cur.lastrowid
+        return member_id
 
     def add_movie(self, title="Test Film", status="suggested", watched_at=None, year=None):
         cur = self.conn.execute(
@@ -129,6 +134,25 @@ class DiscordReminderTests(unittest.TestCase):
         detail = service.todo_details(self.conn, member_id)
 
         self.assertEqual(detail["backlog"], {"count": 0, "titles": [], "overflow": 0})
+
+    def test_todo_excludes_watched_films_from_before_member_joined(self):
+        veteran = self.add_member(plex_id="uuid-vet", username="Veteran",
+                                  created_at="2026-01-01 12:00:00")
+        newcomer = self.add_member(plex_id="uuid-new", username="Newcomer",
+                                   created_at="2026-08-09 12:00:00")
+        self.add_movie(title="Before Newcomer Joined", status="watched", watched_at="2026-08-04")
+        self.add_movie(title="After Newcomer Joined", status="watched", watched_at="2026-08-11")
+
+        self.assertEqual(service.todo_counts(self.conn, veteran)["watched"], 2)
+        self.assertEqual(service.todo_counts(self.conn, newcomer)["watched"], 1)
+
+        newcomer_detail = service.todo_details(self.conn, newcomer)
+        self.assertEqual(newcomer_detail["watched"]["titles"], ["After Newcomer Joined"])
+
+        digest = discord.build_digest(self.conn)
+        newcomer_gap = next((g for g in digest["gaps"] if g["member"]["id"] == newcomer), None)
+        self.assertIsNotNone(newcomer_gap)
+        self.assertEqual(newcomer_gap["watched"]["titles"], ["After Newcomer Joined"])
 
     # --- build_digest ------------------------------------------------------
 
