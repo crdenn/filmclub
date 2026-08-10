@@ -1088,8 +1088,10 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .tw-you-label { color: var(--text-dim); font-size: .85rem; }
 .tw-you-bar .seen-seg { width: auto; flex: 0 1 auto; }
 .tw-you-bar .seg { min-width: 116px; }
-.tw-rate-link { margin-left: auto; color: var(--accent-text); font-weight: 600; font-size: .88rem; white-space: nowrap; }
-.tw-rate-link:hover { text-decoration: underline; }
+.tw-rate-box { margin-top: .9rem; }
+.tw-rate-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; margin-bottom: .2rem; }
+.tw-rate-privacy { color: var(--text-faint); font-size: .78rem; }
+.tw-rate-save { margin-top: .6rem; }
 
 .tw-empty { text-align: center; padding: 4.5rem 1rem; color: var(--text-dim); }
 .tw-empty-emoji { font-size: 3rem; margin-bottom: .4rem; }
@@ -1431,7 +1433,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .tw-eyebrow { font-size: .68rem; }
   .tw-synopsis { font-size: .92rem; }
   .tw-hero-foot { margin-top: 1.2rem; padding-top: 1.3rem; }
-  .tw-rate-link { margin-left: 0; }
   .tw-you-bar { gap: .7rem; }
   .tw-you-bar .seen-seg { width: 100%; flex: 1 1 auto; }
   .tw-you-bar .seg { min-width: 0; }

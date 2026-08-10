@@ -58,6 +58,21 @@ class RatingPrivacyTests(unittest.TestCase):
         self.assertNotIn("Bob secret", repr(alice_view))
         self.assertNotIn("Alice secret", repr(bob_view))
 
+    def test_this_week_returns_only_the_requesting_members_own_rating(self):
+        movie_id = self._add_movie("Private Pick", "scheduled", self.alice_id)
+        service.upsert_rating(self.conn, movie_id, self.alice_id, 4.5, False, "Alice secret")
+        service.upsert_rating(self.conn, movie_id, self.bob_id, 1.0, True, "Bob secret")
+
+        alice_view = service.this_week(self.conn, self.alice_id)[0]
+        bob_view = service.this_week(self.conn, self.bob_id)[0]
+        no_member_view = service.this_week(self.conn)[0]
+
+        self.assertEqual(alice_view["my_rating"]["score"], 4.5)
+        self.assertEqual(bob_view["my_rating"]["score"], 1.0)
+        self.assertNotIn("Bob secret", repr(alice_view))
+        self.assertNotIn("Alice secret", repr(bob_view))
+        self.assertNotIn("my_rating", no_member_view)
+
     def test_watched_detail_reveals_all_ratings(self):
         movie_id = self._add_movie("Revealed Pick", "watched", self.alice_id)
         service.upsert_rating(self.conn, movie_id, self.alice_id, 4.5, False, None)

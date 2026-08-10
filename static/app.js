@@ -1040,7 +1040,7 @@
            <p>Open a film in the <a href="#/backlog">Backlog</a> and choose “Pick as this week’s movie.”</p>
          </div>`;
     paintView("thisweek", body, preserve);
-    wireThisWeekCards();
+    wireThisWeekCards(items);
   }
 
   // Full-bleed single-film hero for the current pick (usually one): backdrop
@@ -1086,14 +1086,40 @@
           <div class="tw-you-bar">
             <span class="tw-you-label">Have you watched it?</span>
             ${seenControl(m.id, myState)}
-            <a class="tw-rate-link" href="#/movie/${m.id}">Rate &amp; discuss →</a>
           </div>
+          ${thisWeekRateBlock(m)}
         </div>
       </div>
     </article>`;
   }
 
-  function wireThisWeekCards() {
+  // Rate & review, right on the This-week card instead of behind a link to the
+  // detail page — the link was easy to miss, and this is the one action people
+  // actually need to take each week. Same fields/endpoint as the detail page's
+  // rating panel, just scoped by data-id (rather than a page-unique #id) since
+  // more than one film can be scheduled at once.
+  function thisWeekRateBlock(m) {
+    const r = m.my_rating;
+    const startScore = r ? r.score : 0;
+    const seenBefore = r ? r.seen_before : m.my_rating_default.seen_before;
+    return `<div class="tw-rate-box" data-rate-box="${m.id}">
+      <div class="tw-rate-head">
+        <span class="tw-you-label">${r ? "Your rating" : "Rate &amp; review"}</span>
+        <span class="tw-rate-privacy">Private until the group meets — no one else can see it yet.</span>
+      </div>
+      <div class="star-input" data-star-input="${m.id}" data-score="${startScore}">
+        ${[1,2,3,4,5].map(i => `<span class="star-slot" data-i="${i}">${oneStar(startScore - (i - 1))}</span>`).join("")}
+        <span class="val">${startScore ? startScore.toFixed(1) : "—"}</span>
+      </div>
+      <div class="rate-controls">
+        <label class="toggle-pill"><input type="checkbox" data-seen-before="${m.id}" ${seenBefore ? "checked" : ""}> Had you seen this before?</label>
+      </div>
+      <textarea class="rate-note" data-rate-note="${m.id}" placeholder="Optional note…">${esc(r ? (r.note || "") : "")}</textarea>
+      <div class="tw-rate-save"><button class="btn btn-primary" data-save-rating="${m.id}">${r ? "Update rating" : "Save rating"}</button></div>
+    </div>`;
+  }
+
+  function wireThisWeekCards(items) {
     app.querySelectorAll("[data-nav]").forEach(el =>
       el.onclick = () => { location.hash = `#/movie/${el.dataset.nav}`; });
     wireSeenControls();
@@ -1103,6 +1129,67 @@
       btn.onclick = () => { try { input.showPicker(); } catch { input.focus(); } };
       input.onchange = () => setDiscussDate(btn.dataset.dateEdit, input.value, btn);
     });
+    items.forEach(wireThisWeekRating);
+  }
+
+  function wireThisWeekRating(m) {
+    const box = app.querySelector(`[data-star-input="${m.id}"]`);
+    if (!box) return;
+    let current = parseFloat(box.dataset.score) || 0;
+    const valEl = $(".val", box);
+
+    const paint = (score) => {
+      box.querySelectorAll(".star-slot").forEach((slot) => {
+        const i = parseInt(slot.dataset.i, 10);
+        slot.innerHTML = oneStar(score - (i - 1));
+      });
+      valEl.textContent = score ? score.toFixed(1) : "—";
+    };
+
+    box.querySelectorAll(".star-slot").forEach((slot) => {
+      const i = parseInt(slot.dataset.i, 10);
+      slot.onmousemove = (e) => {
+        const r = slot.getBoundingClientRect();
+        const half = (e.clientX - r.left) < r.width / 2 ? 0.5 : 1;
+        paint(i - 1 + half);
+      };
+      slot.onmouseleave = () => paint(current);
+      slot.onclick = (e) => {
+        e.stopPropagation();
+        const r = slot.getBoundingClientRect();
+        const half = (e.clientX - r.left) < r.width / 2 ? 0.5 : 1;
+        current = i - 1 + half;
+        box.dataset.score = current;
+        paint(current);
+      };
+    });
+
+    const saveBtn = app.querySelector(`[data-save-rating="${m.id}"]`);
+    saveBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if (!current || current < 0.5) { toast("Pick a score first", true); return; }
+      const seenCb = app.querySelector(`[data-seen-before="${m.id}"]`);
+      const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
+      saveBtn.disabled = true;
+      try {
+        const result = await api(`/api/movies/${m.id}/rating`, {
+          method: "POST",
+          body: { score: current, seen_before: seenCb.checked, note: noteEl.value },
+        });
+        const sync = result.plex && result.plex.status;
+        const message = sync === "synced" ? "Rating saved to Film Club and Plex"
+          : sync === "not_connected" ? "Rating saved · connect Plex from your profile to enable sync"
+          : sync === "not_in_library" ? "Rating saved · movie isn't in your Plex library"
+          : sync === "failed" ? "Rating saved · Plex sync failed"
+          : "Rating saved";
+        toast(message, sync === "failed");
+        refreshTodo();
+        renderThisWeek(true);
+      } catch (err) {
+        toast("Couldn't save rating: " + err.message, true);
+        saveBtn.disabled = false;
+      }
+    };
   }
 
   async function setDiscussDate(id, isoDate, btn) {

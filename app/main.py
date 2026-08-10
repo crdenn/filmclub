@@ -897,7 +897,7 @@ async def api_backlog(
 async def api_thisweek(member=Depends(auth.current_member)):
     conn = db.connect()
     try:
-        return {"items": service.this_week(conn), "me": member}
+        return {"items": service.this_week(conn, member["id"]), "me": member}
     finally:
         conn.close()
 

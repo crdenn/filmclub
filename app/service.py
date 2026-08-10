@@ -134,12 +134,16 @@ def _sort_backlog(items: list[dict], sort: str) -> None:
     items.sort(key=key, reverse=reverse)
 
 
-def this_week(conn: sqlite3.Connection) -> list[dict]:
+def this_week(conn: sqlite3.Connection, member_id: int | None = None) -> list[dict]:
     """Films picked as the current week's watch (status 'scheduled').
 
     Same shape as a backlog item plus the discussion date (watched_at, set to the
-    upcoming Tuesday at pick time). Rating data stays private until the movie is
-    moved to watched, so this shared overview deliberately exposes none of it."""
+    upcoming Tuesday at pick time). When called with a member_id (the normal,
+    request-scoped case) each item also carries that member's own rating, so
+    they can rate right here. Ratings stay private until the movie is moved to
+    watched, so only the caller's own rating (never anyone else's) is included.
+    member_id is omitted for the Discord digest, which has no single viewer and
+    doesn't need per-member rating data."""
     members = all_members(conn)
     movies = [db.movie_base(r) for r in db.query_all(
         conn, "SELECT * FROM movies WHERE status = 'scheduled' ORDER BY watched_at, id")]
@@ -149,17 +153,33 @@ def this_week(conn: sqlite3.Connection) -> list[dict]:
     for r in prior:
         prior_by_movie.setdefault(r["movie_id"], []).append(r)
 
+    my_ratings = {}
+    if member_id is not None:
+        my_ratings = {
+            r["movie_id"]: r for r in db.query_all(
+                conn, "SELECT * FROM ratings WHERE member_id = ?", (member_id,))
+        }
+
     suggesters = {m["id"]: m for m in members}
     out = []
     for mv in movies:
         cov = _coverage(members, prior_by_movie.get(mv["id"], []))
-        out.append({
+        item = {
             **mv,
             "coverage": cov,
             "suggester": suggesters.get(mv["suggested_by"]),
             "library": _in_library(mv),
             "total_members": len(members),
-        })
+        }
+        if member_id is not None:
+            mine = my_ratings.get(mv["id"])
+            item["my_rating"] = {
+                "score": mine["score"], "seen_before": bool(mine["seen_before"]), "note": mine["note"],
+            } if mine else None
+            item["my_rating_default"] = {
+                "seen_before": default_seen_before(conn, mv["id"], member_id),
+            }
+        out.append(item)
     return out
 
 
