@@ -669,21 +669,34 @@ def unmark_watched(conn: sqlite3.Connection, movie_id: int) -> bool:
 
 
 def default_seen_before(conn: sqlite3.Connection, movie_id: int, member_id: int) -> bool:
-    """The rating input's default 'had you seen this before?' value.
+    """The rating input's default 'had you seen this before the club picked it?'
+    value — the historical fact behind the ratings-page first-watch/rewatch
+    split (see stats.py, which reads only ratings.seen_before, never live
+    prior_views).
 
-    Prefer the frozen watch-time snapshot; fall back to live prior_views (for
-    films watched before snapshots existed); unknown defaults to False. Always
-    editable by the member at rate time.
+    Sourced only from the frozen pick-time snapshot once one exists (even an
+    empty one) — never from the live, continuously-editable "have you watched
+    it?" toggle on the This Week page. That toggle tracks whether a member has
+    watched the film *at all, as of now*, for the "X of Y watched" progress
+    stat, and watching it fresh this week (a legitimate first watch) sets the
+    same flag as having seen it years ago — so once a snapshot exists, an
+    absent member defaults to False (first watch) rather than trusting a live
+    value that may only mean "I watched it for this week's assignment." Always
+    editable by the member at rate time, so a wrong default just needs one tap
+    to correct.
+
+    Movies from before the snapshot feature existed have no snapshot at all;
+    for those, live prior_views is the only signal that was ever recorded, so
+    it's still used as the fallback.
     """
     row = db.query_one(
         conn, "SELECT seen_before_snapshot FROM movies WHERE id = ?", (movie_id,))
     if row and row["seen_before_snapshot"]:
         try:
             snap = json.loads(row["seen_before_snapshot"])
-            if str(member_id) in snap:
-                return bool(snap[str(member_id)])
         except (json.JSONDecodeError, TypeError):
-            pass
+            snap = {}
+        return bool(snap.get(str(member_id), False))
     live = db.query_one(
         conn, "SELECT seen FROM prior_views WHERE movie_id = ? AND member_id = ?",
         (movie_id, member_id))

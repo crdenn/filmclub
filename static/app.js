@@ -1083,39 +1083,55 @@
               <div class="cov-avatars">${coverageAvatars(c)}</div>
             </div>
           </div>
-          <div class="tw-you-bar">
-            <span class="tw-you-label">Have you watched it?</span>
-            ${seenControl(m.id, myState)}
-          </div>
-          ${thisWeekRateBlock(m)}
+          ${thisWeekYouSection(m, myState)}
         </div>
       </div>
     </article>`;
   }
 
-  // Rate & review, right on the This-week card instead of behind a link to the
-  // detail page — the link was easy to miss, and this is the one action people
-  // actually need to take each week. Same fields/endpoint as the detail page's
-  // rating panel, just scoped by data-id (rather than a page-unique #id) since
-  // more than one film can be scheduled at once.
-  function thisWeekRateBlock(m) {
+  // Two real usability fixes here, not just wording/visuals:
+  //
+  // 1. The rating section only appears once there's something to rate — either
+  //    you've marked the film "seen" or you already have a rating. Someone who
+  //    hasn't watched it yet doesn't need five stars sitting there inviting a
+  //    tap they can't meaningfully make; a quiet one-line hint stands in until
+  //    then. Classic progressive disclosure: don't show a control before it's
+  //    actionable.
+  // 2. Picking a star rating implies you've watched it, so it auto-marks "seen"
+  //    too (see wireThisWeekRating) — one less required tap on the common path
+  //    of watch-then-rate. The "have you watched it?" toggle stays independently
+  //    editable for the (also common) case of checking in mid-week before
+  //    you're ready to rate.
+  //
+  // "First watch / Rewatch" replaced a checkbox+sentence with a segmented
+  // toggle in the same visual language as the seen/not-seen control above it —
+  // pre-selected by the smart default, so it's a glance, not a read.
+  function thisWeekYouSection(m, myState) {
     const r = m.my_rating;
     const startScore = r ? r.score : 0;
     const seenBefore = r ? r.seen_before : m.my_rating_default.seen_before;
-    return `<div class="tw-rate-box" data-rate-box="${m.id}">
-      <div class="tw-rate-head">
-        <span class="tw-you-label">${r ? "Your rating" : "Rate &amp; review"}</span>
-        <span class="tw-rate-privacy">Private until the group meets — no one else can see it yet.</span>
+    const showRating = myState === "seen" || !!r;
+    return `<div class="tw-you-section" data-rate-box="${m.id}">
+      <div class="tw-you-row">
+        <span class="tw-you-label">Have you watched it?</span>
+        ${seenControl(m.id, myState)}
       </div>
-      <div class="star-input" data-star-input="${m.id}" data-score="${startScore}">
-        ${[1,2,3,4,5].map(i => `<span class="star-slot" data-i="${i}">${oneStar(startScore - (i - 1))}</span>`).join("")}
-        <span class="val">${startScore ? startScore.toFixed(1) : "—"}</span>
+      <div class="tw-rate-hint" data-rate-hint="${m.id}"${showRating ? " hidden" : ""}>Rating opens once you've watched it.</div>
+      <div class="tw-rate-block" data-rate-block="${m.id}"${showRating ? "" : " hidden"}>
+        <div class="rating-group-label tw-rate-label-row">
+          <span data-rate-title="${m.id}">${r ? "Your rating" : "Rate it"}</span>
+          <span class="tw-rate-privacy">Private until the group meets</span>
+        </div>
+        <div class="star-input" data-star-input="${m.id}" data-score="${startScore}">
+          ${[1,2,3,4,5].map(i => `<span class="star-slot" data-i="${i}">${oneStar(startScore - (i - 1))}</span>`).join("")}
+          <span class="val">${startScore ? startScore.toFixed(1) : "—"}</span>
+        </div>
+        <div class="rewatch-seg" data-rewatch="${m.id}" data-state="${seenBefore ? "rewatch" : "first"}">
+          <button type="button" class="seg" data-set="first">First watch</button>
+          <button type="button" class="seg" data-set="rewatch">Rewatch</button>
+        </div>
+        <textarea class="rate-note" data-rate-note="${m.id}" placeholder="Optional note…">${esc(r ? (r.note || "") : "")}</textarea>
       </div>
-      <div class="rate-controls">
-        <label class="toggle-pill"><input type="checkbox" data-seen-before="${m.id}" ${seenBefore ? "checked" : ""}> Had you seen this before?</label>
-      </div>
-      <textarea class="rate-note" data-rate-note="${m.id}" placeholder="Optional note…">${esc(r ? (r.note || "") : "")}</textarea>
-      <div class="tw-rate-save"><button class="btn btn-primary" data-save-rating="${m.id}">${r ? "Update rating" : "Save rating"}</button></div>
     </div>`;
   }
 
@@ -1132,11 +1148,35 @@
     items.forEach(wireThisWeekRating);
   }
 
+  // No save button: a star pick commits and saves immediately (same
+  // instant-save pattern as the discussion-date picker and the seen-control
+  // toggle). Picking a star also marks "seen" up top if it isn't already —
+  // rating something implies you watched it, so that's one fewer required tap.
+  // This is safe for the historical first-watch/rewatch stat: that flag is
+  // read from `rewatchSeg`'s own state below (defaulted server-side from the
+  // frozen pick-time snapshot, see default_seen_before in service.py), never
+  // from the live seen/not-seen toggle this auto-marks — so "watched it fresh
+  // this week" can never get recorded as "had seen it before the pick."
+  // The rewatch toggle and note can't be saved on their own — the rating
+  // endpoint requires a score — so they just ride along with whatever the
+  // next star click saves; a change to an *already-saved* rating (score
+  // already picked) saves right away too.
   function wireThisWeekRating(m) {
     const box = app.querySelector(`[data-star-input="${m.id}"]`);
     if (!box) return;
     let current = parseFloat(box.dataset.score) || 0;
     const valEl = $(".val", box);
+    const seenSeg = app.querySelector(`.tw-you-section[data-rate-box="${m.id}"] .seen-seg`);
+    const hint = app.querySelector(`[data-rate-hint="${m.id}"]`);
+    const block = app.querySelector(`[data-rate-block="${m.id}"]`);
+
+    // Rating opens once you've watched it — either you already have a score,
+    // or the seen/not-seen control above says "seen".
+    const syncVisibility = () => {
+      const show = current >= 0.5 || (seenSeg && seenSeg.dataset.state === "seen");
+      if (block) block.hidden = !show;
+      if (hint) hint.hidden = show;
+    };
 
     const paint = (score) => {
       box.querySelectorAll(".star-slot").forEach((slot) => {
@@ -1144,6 +1184,29 @@
         slot.innerHTML = oneStar(score - (i - 1));
       });
       valEl.textContent = score ? score.toFixed(1) : "—";
+    };
+
+    const save = async (score) => {
+      const rewatchSeg = app.querySelector(`[data-rewatch="${m.id}"]`);
+      const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
+      try {
+        const result = await api(`/api/movies/${m.id}/rating`, {
+          method: "POST",
+          body: { score, seen_before: rewatchSeg.dataset.state === "rewatch", note: noteEl.value },
+        });
+        const sync = result.plex && result.plex.status;
+        const message = sync === "synced" ? "Rating saved to Film Club and Plex"
+          : sync === "not_connected" ? "Rating saved · connect Plex from your profile to enable sync"
+          : sync === "not_in_library" ? "Rating saved · movie isn't in your Plex library"
+          : sync === "failed" ? "Rating saved · Plex sync failed"
+          : "Rating saved";
+        toast(message, sync === "failed");
+        refreshTodo();
+        const title = app.querySelector(`[data-rate-title="${m.id}"]`);
+        if (title) title.textContent = "Your rating";
+      } catch (err) {
+        toast("Couldn't save rating: " + err.message, true);
+      }
     };
 
     box.querySelectorAll(".star-slot").forEach((slot) => {
@@ -1161,35 +1224,32 @@
         current = i - 1 + half;
         box.dataset.score = current;
         paint(current);
+        syncVisibility();
+        save(current);
+        if (seenSeg && seenSeg.dataset.state !== "seen") setSeen(seenSeg, "seen");
       };
     });
 
-    const saveBtn = app.querySelector(`[data-save-rating="${m.id}"]`);
-    saveBtn.onclick = async (e) => {
+    const rewatchSeg = app.querySelector(`[data-rewatch="${m.id}"]`);
+    rewatchSeg.querySelectorAll(".seg").forEach(btn => btn.onclick = (e) => {
       e.stopPropagation();
-      if (!current || current < 0.5) { toast("Pick a score first", true); return; }
-      const seenCb = app.querySelector(`[data-seen-before="${m.id}"]`);
-      const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
-      saveBtn.disabled = true;
-      try {
-        const result = await api(`/api/movies/${m.id}/rating`, {
-          method: "POST",
-          body: { score: current, seen_before: seenCb.checked, note: noteEl.value },
-        });
-        const sync = result.plex && result.plex.status;
-        const message = sync === "synced" ? "Rating saved to Film Club and Plex"
-          : sync === "not_connected" ? "Rating saved · connect Plex from your profile to enable sync"
-          : sync === "not_in_library" ? "Rating saved · movie isn't in your Plex library"
-          : sync === "failed" ? "Rating saved · Plex sync failed"
-          : "Rating saved";
-        toast(message, sync === "failed");
-        refreshTodo();
-        renderThisWeek(true);
-      } catch (err) {
-        toast("Couldn't save rating: " + err.message, true);
-        saveBtn.disabled = false;
-      }
-    };
+      rewatchSeg.dataset.state = btn.dataset.set === "rewatch" ? "rewatch" : "first";
+      if (current >= 0.5) save(current);
+    });
+
+    const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
+    const savedNote = noteEl.value;
+    noteEl.onclick = (e) => e.stopPropagation();
+    noteEl.onblur = () => { if (current >= 0.5 && noteEl.value !== savedNote) save(current); };
+
+    // The seen/not-seen control isn't part of this function's own markup (it's
+    // shared with every other page via wireSeenControls), so hook its buttons
+    // separately — additively, not overwriting that wiring — just to keep the
+    // rating section's visibility in sync when it changes.
+    if (seenSeg) {
+      seenSeg.querySelectorAll(".seg, .seen-resolved").forEach(btn =>
+        btn.addEventListener("click", syncVisibility));
+    }
   }
 
   async function setDiscussDate(id, isoDate, btn) {

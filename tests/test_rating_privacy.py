@@ -73,6 +73,30 @@ class RatingPrivacyTests(unittest.TestCase):
         self.assertNotIn("Alice secret", repr(bob_view))
         self.assertNotIn("my_rating", no_member_view)
 
+    def test_default_seen_before_ignores_live_watched_this_week_flag(self):
+        # This Week auto-marks "have you watched it?" (prior_views) the moment
+        # a member rates a film, so someone watching it fresh this week ends up
+        # with prior_views.seen=1 despite never having seen it before the club
+        # picked it. That must never leak into the first-watch/rewatch default
+        # for a member absent from the pick-time snapshot (an empty snapshot,
+        # same as _add_movie always creates).
+        movie_id = self._add_movie("Fresh Pick", "scheduled", self.alice_id)
+        service.set_prior_view(self.conn, movie_id, self.bob_id, seen=True)
+
+        self.assertFalse(service.default_seen_before(self.conn, movie_id, self.bob_id))
+
+    def test_default_seen_before_still_uses_live_view_for_pre_snapshot_movies(self):
+        # Movies from before the snapshot feature existed have no snapshot row
+        # at all (NULL, not '{}') — for those, live prior_views is the only
+        # signal that was ever recorded, so it's still the fallback.
+        movie_id = self._add_movie("Legacy Pick", "watched", self.alice_id)
+        self.conn.execute(
+            "UPDATE movies SET seen_before_snapshot = NULL WHERE id = ?", (movie_id,))
+        self.conn.commit()
+        service.set_prior_view(self.conn, movie_id, self.bob_id, seen=True)
+
+        self.assertTrue(service.default_seen_before(self.conn, movie_id, self.bob_id))
+
     def test_watched_detail_reveals_all_ratings(self):
         movie_id = self._add_movie("Revealed Pick", "watched", self.alice_id)
         service.upsert_rating(self.conn, movie_id, self.alice_id, 4.5, False, None)

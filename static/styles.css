@@ -1078,20 +1078,44 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .tw-plex-btn { display: inline-flex; align-items: center; gap: .45rem; background: var(--brand-plex); color: var(--on-brand-plex); font-weight: 700; font-size: .9rem; padding: .6rem 1.15rem; border-radius: 10px; box-shadow: var(--shadow); }
 .tw-plex-btn:hover { background: color-mix(in srgb, var(--brand-plex) 92%, var(--hover-mix)); }
 
-/* bottom of the hero: suggester + who's-watched avatars, then your control */
+/* bottom of the hero: suggester + who's-watched avatars, then your card */
 .tw-hero-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem 1.5rem; flex-wrap: wrap; margin-top: auto; padding-top: 1.7rem; }
 .tw-suggester { display: flex; align-items: center; gap: .45rem; color: var(--text-dim); font-size: .85rem; }
 .tw-watchers { display: flex; align-items: center; gap: .7rem; }
 .tw-watchers-label { color: var(--text-dim); font-size: .82rem; white-space: nowrap; }
 .tw-watchers-label b { color: var(--text); }
-.tw-you-bar { display: flex; align-items: center; gap: .8rem 1rem; flex-wrap: wrap; margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid var(--overlay-hairline); }
+
+/* "have you watched it?" + rating: one section under a single hairline
+   divider, in the same idiom the ratings panel already uses for its own
+   section labels (.rating-group-label) — no boxed card. */
+.tw-you-section { margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px solid var(--overlay-hairline); }
+.tw-you-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem 1rem; flex-wrap: wrap; }
 .tw-you-label { color: var(--text-dim); font-size: .85rem; }
-.tw-you-bar .seen-seg { width: auto; flex: 0 1 auto; }
-.tw-you-bar .seg { min-width: 116px; }
-.tw-rate-box { margin-top: .9rem; }
-.tw-rate-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; margin-bottom: .2rem; }
-.tw-rate-privacy { color: var(--text-faint); font-size: .78rem; }
-.tw-rate-save { margin-top: .6rem; }
+.tw-you-row .seen-seg { width: auto; flex: 0 1 auto; }
+.tw-you-row .seg { min-width: 116px; }
+/* .rating-group-label supplies the uppercase style, its own hairline and spacing */
+.tw-rate-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; }
+.tw-rate-privacy { text-transform: none; letter-spacing: normal; font-size: .74rem; }
+/* Stands in for the rating block until there's something to rate — a single
+   quiet line rather than an interactive-looking control nobody can use yet. */
+.tw-rate-hint { color: var(--text-faint); font-size: .85rem; margin-top: .9rem; }
+
+/* First-watch/rewatch toggle: same segmented-button visual language as
+   .seen-seg above it, but its own class — it must NOT match .seen-seg's
+   selectors, since wireSeenControls() wires every ".seen-seg .seg" on the
+   page to the prior-view endpoint, which this isn't. */
+.rewatch-seg { display: flex; gap: .4rem; margin: .8rem 0; }
+.rewatch-seg .seg {
+  flex: 1 1 0; min-width: 0; height: 34px; padding: 0 .5rem;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--bg-raise);
+  color: var(--text-dim); font-size: .8rem; font-weight: 600; white-space: nowrap;
+  cursor: pointer; transition: background .1s, color .1s, border-color .1s;
+}
+.rewatch-seg .seg:hover { color: var(--text); border-color: var(--text-faint); }
+.rewatch-seg[data-state="first"] .seg[data-set="first"],
+.rewatch-seg[data-state="rewatch"] .seg[data-set="rewatch"] {
+  background: var(--bg-raise-2); border-color: var(--text-faint); color: var(--text);
+}
 
 .tw-empty { text-align: center; padding: 4.5rem 1rem; color: var(--text-dim); }
 .tw-empty-emoji { font-size: 3rem; margin-bottom: .4rem; }
@@ -1433,9 +1457,10 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .tw-eyebrow { font-size: .68rem; }
   .tw-synopsis { font-size: .92rem; }
   .tw-hero-foot { margin-top: 1.2rem; padding-top: 1.3rem; }
-  .tw-you-bar { gap: .7rem; }
-  .tw-you-bar .seen-seg { width: 100%; flex: 1 1 auto; }
-  .tw-you-bar .seg { min-width: 0; }
+  .tw-you-section { margin-top: 1.1rem; padding-top: 1rem; }
+  .tw-you-row { flex-direction: column; align-items: stretch; gap: .5rem; }
+  .tw-you-row .seen-seg { width: 100%; flex: 1 1 auto; }
+  .tw-you-row .seg { min-width: 0; }
 
   /* --- movie detail: stacked --- */
   .detail-inner { flex-direction: column; gap: 1.1rem; padding: 1.2rem; }
