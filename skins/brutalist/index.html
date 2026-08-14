@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#f2f0e9">
+  <title>Film Club</title>
+  <!-- Resolve the theme BEFORE the stylesheet loads, so the first paint is already
+       correct. Anything applied from app.js would land after paint and flash.
+       The stored value is only a mirror; the account is the source of truth and
+       reconciles once /api/me resolves. -->
+  <script>
+    (function () {
+      var resolved = "dark";
+      try {
+        var pref = localStorage.getItem("fc_theme");
+        if (pref !== "dark" && pref !== "light") {
+          pref = "system";  // anything unrecognised or absent
+        }
+        resolved = pref === "system"
+          ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+          : pref;
+      } catch (e) {
+        // Storage can throw outright in some privacy modes. Degrade to the OS
+        // preference rather than leaving the page unthemed.
+        try {
+          resolved = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        } catch (e2) { /* keep the dark default */ }
+      }
+      document.documentElement.setAttribute("data-theme", resolved);
+      // Mirrored from the stock shell so app.js sees the attribute it expects.
+      // The skin restates every palette token itself, so the value only decides
+      // which stock rules win underneath — it never shows through.
+      var palette = "warm";
+      try {
+        if (localStorage.getItem("fc_palette") === "classic") palette = "classic";
+      } catch (e) { /* keep the default */ }
+      document.documentElement.setAttribute("data-palette", palette);
+      // Duplicates one pair of hex values from brutalist.css because this runs
+      // before the stylesheet is guaranteed applied; app.js reads the real
+      // token from CSS thereafter, so these two can never drift far.
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", resolved === "light" ? "#f2f0e9" : "#0a0a0a");
+    })();
+  </script>
+  <!-- The stock sheet supplies every layout rule and token name; the overlay
+       below only restates the values and the handful of shapes that make the
+       look. Load order is the whole mechanism — do not swap these two. -->
+  <link rel="stylesheet" href="/static/styles.css?v=73">
+  <link rel="stylesheet" href="/skin/brutalist.css?v=1">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23000'/%3E%3Crect x='18' y='18' width='64' height='64' fill='%23ff3b00'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div id="app"><div class="boot">Loading…</div></div>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <script src="/static/app.js?v=76"></script>
+  <!-- Feature modules load after the shell: app.js defines window.FilmClub, and
+       each module registers its own route on it. The router resolves routes at
+       navigation time, so registration order does not matter. -->
+  <!-- Reusable, app-agnostic; loaded before the module that uses it. -->
+  <script src="/static/editor/inline-editor.js?v=76"></script>
+  <script src="/static/collections.js?v=76"></script>
+</body>
+</html>

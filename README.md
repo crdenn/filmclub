@@ -205,6 +205,7 @@ The setup wizard and Admin screen manage normal application configuration:
 | `SEERR_TIMEOUT` | — | Per-request Seerr timeout (default 10s) |
 | `DISCORD_WEBHOOK_URL` | — | Enables the weekly reminder digest |
 | `DISCORD_REMINDER_WEEKDAY`, `DISCORD_REMINDER_HOUR` | — | Digest schedule (default Monday, 9am); also adjustable in Admin Settings |
+| `FC_SKIN` | — | Serve an alternate frontend from `skins/<name>/` (see below) |
 
 For automated or legacy deployments, environment variables override values
 saved through the UI. [`.env.example`](.env.example) documents those advanced
@@ -212,6 +213,27 @@ overrides, including `SESSION_SECRET`, `PLEX_CLIENT_ID`, `ADMIN_PLEX_IDS`,
 `DATA_DIR`, `PORT`, `FILMCLUB_VERSION`, and development-only
 `DEV_BYPASS_USER`. UI fields backed by environment variables are shown as
 locked. Never enable `DEV_BYPASS_USER` in production.
+
+### Skins
+
+`FC_SKIN=<name>` serves the frontend from `skins/<name>/` instead of `static/`.
+Unset — the default — serves the stock UI, and nothing outside the SPA-and-static
+block of `app/main.py` knows skins exist: no route, API, database column or
+template changes, so a skin can only ever alter what the browser renders.
+
+A skin needs one file, `index.html`, which is the page actually served at `/`.
+Its own directory is mounted at `/skin`, while `/static` keeps serving the stock
+assets — so a skin decides per asset whether to replace or reuse. `brutalist`
+loads the stock `styles.css` and `app.js` untouched and adds a single overriding
+stylesheet on top; a skin that wants different markup would ship its own
+`app.js` and link that instead. Cache-busting covers skin files automatically.
+
+```bash
+FC_SKIN=brutalist ./.venv/bin/uvicorn app.main:app --port 8138
+```
+
+Run two ports with different `FC_SKIN` values to compare skins side by side
+against the same database.
 
 ### Authorization model
 

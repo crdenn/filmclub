@@ -38,6 +38,26 @@ log = logging.getLogger("filmclub")
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
+# Optional alternate frontend. FC_SKIN names a directory under skins/; unset
+# serves the stock UI, which is the only thing this can affect — no route, API
+# or template outside this block knows a skin exists. A skin supplies its own
+# index.html plus whatever that page links from /skin; anything it doesn't ship
+# still comes from /static, so a purely cosmetic skin is one extra stylesheet.
+_SKIN_NAME = os.environ.get("FC_SKIN", "").strip()
+SKIN_DIR: Path | None = None
+if _SKIN_NAME:
+    # A directory name, never a path: this is operator-supplied, and joining an
+    # unvalidated value onto a served root is how you end up publishing /etc.
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", _SKIN_NAME):
+        log.warning("FC_SKIN=%r is not a plain directory name; ignoring", _SKIN_NAME)
+    else:
+        candidate = Path(__file__).parent.parent / "skins" / _SKIN_NAME
+        if (candidate / "index.html").is_file():
+            SKIN_DIR = candidate
+            log.info("Serving the %r skin from %s", _SKIN_NAME, candidate)
+        else:
+            log.warning("FC_SKIN=%r has no index.html; serving the stock UI", _SKIN_NAME)
+
 # Short-lived signer for carrying the Plex pin across the OAuth redirect.
 _pin_signer = URLSafeTimedSerializer(config.EFFECTIVE_SESSION_SECRET, salt="filmclub-pin")
 PIN_COOKIE = "filmclub_pin"
@@ -1734,9 +1754,12 @@ async def api_admin_diagnostics(admin=Depends(auth.require_admin)):
 # --- SPA + static ----------------------------------------------------------
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if SKIN_DIR:
+    app.mount("/skin", StaticFiles(directory=SKIN_DIR), name="skin")
 
 _ASSET_RE = re.compile(
-    r'(/static/(?:app\.js|collections\.js|editor/inline-editor\.js|styles\.css))\?v=[^"\']*')
+    r'((?:/static/(?:app\.js|collections\.js|editor/inline-editor\.js|styles\.css)'
+    r'|/skin/[\w.-]+\.(?:js|css)))\?v=[^"\']*')
 
 # Every script/stylesheet the shell references. All of them feed one shared
 # hash, so a change to any single file busts the cache for the whole set and
@@ -1751,11 +1774,18 @@ def _asset_version() -> str:
     bumped by hand, which is easy to forget — a deploy would then ship new code
     that returning browsers never fetched. Deriving the value from the files
     themselves makes a stale cache impossible.
+
+    Every file of an active skin feeds the hash too. Which of them the page
+    actually links is the skin's business, and editing a skin stylesheet has to
+    invalidate the cache exactly as editing the stock one does.
     """
     digest = hashlib.sha256()
-    for name in _VERSIONED_ASSETS:
+    paths = [STATIC_DIR / name for name in _VERSIONED_ASSETS]
+    if SKIN_DIR:
+        paths += sorted(p for p in SKIN_DIR.iterdir() if p.is_file())
+    for path in paths:
         try:
-            digest.update((STATIC_DIR / name).read_bytes())
+            digest.update(path.read_bytes())
         except OSError:  # missing asset: fall back to the literal markup
             return ""
     return digest.hexdigest()[:12]
@@ -1763,7 +1793,7 @@ def _asset_version() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = ((SKIN_DIR or STATIC_DIR) / "index.html").read_text(encoding="utf-8")
     version = _asset_version()
     if version:
         html = _ASSET_RE.sub(rf"\1?v={version}", html)

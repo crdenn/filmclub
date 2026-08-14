@@ -1,0 +1,328 @@
+/* Brutalist skin — loaded AFTER static/styles.css, never instead of it.
+ *
+ * The stock sheet owns every layout rule: grids, flex, widths, breakpoints.
+ * This file changes only what a visual style is allowed to change — token
+ * values, borders, corners, weight and case. Nothing here sets `display`,
+ * `grid-template`, `flex` or a width, so the two sheets cannot fight over
+ * layout and a change to the stock sheet's structure carries over for free.
+ *
+ * The look: bone and ink, one hot accent, 3px rules, hard offset shadows,
+ * nothing rounded and nothing blurred. Structure is exposed rather than
+ * softened — the borders ARE the design.
+ */
+
+/* THEME:BEGIN — colour literals are allowed only inside this range. */
+
+/* Both blocks are (0,1,1), matching the stock sheet's own theme selectors, and
+   win purely by loading later. Keep them at this exact specificity: raising it
+   would silently outrank future stock rules that expect to be overridable. */
+html[data-theme="light"] {
+  --bg: #f2f0e9;
+  --bg-raise: #fffef9;
+  --bg-raise-2: #e6e3d9;
+  --surface-sunk: #dcd8ca;
+  --line: #000000;
+
+  --text: #000000;
+  --text-dim: #3a3a38;
+  --text-faint: #6b6a64;
+
+  --accent: #ff3b00;
+  --good: #0a7d3f;
+  --warn: #c76a00;
+  --bad: #d40000;
+  --star: #ff3b00;
+  --star-empty: #c9c5b8;
+
+  --accent-text: #cc2f00;
+  --good-text: #076031;
+  --warn-text: #9a5200;
+  --bad-text: #a80000;
+
+  --on-accent: #ffffff;
+  --on-warn: #000000;
+  --on-bad: #ffffff;
+  --on-member-color: #000000;
+
+  --overlay-fill: rgba(0,0,0,.72);
+  --overlay-plate: rgba(242,240,233,.9);
+  --modal-backdrop: rgba(0,0,0,.45);
+
+  /* Flat, not gradient — but deliberately NOT the accent. A poster well is the
+     largest element on the backlog grid, and at seven-up an accent fill stops
+     being an accent. The hot colour is rationed to things you can act on. */
+  --grad-poster: #e6e3d9;
+  --grad-poster-alt: #dcd8ca;
+  --grad-skeleton: #dcd8ca;
+
+  --hover-mix: #000000;
+}
+
+html[data-theme="dark"] {
+  --bg: #0a0a0a;
+  --bg-raise: #141413;
+  --bg-raise-2: #1e1e1c;
+  --surface-sunk: #232320;
+  --line: #f2f0e9;
+
+  --text: #f2f0e9;
+  --text-dim: #b2afa5;
+  --text-faint: #84817a;
+
+  --accent: #ff3b00;
+  --good: #22c368;
+  --warn: #ffa02b;
+  --bad: #ff4d4d;
+  --star: #ff3b00;
+  --star-empty: #3a3a36;
+
+  --accent-text: #ff6636;
+  --good-text: #22c368;
+  --warn-text: #ffa02b;
+  --bad-text: #ff4d4d;
+
+  --on-accent: #000000;
+  --on-warn: #000000;
+  --on-bad: #000000;
+  --on-member-color: #000000;
+
+  --overlay-fill: rgba(0,0,0,.75);
+  --overlay-plate: rgba(10,10,10,.88);
+  --modal-backdrop: rgba(0,0,0,.7);
+
+  --grad-poster: #1e1e1c;
+  --grad-poster-alt: #232320;
+  --grad-skeleton: #232320;
+
+  --hover-mix: #ffffff;
+}
+
+/* THEME:END */
+
+:root {
+  --radius: 0px;
+  --shadow: 6px 6px 0 var(--line);
+  --shadow-sm: 2px 2px 0 var(--line);
+  --shadow-md: 4px 4px 0 var(--line);
+  --ring-good: 0 0 0 3px var(--good);
+  --ring-warn: 0 0 0 3px var(--warn);
+  --overlay-hairline: var(--line);
+  --overlay-hairline-strong: var(--line);
+}
+
+/* One global assertion rather than ~60 per-component overrides. Nothing in this
+   skin is rounded, including the things the stock sheet makes circular (avatars,
+   meters, pills) — square is the point, so the blanket rule is the honest way to
+   say it and !important is what makes a single line beat 60 class selectors. */
+* { border-radius: 0 !important; }
+
+html, body {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Blur and translucency are the opposite of this style: chrome sits flat and
+   opaque on the page, with a rule under it doing the separating. */
+.appbar {
+  background: var(--bg);
+  backdrop-filter: none;
+  border-bottom: 3px solid var(--line);
+}
+.brand { font-weight: 800; letter-spacing: -.03em; text-transform: uppercase; }
+.brand .dot { color: var(--accent); }
+
+.nav a {
+  border: 2px solid var(--line);
+  font-weight: 700;
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.nav a:hover { background: var(--bg-raise-2); text-decoration: none; }
+.nav a.active { background: var(--line); color: var(--bg); }
+.nav-badge { background: var(--accent); color: var(--on-accent); font-weight: 800; }
+
+/* Surfaces: a hard edge and an offset block instead of a soft raise. */
+.card, .panel, .admin-card, .stat-card, .auth-card, .login-card, .setup-card,
+.profile-section, .settings-service, .pv-card, .sr-item, .modal {
+  border: 3px solid var(--line);
+  box-shadow: var(--shadow-md);
+  background: var(--bg-raise);
+}
+.modal { box-shadow: var(--shadow); }
+.modal-backdrop { backdrop-filter: none; }
+
+.list-head {
+  background: var(--line);
+  color: var(--bg);
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: .07em;
+  border: 3px solid var(--line);
+}
+.list-head a, .lr-sort { color: var(--bg); }
+.list-row {
+  border: 3px solid var(--line);
+  border-top-width: 0;
+  background: var(--bg-raise);
+}
+.list-row:first-of-type { border-top-width: 3px; }
+.list-row:hover { background: var(--bg-raise-2); }
+/* Rows still waiting on your answer get the accent as a solid left slab —
+   the stock sheet's soft tint reads as nothing at all against these borders. */
+.list-row.needs-me { box-shadow: inset 6px 0 0 var(--accent); }
+.lr-name { font-weight: 700; letter-spacing: -.015em; }
+
+/* Controls: everything is a hard box that physically depresses when pressed. */
+.btn, .icon-btn, .login-btn, .theme-btn, .vt-btn, .filter-chip, .keen-add,
+.toggle-pill, .detail-menu-item, .me-menu-item, .admin-subnav-link,
+.tw-date, .tw-rate-link, .back-link {
+  border: 2px solid var(--line);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  background: var(--bg-raise);
+  color: var(--text);
+}
+.btn { box-shadow: var(--shadow-sm); }
+.btn:hover, .icon-btn:hover, .vt-btn:hover, .filter-chip:hover, .keen-add:hover {
+  background: var(--bg-raise-2);
+}
+.btn:active { box-shadow: none; transform: translate(2px, 2px); }
+.btn-primary, .login-btn, .theme-btn.active, .vt-btn.active, .filter-chip.active,
+.toggle-pill.active, .keen-add.in {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--line);
+}
+.btn-danger { background: var(--bad); color: var(--on-bad); }
+.btn-link { border: 0; box-shadow: none; text-decoration: underline; }
+
+input, select, textarea, .search-input {
+  border: 2px solid var(--line) !important;
+  background: var(--bg-raise);
+  color: var(--text);
+}
+input:focus, select:focus, textarea:focus {
+  outline: 3px solid var(--accent);
+  outline-offset: 0;
+}
+
+/* People read as stamped tiles, not soft circles. */
+.avatar {
+  border: 2px solid var(--line);
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+.keen-face .avatar { border-width: 2px; }
+.keen-more { border: 2px solid var(--line); font-weight: 800; }
+
+.chip, .badge, .elig-tag, .lowconf-tag, .genre-chips .chip {
+  border: 2px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  font-size: .68rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.badge { background: var(--accent); color: var(--on-accent); }
+
+/* Eyebrows become inverted slabs — the stock sheet's tracked-out accent text
+   disappears next to 3px rules, so it has to earn its place with a fill. */
+.tw-eyebrow, .detail-eyebrow, .profile-eyebrow, .settings-kicker, .setup-kicker {
+  background: var(--line);
+  color: var(--bg);
+  display: inline-block;
+  padding: .2rem .5rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.profile-label, .af-label, .pv-lbl, .rating-group-label, .tw-you-label {
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: .07em;
+}
+
+/* Meters and bars: outlined troughs with a solid fill, no soft ends. */
+.bar-track { border: 2px solid var(--line); background: transparent; }
+.bar-fill { background: var(--accent); }
+
+/* The coverage meter is already one segment per member, which is exactly the
+   stamped-cell logic this style wants — so it gets borders on the SEGMENTS and
+   none on the container. Bordering the container instead (the obvious first
+   move) boxes the row and turns the 2px gaps into noise.
+   Three states, read left to right: hot = still to watch and therefore the
+   thing you can act on, solid = accounted for, empty = nobody has said. */
+.cov-meter { border: 0; gap: 3px; height: 12px; }
+.cov-meter .cm-seg { border: 2px solid var(--line); }
+.cm-unseen { background: var(--accent); }
+.cm-seen { background: var(--line); }
+.cm-unknown { background: transparent; box-shadow: none; }
+/* Everyone has seen it: not pickable. Solid ink throughout reads as closed. */
+.cov-meter-full .cm-seg, .cov-meter-full .cm-fill { background: var(--line); box-shadow: none; }
+.cov-all { color: var(--text-dim); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+/* Big clubs collapse to one proportional bar, so the outline moves back out. */
+.cov-meter-cont { border: 2px solid var(--line); }
+.cov-meter-cont .cm-seg { border: 0; }
+.cov-meter-cont .cm-unknown { background: transparent; }
+
+/* Posters and stills keep their colour — vivid artwork against stark chrome is
+   the contrast this style is for. Only the decorative backdrop gets flattened,
+   because behind text it should read as texture rather than as a photograph. */
+.poster-wrap, .tw-poster, .detail-poster, .sr-poster, .pf-poster, .divis-poster,
+.lr-poster img, .cell-poster {
+  border: 3px solid var(--line);
+}
+.tw-backdrop, .detail-hero img { filter: grayscale(1) contrast(1.35); }
+.poster-fallback {
+  background: var(--grad-poster);
+  color: var(--text-faint);
+  font-weight: 800;
+  border: 3px solid var(--line);
+}
+
+.tw-hero, .detail-hero {
+  border: 3px solid var(--line);
+  box-shadow: var(--shadow-md);
+}
+.tw-hero h1, .detail-hero h1, .pf-film-title {
+  font-weight: 800;
+  letter-spacing: -.04em;
+}
+.tw-facts, .detail-facts {
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: .06em;
+  border-top: 3px solid var(--line);
+  border-bottom: 3px solid var(--line);
+  padding: .35rem 0;
+}
+.tw-plex-btn, .detail-plex {
+  border: 2px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+/* Colour emoji sit outside a two-colour palette, and the app uses a few as real
+   iconography. Desaturating beats hiding — the glyph keeps doing its job and
+   joins the palette instead of fighting it. Only the ones that stand alone:
+   `filter` hits the whole subtree, so applying it to a mixed element like
+   .tw-date would drag the accent-coloured date down with the calendar glyph. */
+.tw-empty-emoji { filter: grayscale(1) contrast(1.2); }
+.tw-date { padding: .25rem .55rem; }
+.tw-rate-link, .back-link { box-shadow: none; border-width: 0; text-decoration: underline; }
+
+.seen-seg { border: 2px solid var(--line); }
+.seen-seg button { font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+/* Your own answer, once given, is settled state rather than a status colour —
+   green and amber are the only things on the page still speaking the stock
+   palette, and against this much ink they just read as debris. */
+.seen-resolved, .seen-resolved .sr-tick { color: var(--text); font-weight: 700; }
+.attn-seen, .attn-rate, .attn-marker { color: var(--accent); }
+
+.section-heading h2, .page-head h1 { font-weight: 800; letter-spacing: -.03em; }
+.toast { border: 3px solid var(--line); box-shadow: var(--shadow-md); }
+.skeleton-grid > * { background: var(--grad-skeleton); }
