@@ -11,7 +11,7 @@ from typing import Literal
 
 import httpx
 from fastapi import (Cookie, Depends, FastAPI, File, Form, HTTPException, Query,
-                     Request, UploadFile)
+                     Request, Response, UploadFile)
 from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
                                StreamingResponse)
 from fastapi.staticfiles import StaticFiles
@@ -900,6 +900,40 @@ async def api_thisweek(member=Depends(auth.current_member)):
         return {"items": service.this_week(conn, member["id"]), "me": member}
     finally:
         conn.close()
+
+
+@app.get("/api/spin/pool")
+async def api_spin_pool(n: int = Query(24, ge=1, le=60),
+                        member=Depends(auth.current_member)):
+    """A random sample of the Plex movie library, for the Spin page.
+
+    Deliberately says nothing about how big the library is or how many films
+    were drawn: the page is meant to feel like it is reaching into the whole
+    shelf, and a count would just invite counting. `ready` distinguishes "the
+    server has no films" from "we haven't managed to read the server yet",
+    which the page needs to word its empty state honestly.
+    """
+    return {"items": plex.random_movies(n), "ready": plex.library_ready()}
+
+
+@app.get("/api/spin/thumb/{rating_key}")
+async def api_spin_thumb(rating_key: str, member=Depends(auth.current_member)):
+    """Proxy one library poster.
+
+    Plex lives on the LAN and its images need the server token, neither of
+    which the browser has, so the image has to come through us. Only rating
+    keys the library refresh actually recorded resolve to a path — see
+    `plex.thumb_path` — so this cannot be pointed at arbitrary Plex endpoints.
+    """
+    path = plex.thumb_path(rating_key)
+    if not path:
+        raise HTTPException(status_code=404, detail="Unknown poster")
+    try:
+        data, content_type = await plex.fetch_thumb(path)
+    except Exception:  # noqa: BLE001 — a missing poster is not a page error
+        raise HTTPException(status_code=502, detail="Poster unavailable")
+    return Response(content=data, media_type=content_type,
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.get("/api/watched")

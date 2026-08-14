@@ -226,6 +226,7 @@
     watched: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>`,
     stats: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>`,
     collections: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 9 20H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M13.5 5.5A1.5 1.5 0 0 1 15 4h1.5A1.5 1.5 0 0 1 18 5.5v13a1.5 1.5 0 0 1-1.5 1.5H15a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M20.2 6.4l1.4 12.3"/></svg>`,
+    spin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M7 5v14M17 5v14"/><path d="M4.6 8.3h.9M4.6 15.7h.9M18.5 8.3h.9M18.5 15.7h.9"/></svg>`,
     admin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>`,
   };
   function navLink(active, view, label, badge = 0) {
@@ -241,10 +242,10 @@
       <nav class="nav">
         ${navLink(active, "thisweek", "This week")}
         ${navLink(active, "backlog", "Backlog", state.todo.backlog)}
+        ${navLink(active, "spin", "Spin")}
         ${navLink(active, "watched", "Watched", state.todo.watched)}
         ${navLink(active, "collections", "Collections")}
         ${navLink(active, "stats", "Stats")}
-        ${m && m.is_admin ? navLink(active, "admin", "Admin") : ""}
       </nav>
       <span class="spacer"></span>
       <div class="me">
@@ -256,6 +257,7 @@
           ${themeToggle("me-menu-theme")}
           ${paletteToggle()}
           <a class="me-menu-item" href="#/profile" id="menu-profile">Profile</a>
+          ${m && m.is_admin ? `<a class="me-menu-item${active === "admin" ? " active" : ""}" href="#/admin">Admin</a>` : ""}
           <button class="me-menu-item" id="logout-btn">Sign out</button>
         </div>
       </div>
@@ -270,7 +272,11 @@
     const main = preserve ? app.querySelector("main") : null;
     if (main) main.innerHTML = body;
     else app.innerHTML = shell(active, body);
-    app.querySelectorAll(".nav a").forEach(link =>
+    // In-app navigation preserves the shell (hashchange renders with
+    // preserve:true), so the app bar is not rebuilt and current-page marking
+    // has to be applied here. Menu links are included because Admin lives in
+    // the user menu rather than the nav.
+    app.querySelectorAll(".nav a, .me-menu-item[href]").forEach(link =>
       link.classList.toggle("active", !!active && link.getAttribute("href") === `#/${active}`));
     updateNavBadges();
   }
@@ -953,21 +959,22 @@
   // ---------- shared: seen/not-seen segmented control ----------
   const STATE_TO_SEEN = { seen: true, notseen: false, unknown: null };
 
-  // Two-segment control: tap "Seen it" or "Not seen" to set that state directly;
-  // tap the already-active one to clear back to unknown. Clearer than a cycle.
+  // Two-segment control: tap "Rewatch" or "First watch" to set that state
+  // directly; tap the already-active one to clear back to unknown. Clearer
+  // than a cycle.
   //
   // Once you've answered, the pair collapses (via CSS on `data-state`) to a
   // quiet statement of your answer — a list of 14 already-answered films
   // shouldn't be 28 live buttons shouting over the titles. That statement is
   // itself the undo: one click clears the answer and restores the chooser.
   function seenControl(id, myState) {
-    const label = myState === "seen" ? "Seen" : "Not seen";
+    const label = myState === "seen" ? "Rewatch" : "First watch";
     return `<div class="seen-seg" data-seen="${id}" data-state="${myState}">
       <button type="button" class="seen-resolved" title="Clear your answer" aria-label="You marked this “${label}” — clear your answer">
         <span class="sr-tick" aria-hidden="true">${myState === "seen" ? "✓" : "○"}</span><span class="sr-lbl">${label}</span>
       </button>
-      <button type="button" class="seg" data-set="seen">Seen it</button>
-      <button type="button" class="seg" data-set="notseen">Not seen</button>
+      <button type="button" class="seg" data-set="seen">Rewatch</button>
+      <button type="button" class="seg" data-set="notseen">First watch</button>
     </div>`;
   }
 
@@ -984,7 +991,7 @@
     const btn = $(".seen-resolved", seg);
     if (!btn) return;
     const seen = seg.dataset.state === "seen";
-    const label = seen ? "Seen" : "Not seen";
+    const label = seen ? "Rewatch" : "First watch";
     $(".sr-tick", btn).textContent = seen ? "✓" : "○";
     $(".sr-lbl", btn).textContent = label;
     btn.setAttribute("aria-label", `You marked this “${label}” — clear your answer`);
@@ -1089,49 +1096,31 @@
     </article>`;
   }
 
-  // Two real usability fixes here, not just wording/visuals:
-  //
-  // 1. The rating section only appears once there's something to rate — either
-  //    you've marked the film "seen" or you already have a rating. Someone who
-  //    hasn't watched it yet doesn't need five stars sitting there inviting a
-  //    tap they can't meaningfully make; a quiet one-line hint stands in until
-  //    then. Classic progressive disclosure: don't show a control before it's
-  //    actionable.
-  // 2. Picking a star rating implies you've watched it, so it auto-marks "seen"
-  //    too (see wireThisWeekRating) — one less required tap on the common path
-  //    of watch-then-rate. The "have you watched it?" toggle stays independently
-  //    editable for the (also common) case of checking in mid-week before
-  //    you're ready to rate.
-  //
-  // "First watch / Rewatch" replaced a checkbox+sentence with a segmented
-  // toggle in the same visual language as the seen/not-seen control above it —
-  // pre-selected by the smart default, so it's a glance, not a read.
+  // "Had you seen this before?" is the same question as the backlog's
+  // first-watch/rewatch control — one shared toggle, asked once, no separate
+  // pill duplicating it inside the rating. The rating reads its seen_before
+  // straight from this toggle's current answer at save time (falling back to
+  // the pick-time default if you haven't touched it — see
+  // default_seen_before in service.py, which that default is always sourced
+  // from the frozen snapshot, never the live value, so it can't drift out of
+  // sync with the historical fact stats.py actually reads).
   function thisWeekYouSection(m, myState) {
     const r = m.my_rating;
     const startScore = r ? r.score : 0;
-    const seenBefore = r ? r.seen_before : m.my_rating_default.seen_before;
-    const showRating = myState === "seen" || !!r;
     return `<div class="tw-you-section" data-rate-box="${m.id}">
       <div class="tw-you-row">
-        <span class="tw-you-label">Have you watched it?</span>
+        <span class="tw-you-label">Had you seen this before?</span>
         ${seenControl(m.id, myState)}
       </div>
-      <div class="tw-rate-hint" data-rate-hint="${m.id}"${showRating ? " hidden" : ""}>Rating opens once you've watched it.</div>
-      <div class="tw-rate-block" data-rate-block="${m.id}"${showRating ? "" : " hidden"}>
-        <div class="rating-group-label tw-rate-label-row">
-          <span data-rate-title="${m.id}">${r ? "Your rating" : "Rate it"}</span>
-          <span class="tw-rate-privacy">Private until the group meets</span>
-        </div>
-        <div class="star-input" data-star-input="${m.id}" data-score="${startScore}">
-          ${[1,2,3,4,5].map(i => `<span class="star-slot" data-i="${i}">${oneStar(startScore - (i - 1))}</span>`).join("")}
-          <span class="val">${startScore ? startScore.toFixed(1) : "—"}</span>
-        </div>
-        <div class="rewatch-seg" data-rewatch="${m.id}" data-state="${seenBefore ? "rewatch" : "first"}">
-          <button type="button" class="seg" data-set="first">First watch</button>
-          <button type="button" class="seg" data-set="rewatch">Rewatch</button>
-        </div>
-        <textarea class="rate-note" data-rate-note="${m.id}" placeholder="Optional note…">${esc(r ? (r.note || "") : "")}</textarea>
+      <div class="rating-group-label tw-rate-label-row">
+        <span data-rate-title="${m.id}">${r ? "Your rating" : "Rate it"}</span>
+        <span class="tw-rate-privacy">Private until the group meets</span>
       </div>
+      <div class="star-input" data-star-input="${m.id}" data-score="${startScore}">
+        ${[1,2,3,4,5].map(i => `<span class="star-slot" data-i="${i}">${oneStar(startScore - (i - 1))}</span>`).join("")}
+        <span class="val">${startScore ? startScore.toFixed(1) : "—"}</span>
+      </div>
+      <textarea class="rate-note" data-rate-note="${m.id}" placeholder="Optional note…">${esc(r ? (r.note || "") : "")}</textarea>
     </div>`;
   }
 
@@ -1149,34 +1138,21 @@
   }
 
   // No save button: a star pick commits and saves immediately (same
-  // instant-save pattern as the discussion-date picker and the seen-control
-  // toggle). Picking a star also marks "seen" up top if it isn't already —
-  // rating something implies you watched it, so that's one fewer required tap.
-  // This is safe for the historical first-watch/rewatch stat: that flag is
-  // read from `rewatchSeg`'s own state below (defaulted server-side from the
-  // frozen pick-time snapshot, see default_seen_before in service.py), never
-  // from the live seen/not-seen toggle this auto-marks — so "watched it fresh
-  // this week" can never get recorded as "had seen it before the pick."
-  // The rewatch toggle and note can't be saved on their own — the rating
-  // endpoint requires a score — so they just ride along with whatever the
-  // next star click saves; a change to an *already-saved* rating (score
-  // already picked) saves right away too.
+  // instant-save pattern as the discussion-date picker and the seen/not-seen
+  // toggle). "Had you seen this before?" isn't duplicated in here — the
+  // rating reads its seen_before straight off that toggle's current answer,
+  // falling back to the pick-time default only if it's never been touched.
+  // The note can't be saved on its own — the rating endpoint requires a score
+  // — so it just rides along with whatever the next star click saves; a
+  // change to an *already-saved* rating (score already picked) saves right
+  // away too.
   function wireThisWeekRating(m) {
     const box = app.querySelector(`[data-star-input="${m.id}"]`);
     if (!box) return;
     let current = parseFloat(box.dataset.score) || 0;
     const valEl = $(".val", box);
     const seenSeg = app.querySelector(`.tw-you-section[data-rate-box="${m.id}"] .seen-seg`);
-    const hint = app.querySelector(`[data-rate-hint="${m.id}"]`);
-    const block = app.querySelector(`[data-rate-block="${m.id}"]`);
-
-    // Rating opens once you've watched it — either you already have a score,
-    // or the seen/not-seen control above says "seen".
-    const syncVisibility = () => {
-      const show = current >= 0.5 || (seenSeg && seenSeg.dataset.state === "seen");
-      if (block) block.hidden = !show;
-      if (hint) hint.hidden = show;
-    };
+    const fallbackSeenBefore = !!(m.my_rating_default && m.my_rating_default.seen_before);
 
     const paint = (score) => {
       box.querySelectorAll(".star-slot").forEach((slot) => {
@@ -1187,12 +1163,14 @@
     };
 
     const save = async (score) => {
-      const rewatchSeg = app.querySelector(`[data-rewatch="${m.id}"]`);
       const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
+      const seenBefore = seenSeg && seenSeg.dataset.state !== "unknown"
+        ? seenSeg.dataset.state === "seen"
+        : fallbackSeenBefore;
       try {
         const result = await api(`/api/movies/${m.id}/rating`, {
           method: "POST",
-          body: { score, seen_before: rewatchSeg.dataset.state === "rewatch", note: noteEl.value },
+          body: { score, seen_before: seenBefore, note: noteEl.value },
         });
         const sync = result.plex && result.plex.status;
         const message = sync === "synced" ? "Rating saved to Film Club and Plex"
@@ -1224,17 +1202,8 @@
         current = i - 1 + half;
         box.dataset.score = current;
         paint(current);
-        syncVisibility();
         save(current);
-        if (seenSeg && seenSeg.dataset.state !== "seen") setSeen(seenSeg, "seen");
       };
-    });
-
-    const rewatchSeg = app.querySelector(`[data-rewatch="${m.id}"]`);
-    rewatchSeg.querySelectorAll(".seg").forEach(btn => btn.onclick = (e) => {
-      e.stopPropagation();
-      rewatchSeg.dataset.state = btn.dataset.set === "rewatch" ? "rewatch" : "first";
-      if (current >= 0.5) save(current);
     });
 
     const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
@@ -1244,11 +1213,11 @@
 
     // The seen/not-seen control isn't part of this function's own markup (it's
     // shared with every other page via wireSeenControls), so hook its buttons
-    // separately — additively, not overwriting that wiring — just to keep the
-    // rating section's visibility in sync when it changes.
+    // separately — additively, not overwriting that wiring — just to re-save
+    // an already-existing rating if the answer changes after the fact.
     if (seenSeg) {
       seenSeg.querySelectorAll(".seg, .seen-resolved").forEach(btn =>
-        btn.addEventListener("click", syncVisibility));
+        btn.addEventListener("click", () => { if (current >= 0.5) save(current); }));
     }
   }
 
@@ -1592,7 +1561,7 @@
         width: "120px", render: m => coverageMeter(m.coverage) },
       { key: "keen", label: "Keen", sort: "seconds", dir: "desc", cls: "lr-keen",
         width: "148px", nav: false, render: m => keenStack(m) },
-      { key: "you", label: "You", cls: "lr-answer", width: "176px", nav: false,
+      { key: "you", label: "You", cls: "lr-answer", width: "228px", nav: false,
         render: m => seenControl(m.id, myCovState(m.coverage)) },
     ],
     // Deliberately NOT `.card`: that's a flex-column with its own gap, which
