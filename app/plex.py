@@ -198,6 +198,39 @@ def library_rating_key(tmdb_id: int | None, imdb_id: str | None) -> str | None:
     return str(rk) if rk is not None else None
 
 
+def library_ok() -> bool:
+    """Whether the cached library snapshot is usable.
+
+    False when Plex isn't configured or the last refresh failed. Callers outside
+    this module ask rather than reading the cache dict directly.
+    """
+    return bool(_library["ok"])
+
+
+def library_tmdb_ids() -> set[int]:
+    """Every TMDB id currently cached from the Plex movie library.
+
+    A copy, not the live set: the refresh loop replaces it wholesale on its own
+    schedule, and a caller iterating the real object could see it swapped
+    mid-loop. Library items whose GUIDs carry no TMDB id are simply absent — the
+    refresh only records ids it could parse.
+    """
+    return set(_library["tmdb"])
+
+
+def tmdb_ids_for_imdb(imdb_ids: set[str]) -> set[int]:
+    """TMDB ids of library items that also carry one of these IMDb ids.
+
+    Joined through the ratingKey both id maps were built from during the same
+    refresh, so a film we only know by IMDb id still resolves to the TMDB id the
+    spin pool is keyed on.
+    """
+    keys = {_library["rk_imdb"][i] for i in imdb_ids if i in _library["rk_imdb"]}
+    if not keys:
+        return set()
+    return {tid for tid, rk in _library["rk_tmdb"].items() if rk in keys}
+
+
 async def rating_key_live(tmdb_id: int | None, imdb_id: str | None,
                           title: str | None) -> str | None:
     """Resolve one movie's ratingKey directly from Plex. Best-effort."""

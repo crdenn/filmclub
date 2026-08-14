@@ -813,3 +813,81 @@ def delete_movie(conn: sqlite3.Connection, movie_id: int) -> bool:
         return False
     db.execute(conn, "DELETE FROM movies WHERE id = ?", (movie_id,))
     return True
+
+
+# --- Spin: a random pick from the Plex server ------------------------------
+
+def spin_pool(conn: sqlite3.Connection, member_id: int) -> list[int]:
+    """TMDB ids on the Plex server that this member has no reason to see again.
+
+    Excluded: anything already in `movies` at any status — a film the club has
+    watched is no more spinnable than one sitting on the backlog — and the
+    member's own saved shortlist, which they have already triaged.
+
+    Films whose Plex GUIDs carry no TMDB id never enter the pool: the library
+    cache only records ids it could parse, and without one we can't enrich the
+    result to look like every other film page.
+    """
+    pool = plex.library_tmdb_ids()
+    if not pool:
+        return []
+    pool -= {r["tmdb_id"] for r in db.query_all(
+        conn, "SELECT DISTINCT tmdb_id FROM movies WHERE tmdb_id IS NOT NULL")}
+    # `movies.tmdb_id` is nullable, so a film we only know by IMDb id has to be
+    # resolved through the library cache before it can be excluded.
+    tracked_imdb = {r["imdb_id"] for r in db.query_all(
+        conn, "SELECT DISTINCT imdb_id FROM movies WHERE imdb_id IS NOT NULL")}
+    if tracked_imdb:
+        pool -= plex.tmdb_ids_for_imdb(tracked_imdb)
+    pool -= {r["tmdb_id"] for r in db.query_all(
+        conn, "SELECT tmdb_id FROM saved_films WHERE member_id = ?", (member_id,))}
+    return sorted(pool)
+
+
+# --- Saved films: a member's private shortlist ------------------------------
+
+_SAVED_FIELDS = ("tmdb_id", "imdb_id", "title", "year", "poster_url", "backdrop_url",
+                 "runtime", "director", "language", "content_rating", "overview")
+
+
+def save_film(conn: sqlite3.Connection, member_id: int, meta: dict) -> None:
+    """Snapshot a film onto the member's shortlist. Idempotent."""
+    values = [member_id] + [meta.get(f) for f in _SAVED_FIELDS]
+    values.append(json.dumps(meta.get("genres") or []))
+    db.execute(
+        conn,
+        f"INSERT INTO saved_films (member_id, {', '.join(_SAVED_FIELDS)}, genres) "
+        f"VALUES ({', '.join('?' * (len(_SAVED_FIELDS) + 2))}) "
+        "ON CONFLICT (member_id, tmdb_id) DO NOTHING",
+        values,
+    )
+
+
+def saved_films(conn: sqlite3.Connection, member_id: int) -> list[dict]:
+    """The member's shortlist, newest first, decorated like any other film list.
+
+    `tracked` marks films that have since been suggested to the club, so the card
+    can say so instead of offering to suggest them again. The film stays on the
+    shortlist either way — silently removing someone's saved item would be rude.
+    """
+    tracked_tmdb = {r["tmdb_id"] for r in db.query_all(
+        conn, "SELECT DISTINCT tmdb_id FROM movies WHERE tmdb_id IS NOT NULL")}
+    out = []
+    for row in db.query_all(
+        conn,
+        "SELECT * FROM saved_films WHERE member_id = ? ORDER BY saved_at DESC, id DESC",
+        (member_id,),
+    ):
+        film = db.movie_base(row)      # same genres-JSON handling as movies
+        film["library"] = _in_library(film)
+        film["tracked"] = film["tmdb_id"] in tracked_tmdb
+        out.append(film)
+    return out
+
+
+def unsave_film(conn: sqlite3.Connection, member_id: int, tmdb_id: int) -> bool:
+    """Drop one film from the member's shortlist. False if it wasn't there."""
+    cur = db.execute(
+        conn, "DELETE FROM saved_films WHERE member_id = ? AND tmdb_id = ?",
+        (member_id, tmdb_id))
+    return cur.rowcount > 0

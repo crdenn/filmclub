@@ -220,3 +220,28 @@ CREATE TABLE IF NOT EXISTS password_resets (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_password_resets_member ON password_resets(member_id);
+
+-- A member's private shortlist from the Spin wheel. Deliberately not part of
+-- `movies`: these are personal "maybe" picks with none of the backlog's shared
+-- voting/coverage machinery, and nobody else can see them. Metadata is
+-- snapshotted at save time for the same reason `movies` snapshots it —
+-- rendering the list must not fan out into one TMDB call per row.
+CREATE TABLE IF NOT EXISTS saved_films (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id      INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    tmdb_id        INTEGER NOT NULL,
+    imdb_id        TEXT,
+    title          TEXT NOT NULL,
+    year           INTEGER,
+    poster_url     TEXT,
+    backdrop_url   TEXT,
+    runtime        INTEGER,          -- minutes
+    director       TEXT,
+    language       TEXT,
+    content_rating TEXT,
+    overview       TEXT,
+    genres         TEXT,             -- JSON array of strings
+    saved_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (member_id, tmdb_id)      -- saving is idempotent
+);
+CREATE INDEX IF NOT EXISTS idx_saved_films_member ON saved_films(member_id, saved_at DESC);

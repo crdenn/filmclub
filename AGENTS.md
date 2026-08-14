@@ -97,7 +97,7 @@ Keep route-specific HTTP validation and authorization in `main.py`; keep reusabl
 ## Frontend and UX conventions
 
 - The frontend is intentionally build-free. Do not add a JavaScript framework, bundler, or package manager unless explicitly requested.
-- Keep rendering and routing in `static/app.js`; routes use `#/thisweek`, `#/backlog`, `#/watched`, `#/stats`, `#/admin`, `#/profile`, `#/member/:id`, and `#/movie/:id`.
+- Keep rendering and routing in `static/app.js`; routes use `#/thisweek`, `#/backlog`, `#/spin`, `#/saved`, `#/watched`, `#/stats`, `#/admin`, `#/profile`, `#/member/:id`, and `#/movie/:id`. The nav bar carries the first five of those; `#/saved` and `#/admin` are reached from the avatar menu.
 - Escape untrusted strings with `esc()` before inserting them into template strings.
 - Use the shared `api()` wrapper so JSON handling, client IDs, and 401 behavior remain consistent.
 - Mutating requests carry `X-Client-Id`; the SSE stream uses it to suppress a client's own echo.

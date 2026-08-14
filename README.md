@@ -39,6 +39,18 @@ The app never blocks a pick, but it keeps the signal honest:
 - **Second** (`+1`) films you'd also like to watch (you can't second your own).
 - Live updates: another member's change appears without a manual refresh.
 
+**Spin**
+- A wheel that picks a random film from your Plex server — for when nobody knows
+  what to watch. The pool is everything on Plex that isn't already tracked in
+  Film Club (backlog, this week, or watched) and isn't on your own saved list.
+- The result gets the full treatment: poster, backdrop, year, certificate,
+  director, language, runtime, Rotten Tomatoes scores, genres, synopsis and a
+  Plex "Watch" link — then spin again, save it, or suggest it to the club.
+
+**Saved** *(avatar menu)*
+- Your own private shortlist from the wheel. Nobody else sees it, and saved
+  films stop coming up on your spins. Suggest one to the club or drop it.
+
 **Watched**
 - Most-recent-first grid showing the club average, **your** rating, and a calm
   "Rate" prompt for anything you haven't scored yet.

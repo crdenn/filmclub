@@ -1145,6 +1145,48 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .rate-note { width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: .55rem .7rem; font-size: .9rem; resize: vertical; min-height: 2.4rem; }
 .rate-controls { display: flex; align-items: center; gap: 1rem; margin: .7rem 0; flex-wrap: wrap; }
 
+/* ---------- spin: a random pick from the Plex library ---------- */
+.spin-stage { display: grid; place-items: center; gap: .9rem; padding: 1rem 0 2rem; }
+/* Deliberately no border-radius or box-shadow: the wheel's roundness is SVG
+   geometry, so a skin that squares every corner can't square the wheel. */
+.spin-wheel {
+  position: relative; width: min(320px, 66vw); aspect-ratio: 1;
+  padding: 0; border: 0; background: none; cursor: pointer;
+}
+.spin-wheel:disabled { cursor: default; }
+.spin-wheel-svg { width: 100%; height: 100%; display: block; }
+/* view-box pins the origin to the SVG's own coordinate space, so the rotor
+   turns about the hub whatever size the element renders at. */
+.spin-wheel-rotor {
+  transform-box: view-box; transform-origin: 50% 50%;
+  transition: transform 2600ms cubic-bezier(.15, .85, .25, 1);
+}
+.spin-pointer {
+  position: absolute; top: -4px; left: 50%; translate: -50% 0; z-index: 1;
+  width: 0; height: 0;
+  border-left: 11px solid transparent; border-right: 11px solid transparent;
+  border-top: 18px solid var(--text);
+}
+.spin-cta { color: var(--text-dim); font-size: .9rem; text-align: center; }
+.spin-result.revealed { animation: spin-reveal .28s ease both; }
+.spin-actions { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1.1rem; }
+.spin-empty { text-align: center; color: var(--text-faint); padding: 3rem 1rem; }
+@keyframes spin-reveal { from { opacity: 0; transform: translateY(10px); } }
+
+/* ---------- saved: a member's private shortlist ---------- */
+.saved-actions { flex-wrap: wrap; align-items: center; margin-top: .1rem; }
+.saved-actions .btn { padding: .25rem .5rem; font-size: .78rem; }
+.saved-tracked { font-size: .78rem; color: var(--good-text); }
+.saved-remove {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: var(--text-faint); font-size: .95rem; line-height: 1; padding: .2rem .3rem;
+}
+.saved-remove:hover { color: var(--bad-text); }
+/* A card is ~168px wide: the facts and both RT badges don't fit on one line, so
+   let the badges drop to a second row rather than breaking "3h 15m" in half. */
+.saved-meta { flex-wrap: wrap; row-gap: .2rem; }
+.saved-facts { white-space: nowrap; }
+
 /* ---------- stats ---------- */
 .stats-lead { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.3rem; margin-bottom: 1.3rem; }
 .stats-more { display: flex; flex-direction: column; gap: .65rem; }
@@ -1378,6 +1420,8 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 @media (max-width: 720px) {
   main { padding: 1.1rem .9rem 5.5rem; }
 
+  .spin-stage { padding: .5rem 0 1.4rem; }
+
   /* --- top bar: compact, hide long username --- */
   /* drop backdrop-filter here: it would make .appbar the containing block
      for the position:fixed bottom nav, pinning it to the bar instead of the viewport */
@@ -1399,17 +1443,19 @@ select:focus-visible { outline: none; border-color: var(--accent); }
     border-top: 1px solid var(--line);
     padding: .3rem .25rem calc(.3rem + env(safe-area-inset-bottom, 0px));
   }
+  /* Six tabs at 360px leave each one about 58px, and "This week" already sat
+     tight at .64rem. Shrink the label and icon rather than let a tab wrap. */
   .nav a {
     flex: 1 1 0; min-width: 0;
     display: flex; flex-direction: column; align-items: center; gap: .16rem;
-    padding: .3rem .2rem; border-radius: 10px;
-    font-size: .64rem; font-weight: 600; letter-spacing: .01em;
+    padding: .3rem .12rem; border-radius: 10px;
+    font-size: .6rem; font-weight: 600; letter-spacing: .01em;
     color: var(--text-faint);
   }
   .nav a:hover { background: none; color: var(--text-dim); }
   .nav a.active { background: none; color: var(--accent-text); }
   .nav-ico { display: block; }
-  .nav-ico svg { width: 22px; height: 22px; }
+  .nav-ico svg { width: 20px; height: 20px; }
   .nav-label { line-height: 1; white-space: nowrap; }
 
   /* --- page header + controls --- */
@@ -2028,4 +2074,14 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .cl-blurb, .cl-intro { max-width: none; }
 
   .cl-foot { flex-direction: column; align-items: flex-start; gap: .9rem; }
+}
+
+/* ---------- motion preference ----------
+   Honour a reduced-motion setting: the wheel jumps straight to its result and
+   the reveal appears without a slide. Nothing here is load-bearing — the spin
+   outcome comes from the server either way. */
+@media (prefers-reduced-motion: reduce) {
+  .spin-wheel-rotor { transition: none; }
+  .spin-result.revealed { animation: none; }
+  .tw-poster, .poster-wrap { transition: none; }
 }

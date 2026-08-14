@@ -225,7 +225,6 @@ def _m12_collection_origin(conn: sqlite3.Connection) -> None:
                            "origin TEXT NOT NULL DEFAULT 'authored'")
 
 
-# Ordered list of migrations. Append new ones with the next integer version.
 def _m13_collection_sort_order(conn: sqlite3.Connection) -> None:
     # Manual running order for the index. Deliberately nullable: NULL means
     # "unplaced", and unplaced collections keep the previous behaviour of
@@ -234,6 +233,39 @@ def _m13_collection_sort_order(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "collections", "sort_order", "sort_order INTEGER")
 
 
+def _m14_saved_films(conn: sqlite3.Connection) -> None:
+    # A member's private shortlist from the Spin wheel. Deliberately not part of
+    # `movies`: these are personal "maybe" picks with none of the backlog's
+    # shared voting/coverage machinery, and nobody else can see them. Metadata is
+    # snapshotted at save time for the same reason `movies` snapshots it —
+    # rendering the list must not fan out into one TMDB call per row.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS saved_films (
+               id             INTEGER PRIMARY KEY AUTOINCREMENT,
+               member_id      INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+               tmdb_id        INTEGER NOT NULL,
+               imdb_id        TEXT,
+               title          TEXT NOT NULL,
+               year           INTEGER,
+               poster_url     TEXT,
+               backdrop_url   TEXT,
+               runtime        INTEGER,
+               director       TEXT,
+               language       TEXT,
+               content_rating TEXT,
+               overview       TEXT,
+               genres         TEXT,
+               saved_at       TEXT NOT NULL DEFAULT (datetime('now')),
+               UNIQUE (member_id, tmdb_id)
+           )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_saved_films_member "
+        "ON saved_films(member_id, saved_at DESC)"
+    )
+
+
+# Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
     (2, "app-settings", _m2_app_settings),
@@ -248,6 +280,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (11, "director-scaffold", _m11_director_scaffold),
     (12, "collection-origin", _m12_collection_origin),
     (13, "collection-sort-order", _m13_collection_sort_order),
+    (14, "saved-films", _m14_saved_films),
 ]
 
 

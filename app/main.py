@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import os
+import random
 import re
 from datetime import date
 from typing import Literal
@@ -105,6 +106,10 @@ class BroadcastMiddleware:
                 # client re-fetch continuously for a change only the author can
                 # see. Deletions and additions still broadcast normally.
                 and not (scope["method"] == "PATCH" and path.startswith("/api/collections/"))
+                # A member's saved shortlist is private: nobody else's view
+                # changes when they save or remove one, so a broadcast here
+                # would repaint every open client for nothing.
+                and not path.startswith("/api/saved")
                 and not path.startswith("/api/plex/webhook/")
                 and status["code"] < 400):
             headers = dict(scope.get("headers") or [])
@@ -231,6 +236,10 @@ class AddMovie(BaseModel):
     tmdb_id: int
     # Optional elevator pitch from the suggester, shown only on the detail page.
     pitch: str | None = Field(default=None, max_length=500)
+
+
+class SaveFilm(BaseModel):
+    tmdb_id: int
 
 
 class ProfileIn(BaseModel):
@@ -1535,6 +1544,87 @@ async def api_tmdb_movie_preview(
     except Exception as e:  # noqa: BLE001
         log.error("TMDB preview failed for %s: %s", tmdb_id, e)
         raise HTTPException(status_code=502, detail="Could not fetch film details from TMDB")
+
+
+@app.get("/api/spin")
+async def api_spin(exclude: int | None = None, member=Depends(auth.current_member)):
+    """Pick a random Plex film nobody in the club has put on the list yet.
+
+    A GET on purpose: this changes nothing, and BroadcastMiddleware only pings
+    the SSE stream for state-changing verbs — one member spinning a wheel must
+    not repaint everybody else's page.
+
+    An unconfigured Plex and an exhausted pool are ordinary states of the page,
+    not errors, so they come back 200 with a discriminated `status` the client
+    can switch on. Only a genuine upstream failure raises.
+    """
+    if not plex.library_ok():
+        return {"status": "unavailable", "movie": None, "pool_size": 0}
+    conn = db.connect()
+    try:
+        pool = service.spin_pool(conn, member["id"])
+    finally:
+        conn.close()
+    if not pool:
+        return {"status": "empty", "movie": None, "pool_size": 0}
+
+    # Don't hand back the film they're already looking at — unless it's the only
+    # one left, where repeating it beats claiming the pool is empty.
+    candidates = [t for t in pool if t != exclude] or pool
+    # A Plex GUID can point at a TMDB entry that has since been deleted or
+    # merged; one dead id shouldn't make the wheel look broken, so try a few.
+    for tmdb_id in random.sample(candidates, min(3, len(candidates))):
+        try:
+            meta = await tmdb.details(tmdb_id)
+        except Exception as e:  # noqa: BLE001 — a stale GUID must not fail the spin
+            log.warning("Spin: TMDB details failed for %s: %s", tmdb_id, e)
+            continue
+        return {
+            "status": "ok",
+            "pool_size": len(pool),
+            # `library` inline, exactly as service._in_library shapes it on every
+            # other movie payload, so the client's Rotten Tomatoes and
+            # Watch-on-Plex helpers work on this unchanged.
+            "movie": {**meta, "library": plex.library_match(tmdb_id, meta.get("imdb_id"))},
+        }
+    raise HTTPException(status_code=502, detail="Couldn't fetch film details from TMDB")
+
+
+@app.get("/api/saved")
+async def api_saved(member=Depends(auth.current_member)):
+    """The caller's own shortlist. Always scoped to them — it's private."""
+    conn = db.connect()
+    try:
+        return {"items": service.saved_films(conn, member["id"])}
+    finally:
+        conn.close()
+
+
+@app.post("/api/saved")
+async def api_save_film(body: SaveFilm, member=Depends(auth.current_member)):
+    """Add a film to the caller's shortlist. Idempotent."""
+    try:
+        meta = await tmdb.details(body.tmdb_id)
+    except Exception as e:  # noqa: BLE001
+        log.error("TMDB details failed for %s: %s", body.tmdb_id, e)
+        raise HTTPException(status_code=502, detail="Could not fetch film metadata from TMDB")
+    conn = db.connect()
+    try:
+        service.save_film(conn, member["id"], meta)
+        return {"saved": True, "tmdb_id": body.tmdb_id}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/saved/{tmdb_id}")
+async def api_unsave_film(tmdb_id: int, member=Depends(auth.current_member)):
+    conn = db.connect()
+    try:
+        if not service.unsave_film(conn, member["id"], tmdb_id):
+            raise HTTPException(status_code=404, detail="Not on your saved list")
+        return {"removed": True}
+    finally:
+        conn.close()
 
 
 @app.get("/api/stats")

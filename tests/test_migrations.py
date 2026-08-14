@@ -83,8 +83,10 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (10, "collections"),
                                 (11, "director-scaffold"),
                                 (12, "collection-origin"),
-                                (13, "collection-sort-order")])
+                                (13, "collection-sort-order"),
+                                (14, "saved-films")])
         self.assertIn("sort_order", _columns(self.db_path, "collections"))
+        self.assertIn("tmdb_id", _columns(self.db_path, "saved_films"))
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))

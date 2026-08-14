@@ -224,9 +224,9 @@
     thisweek: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/><path d="M9.5 14.5l2 2 3.5-4" stroke-width="1.7"/></svg>`,
     backlog: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l16 0M4 12l16 0M4 17l10 0"/></svg>`,
     watched: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>`,
+    spin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>`,
     stats: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>`,
     collections: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 9 20H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M13.5 5.5A1.5 1.5 0 0 1 15 4h1.5A1.5 1.5 0 0 1 18 5.5v13a1.5 1.5 0 0 1-1.5 1.5H15a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M20.2 6.4l1.4 12.3"/></svg>`,
-    admin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>`,
   };
   function navLink(active, view, label, badge = 0) {
     const b = badge > 0 ? `<span class="nav-badge">${badge > 99 ? "99+" : badge}</span>` : "";
@@ -241,10 +241,10 @@
       <nav class="nav">
         ${navLink(active, "thisweek", "This week")}
         ${navLink(active, "backlog", "Backlog", state.todo.backlog)}
+        ${navLink(active, "spin", "Spin")}
         ${navLink(active, "watched", "Watched", state.todo.watched)}
         ${navLink(active, "collections", "Collections")}
         ${navLink(active, "stats", "Stats")}
-        ${m && m.is_admin ? navLink(active, "admin", "Admin") : ""}
       </nav>
       <span class="spacer"></span>
       <div class="me">
@@ -255,7 +255,9 @@
         <div class="me-menu" id="me-menu" hidden>
           ${themeToggle("me-menu-theme")}
           ${paletteToggle()}
+          <a class="me-menu-item" href="#/saved" id="menu-saved">Saved films</a>
           <a class="me-menu-item" href="#/profile" id="menu-profile">Profile</a>
+          ${m && m.is_admin ? `<a class="me-menu-item" href="#/admin" id="menu-admin">Admin</a>` : ""}
           <button class="me-menu-item" id="logout-btn">Sign out</button>
         </div>
       </div>
@@ -2504,6 +2506,333 @@
     }
   }
 
+  // ================= SPIN =================
+  // A random film from the Plex server — anything the club hasn't already put on
+  // the list, and nothing you've saved. The wheel is theatre; the pick is made
+  // server-side by GET /api/spin.
+
+  const SPIN_MS = 2600;
+  // Held across repaints. A remote SSE update calls render({preserve:true}) on
+  // whatever view is open, and re-rolling the wheel under someone mid-read
+  // because another member rated a film would be maddening — so the page paints
+  // from this, and only a deliberate tap changes it.
+  const spinState = { status: null, movie: null, poolSize: 0, saved: false, suggested: false, busy: false };
+  let spinAngle = 0;   // accumulates, so successive spins always rotate forwards
+
+  const reduceMotion = () =>
+    !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  // Eight equal wedges, so the arc is always the short way round (large-arc 0).
+  // Fills are theme tokens, not literals: the wheel recolours with the theme and
+  // with any skin for free.
+  const SPIN_FILLS = ["--accent", "--good", "--warn", "--star", "--bad",
+                      "--accent", "--good", "--warn"];
+
+  function wheelSvg() {
+    const n = SPIN_FILLS.length, r = 100, c = 110;
+    const pt = (deg) => {
+      const rad = (deg - 90) * Math.PI / 180;
+      return [(c + r * Math.cos(rad)).toFixed(2), (c + r * Math.sin(rad)).toFixed(2)];
+    };
+    let wedges = "";
+    for (let i = 0; i < n; i++) {
+      const [x0, y0] = pt(i * 360 / n), [x1, y1] = pt((i + 1) * 360 / n);
+      wedges += `<path d="M${c} ${c} L${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1} Z"`
+              + ` fill="var(${SPIN_FILLS[i]})" opacity=".85"/>`;
+    }
+    return `<svg class="spin-wheel-svg" viewBox="0 0 220 220" aria-hidden="true">
+      <g class="spin-wheel-rotor">${wedges}
+        <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--line)" stroke-width="3"/>
+      </g>
+      <circle cx="${c}" cy="${c}" r="21" fill="var(--bg-raise)" stroke="var(--line)" stroke-width="3"/>
+      <text x="${c}" y="${c + 7}" text-anchor="middle" font-size="20">🎬</text>
+    </svg>`;
+  }
+
+  function spinCard(m) {
+    const facts = [
+      m.year || "",
+      m.content_rating ? esc(m.content_rating) : "",
+      m.director ? esc(m.director) : "",
+      m.language ? esc(m.language) : "",
+      fmtRuntime(m.runtime),
+    ].filter(Boolean).join(" · ");
+    const plexLink = m.library && m.library.deep_link
+      ? `<a class="tw-plex-btn detail-plex" href="${esc(m.library.deep_link)}" target="_blank" rel="noopener">▶ Watch on Plex</a>`
+      : "";
+    // Ordered by how much they commit you: throw it back, keep it to yourself,
+    // or put it in front of the club.
+    const actions = `<div class="spin-actions">
+      <button type="button" class="btn" id="spin-again">↻ Spin again</button>
+      <button type="button" class="btn" id="spin-save"${spinState.saved ? " disabled" : ""}>${spinState.saved ? "♥ Saved" : "♡ Save"}</button>
+      <button type="button" class="btn btn-primary" id="spin-suggest"${spinState.suggested ? " disabled" : ""}>${spinState.suggested ? "✓ On the backlog" : "＋ Suggest this film"}</button>
+    </div>`;
+    return `<div class="detail-hero">
+      ${m.backdrop_url ? `<img class="backdrop" src="${esc(m.backdrop_url)}" alt="">` : ""}
+      <div class="scrim"></div>
+      <div class="detail-inner">
+        <div class="detail-poster">${posterEl(m)}</div>
+        <div class="detail-main">
+          <div class="detail-eyebrow">The wheel says</div>
+          <h1>${esc(m.title)}</h1>
+          <div class="detail-facts">${facts}</div>
+          ${rottenTomatoes(m, "detail-rt")}
+          ${(m.genres || []).length ? `<div class="genre-chips">${m.genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
+          ${m.overview ? `<p class="overview">${esc(m.overview)}</p>` : ""}
+          ${plexLink}
+          ${actions}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const spinCountText = () =>
+    spinState.poolSize ? `${spinState.poolSize} unexplored on Plex` : "";
+
+  function spinResultBody() {
+    if (spinState.status === "ok" && spinState.movie) return spinCard(spinState.movie);
+    if (spinState.status === "unavailable") {
+      const fix = state.me && state.me.is_admin
+        ? ` <a href="#/admin/settings">Connect one</a>.` : "";
+      return `<div class="spin-empty">Spin needs a connected Plex library.${fix}</div>`;
+    }
+    if (spinState.status === "empty") {
+      return `<div class="spin-empty">Every film on Plex is already on the list. Impressive.</div>`;
+    }
+    return "";
+  }
+
+  function spinBody() {
+    // Always emitted, empty until the first spin reports a pool size — the
+    // in-place repaint fills this node rather than rebuilding the header.
+    const count = `<span class="count">${spinCountText()}</span>`;
+    const cta = spinState.movie
+      ? "Not feeling it? Give it another spin."
+      : "Tap the wheel for a random film from the Plex library.";
+    return `<div class="page-head"><h1>Spin</h1>${count}</div>
+      <div class="spin-stage">
+        <button type="button" class="spin-wheel" id="spin-go"
+                aria-label="Spin the wheel for a random film">
+          <span class="spin-pointer" aria-hidden="true"></span>
+          ${wheelSvg()}
+        </button>
+        <div class="spin-cta" id="spin-cta">${cta}</div>
+      </div>
+      <div class="spin-result${spinState.status ? " revealed" : ""}" id="spin-result" aria-live="polite">${spinResultBody()}</div>`;
+  }
+
+  // Nothing is fetched on entry: a page load shouldn't burn a TMDB call on a
+  // film nobody asked for, and it means a preserved repaint costs no network.
+  function renderSpin(preserve = false) {
+    paintView("spin", spinBody(), preserve);
+    wireSpin();
+    if (spinState.status === "ok") sizeDetailPoster();
+  }
+
+  function turnWheel() {
+    const rotor = $(".spin-wheel-rotor");
+    if (!rotor || reduceMotion()) return Promise.resolve();
+    spinAngle += 1440 + Math.floor(Math.random() * 360);   // 4 turns + a random landing
+    rotor.style.transform = `rotate(${spinAngle}deg)`;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        rotor.removeEventListener("transitionend", finish);
+        resolve();
+      };
+      rotor.addEventListener("transitionend", finish);
+      // transitionend never fires for a hidden tab or a node detached by a route
+      // change mid-spin. The timer guarantees the reveal still happens.
+      setTimeout(finish, SPIN_MS + 250);
+    });
+  }
+
+  function repaintSpinResult() {
+    const slot = $("#spin-result");
+    if (!slot) return;
+    slot.classList.remove("revealed");
+    void slot.offsetWidth;                 // reflow, so the reveal re-runs
+    slot.innerHTML = spinResultBody();
+    slot.classList.add("revealed");
+    const cta = $("#spin-cta");
+    if (cta) {
+      cta.textContent = spinState.movie
+        ? "Not feeling it? Give it another spin."
+        : "Tap the wheel for a random film from the Plex library.";
+    }
+    const count = $(".page-head .count");
+    if (count) count.textContent = spinCountText();
+    wireSpinActions();
+    if (spinState.status === "ok") sizeDetailPoster();
+  }
+
+  async function doSpin() {
+    if (spinState.busy) return;
+    spinState.busy = true;
+    const btn = $("#spin-go");
+    if (btn) btn.disabled = true;
+    const exclude = spinState.movie ? `?exclude=${spinState.movie.tmdb_id}` : "";
+    // Request and animation start together, so the wheel is a floor on the wait
+    // rather than an addition to it.
+    const [res] = await Promise.all([
+      api(`/api/spin${exclude}`).catch(e => e),
+      turnWheel(),
+    ]);
+    spinState.busy = false;
+    if (btn) btn.disabled = false;
+    if (res instanceof Error) {
+      if (res.message !== "unauth") toast(res.message, true);
+      return;
+    }
+    spinState.status = res.status;
+    spinState.movie = res.movie;
+    spinState.poolSize = res.pool_size;
+    spinState.saved = false;
+    spinState.suggested = false;
+    repaintSpinResult();
+  }
+
+  async function saveSpun(btn) {
+    const m = spinState.movie;
+    if (!m || spinState.saved) return;
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+      await api("/api/saved", { method: "POST", body: { tmdb_id: m.tmdb_id } });
+      spinState.saved = true;
+      btn.textContent = "♥ Saved";
+      toast("Saved to your list");
+    } catch (e) {
+      if (e.message !== "unauth") toast(e.message, true);
+      btn.disabled = false;
+      btn.textContent = "♡ Save";
+    }
+  }
+
+  // A sibling of addSuggestion rather than a call to it: that one closes the
+  // TMDB modal and repaints the backlog into <main>, which would destroy this
+  // page. Same endpoint, same toasts.
+  async function suggestSpun(btn) {
+    const m = spinState.movie;
+    if (!m || spinState.suggested) return;
+    btn.disabled = true;
+    btn.textContent = "Adding…";
+    try {
+      const res = await api("/api/movies", { method: "POST", body: { tmdb_id: m.tmdb_id } });
+      toast(SEERR_TOAST[res && res.seerr && res.seerr.status] || "Added to backlog");
+      spinState.suggested = true;
+      btn.textContent = "✓ On the backlog";
+      // The film is now tracked, so the server drops it from every later spin.
+      refreshTodo();
+    } catch (e) {
+      if (e.message !== "unauth") toast(e.message, true);
+      btn.disabled = false;
+      btn.textContent = "＋ Suggest this film";
+    }
+  }
+
+  function wireSpinActions() {
+    const again = $("#spin-again"), save = $("#spin-save"), suggest = $("#spin-suggest");
+    if (again) again.onclick = () => doSpin();
+    if (save) save.onclick = () => saveSpun(save);
+    if (suggest) suggest.onclick = () => suggestSpun(suggest);
+  }
+
+  function wireSpin() {
+    const wheel = $("#spin-go");
+    if (wheel) wheel.onclick = () => doSpin();
+    wireSpinActions();
+  }
+
+  // ================= SAVED (private shortlist) =================
+  // Held like backlogItems so a removal can repaint the count and the empty
+  // state from one place, without a round trip to re-read what we just changed.
+  let savedItems = [];
+
+  async function renderSaved(preserve = false) {
+    if (!preserve) paintView("saved", skeletonGrid());
+    let data;
+    try { data = await api("/api/saved"); }
+    catch (e) { if (e.message !== "unauth") paintError("saved", e, preserve); return; }
+    savedItems = data.items;
+    paintSaved(preserve);
+  }
+
+  function paintSaved(preserve = false) {
+    const n = savedItems.length;
+    const body = `<div class="page-head"><h1>Saved</h1>${
+      n ? `<span class="count">${n} film${n === 1 ? "" : "s"}</span>` : ""}</div>
+      ${n
+        ? `<div class="grid" id="saved-grid">${savedItems.map(savedCard).join("")}</div>`
+        : `<div class="empty">Nothing saved yet. <a href="#/spin">Spin the wheel</a> and save anything that catches your eye.</div>`}`;
+    paintView("saved", body, preserve);
+    wireSaved();
+  }
+
+  function savedCard(m) {
+    const titleHint = m.year ? `${m.title} (${m.year})` : m.title;
+    const meta = [m.year || "", fmtRuntime(m.runtime)].filter(Boolean).join(" · ");
+    const plex = m.library && m.library.deep_link
+      ? `<a class="btn" href="${esc(m.library.deep_link)}" target="_blank" rel="noopener">▶ Plex</a>` : "";
+    const suggest = m.tracked
+      ? `<span class="saved-tracked">On the list</span>`
+      : `<button type="button" class="btn" data-act="suggest">＋ Suggest</button>`;
+    return `<div class="card saved-card" data-tmdb="${m.tmdb_id}">
+      <div class="poster-wrap">${posterEl(m)}</div>
+      <div class="card-title" title="${esc(titleHint)}"><span class="ct-name">${esc(m.title)}</span></div>
+      <div class="card-meta saved-meta"><span class="saved-facts">${esc(meta)}</span>${rottenTomatoes(m, "card-rt")}</div>
+      <div class="card-actions saved-actions">${plex}${suggest}
+        <button type="button" class="saved-remove" data-act="remove" title="Remove from saved" aria-label="Remove ${esc(m.title)} from saved">✕</button>
+      </div>
+    </div>`;
+  }
+
+  function wireSaved() {
+    const grid = $("#saved-grid");
+    if (!grid) return;
+    grid.onclick = async (e) => {
+      const btn = e.target.closest("[data-act]");
+      if (!btn) return;
+      const card = btn.closest(".saved-card");
+      const tmdbId = parseInt(card.dataset.tmdb, 10);
+      if (btn.dataset.act === "remove") {
+        // Optimistic: a private shortlist, and re-saving costs one spin. The
+        // repaint keeps the count and the empty state honest when the last card
+        // goes, which removing the node on its own would not.
+        const index = savedItems.findIndex(f => f.tmdb_id === tmdbId);
+        const [removed] = savedItems.splice(index, 1);
+        paintSaved(true);
+        try { await api(`/api/saved/${tmdbId}`, { method: "DELETE" }); }
+        catch (err) {
+          if (err.message !== "unauth") {
+            savedItems.splice(index, 0, removed);
+            paintSaved(true);
+            toast(err.message, true);
+          }
+        }
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Adding…";
+      try {
+        const res = await api("/api/movies", { method: "POST", body: { tmdb_id: tmdbId } });
+        toast(SEERR_TOAST[res && res.seerr && res.seerr.status] || "Added to backlog");
+        // Mark it rather than removing it — the film shouldn't vanish from the
+        // list you're looking at just because you also suggested it.
+        const film = savedItems.find(f => f.tmdb_id === tmdbId);
+        if (film) film.tracked = true;
+        btn.outerHTML = `<span class="saved-tracked">On the list</span>`;
+        refreshTodo();
+      } catch (err) {
+        if (err.message !== "unauth") toast(err.message, true);
+        btn.disabled = false;
+        btn.textContent = "＋ Suggest";
+      }
+    };
+  }
+
   // ================= STATS =================
   async function renderStats(preserve = false) {
     if (!preserve) paintView("stats", `<div class="empty">Crunching numbers…</div>`);
@@ -3159,6 +3488,8 @@
     // Feature modules first: they own their whole route, including the arg.
     if (featureRoutes[view]) return featureRoutes[view]({ arg, preserve });
     if (view === "backlog") return renderBacklog(preserve);
+    if (view === "spin") return renderSpin(preserve);
+    if (view === "saved") return renderSaved(preserve);
     if (view === "watched") return renderWatched(preserve);
     if (view === "stats") return renderStats(preserve);
     if (view === "admin") return renderAdmin(arg || "users", preserve);
@@ -3180,8 +3511,17 @@
       }
       return;
     }
-    // Any click outside the open menu closes it (menu items included: navigation
-    // or logout re-renders the shell, which resets the menu to hidden anyway).
+    // Following a menu link closes the menu. A route change repaints only <main>
+    // when it can, so the app bar — and this menu with it — survives the
+    // navigation and would otherwise sit there open.
+    if (menu && !menu.hidden && closest("a.me-menu-item")) {
+      menu.hidden = true;
+      const b = $("#me-btn");
+      if (b) b.setAttribute("aria-expanded", "false");
+      return;
+    }
+    // Any click outside the open menu closes it. Non-link items inside it
+    // (the theme toggle) leave it open on purpose.
     if (menu && !menu.hidden && !closest("#me-menu")) {
       menu.hidden = true;
       const b = $("#me-btn");
