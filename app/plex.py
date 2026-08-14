@@ -9,6 +9,7 @@ Two responsibilities:
 """
 import asyncio
 import logging
+import random
 import re
 import time
 from urllib.parse import quote
@@ -30,6 +31,10 @@ _library = {
     "rk_imdb": {},    # imdb id -> Plex ratingKey
     "rt_tmdb": {},    # tmdb id -> Rotten Tomatoes critic/audience scores
     "rt_imdb": {},    # imdb id -> Rotten Tomatoes critic/audience scores
+    # Per-film display data for surfaces that browse the server library itself
+    # rather than the club's own list (the Spin page). Keyed by ratingKey so a
+    # thumb request can be checked against it — see `thumb_path`.
+    "movies": {},     # ratingKey -> {rating_key, tmdb_id, title, year, thumb, ...}
     "machine_id": config.PLEX_MACHINE_ID or None,
     "last_refresh": 0.0,
     "ok": False,
@@ -96,6 +101,7 @@ async def refresh_library() -> None:
     rk_imdb: dict[str, str] = {}
     rt_tmdb: dict[int, dict] = {}
     rt_imdb: dict[str, dict] = {}
+    movies: dict[str, dict] = {}
     try:
         async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
             # Find movie library sections.
@@ -120,6 +126,24 @@ async def refresh_library() -> None:
                         _parse_guid(g.get("id", ""), it_tmdb, it_imdb)
                     rk = it.get("ratingKey")
                     rt = rotten_tomatoes_from_metadata(it)
+                    if rk is not None and it.get("title"):
+                        movies[str(rk)] = {
+                            "rating_key": str(rk),
+                            # Carried so a spun film can be saved or suggested:
+                            # both are keyed by TMDB id everywhere else.
+                            "tmdb_id": min(it_tmdb) if it_tmdb else None,
+                            "imdb_id": min(it_imdb) if it_imdb else None,
+                            "title": it.get("title"),
+                            "year": it.get("year"),
+                            "thumb": it.get("thumb"),
+                            "summary": it.get("summary") or "",
+                            "duration": it.get("duration"),
+                            "content_rating": it.get("contentRating"),
+                            # Present on most section listings; absent is fine,
+                            # the page just omits the chips.
+                            "genres": [g.get("tag") for g in (it.get("Genre") or [])
+                                       if g.get("tag")][:4],
+                        }
                     for t in it_tmdb:
                         tmdb.add(t)
                         if rk is not None:
@@ -133,7 +157,7 @@ async def refresh_library() -> None:
                         if rt:
                             rt_imdb.setdefault(i, rt)
         _library.update(tmdb=tmdb, imdb=imdb, rk_tmdb=rk_tmdb, rk_imdb=rk_imdb,
-                        rt_tmdb=rt_tmdb, rt_imdb=rt_imdb,
+                        rt_tmdb=rt_tmdb, rt_imdb=rt_imdb, movies=movies,
                         machine_id=config.PLEX_MACHINE_ID or None,
                         last_refresh=time.time(), ok=True)
         log.info("Plex library refreshed: %d tmdb ids, %d imdb ids", len(tmdb), len(imdb))
@@ -177,6 +201,97 @@ def library_match(tmdb_id: int | None, imdb_id: str | None) -> dict | None:
     if rt is None and imdb_id:
         rt = _library["rt_imdb"].get(imdb_id)
     return {"in_library": True, "deep_link": deep_link, "rotten_tomatoes": rt}
+
+
+def library_size() -> int:
+    """How many library films we hold display data for."""
+    return len(_library.get("movies", {}))
+
+
+def deep_link_for(rating_key: str | None) -> str | None:
+    """A Plex app link straight to one library item."""
+    machine = _library["machine_id"]
+    if not (machine and rating_key):
+        return None
+    key = quote(f"/library/metadata/{rating_key}", safe="")
+    return f"https://app.plex.tv/desktop/#!/server/{machine}/details?key={key}"
+
+
+def random_movies(n: int, allowed_tmdb: set[int] | None = None) -> list[dict]:
+    """A random sample of library films, newest cache wins.
+
+    `allowed_tmdb` restricts the draw to a caller-supplied set of TMDB ids —
+    the Spin page passes `service.spin_pool`, which drops anything the club is
+    already tracking or the member has already shortlisted. Films whose Plex
+    GUID carried no parseable TMDB id are skipped when a filter is given: they
+    can't be excluded reliably, and can't be saved or suggested afterwards.
+
+    Sampled without replacement, and de-duplicated by title+year first: a
+    library that holds the same film twice (two editions, two files) stores
+    them under different rating keys, so an id-only sample could still hand the
+    caller two identical posters. Returns [] when the cache has not completed a
+    refresh, which the caller surfaces rather than pretending the server is
+    empty.
+    """
+    if not _library["ok"]:
+        return []
+    unique: dict[tuple, dict] = {}
+    for m in _library.get("movies", {}).values():
+        if allowed_tmdb is not None and m.get("tmdb_id") not in allowed_tmdb:
+            continue
+        unique.setdefault(((m.get("title") or "").lower(), m.get("year")), m)
+    pool = list(unique.values())
+    if not pool:
+        return []
+    picks = random.sample(pool, min(n, len(pool)))
+    return [dict(m, deep_link=deep_link_for(m["rating_key"])) for m in picks]
+
+
+def thumb_path(rating_key: str) -> str | None:
+    """The Plex thumb path for a known library item, else None.
+
+    Deliberately a lookup rather than a passthrough: the proxy that uses this
+    talks to Plex with the *server* token, so letting a caller name an
+    arbitrary path would turn it into an open request forwarder. Only keys the
+    refresh actually recorded can resolve.
+    """
+    entry = _library.get("movies", {}).get(str(rating_key))
+    if not entry:
+        return None
+    thumb = entry.get("thumb")
+    return thumb if thumb and thumb.startswith("/") else None
+
+
+# Plex stores posters at full print resolution — 2000x3000 and well over a
+# megabyte is normal. A reel preloads a whole draw at once, so the originals
+# would be tens of megabytes per spin; its own transcoder resizes server-side
+# for a fraction of that. Sized for a 2x display at the winner's zoomed width.
+THUMB_W, THUMB_H = 400, 600
+
+
+async def fetch_thumb(path: str) -> tuple[bytes, str]:
+    """Fetch one poster from Plex, resized. Raises on failure.
+
+    `path` must have come from `thumb_path`; this does not validate it, so no
+    caller should ever pass user input straight in.
+    """
+    headers = {"X-Plex-Token": config.PLEX_TOKEN}
+    async with httpx.AsyncClient(timeout=10.0, headers=headers, follow_redirects=True) as client:
+        try:
+            r = await client.get(
+                f"{config.PLEX_URL}/photo/:/transcode",
+                params={"width": THUMB_W, "height": THUMB_H, "minSize": 1,
+                        "upscale": 0, "url": path},
+            )
+            r.raise_for_status()
+            return r.content, r.headers.get("content-type", "image/jpeg")
+        except Exception:  # noqa: BLE001
+            # Older servers and some setups have the photo transcoder disabled;
+            # the full-size original is heavy but still correct.
+            log.debug("Plex thumb transcode failed for %s; using original", path)
+        r = await client.get(f"{config.PLEX_URL}{path}")
+        r.raise_for_status()
+        return r.content, r.headers.get("content-type", "image/jpeg")
 
 
 def library_ready() -> bool:

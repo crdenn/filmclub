@@ -12,7 +12,7 @@ from typing import Literal
 
 import httpx
 from fastapi import (Cookie, Depends, FastAPI, File, Form, HTTPException, Query,
-                     Request, UploadFile)
+                     Request, Response, UploadFile)
 from fastapi.responses import (HTMLResponse, JSONResponse, RedirectResponse,
                                StreamingResponse)
 from fastapi.staticfiles import StaticFiles
@@ -1546,48 +1546,52 @@ async def api_tmdb_movie_preview(
         raise HTTPException(status_code=502, detail="Could not fetch film details from TMDB")
 
 
-@app.get("/api/spin")
-async def api_spin(exclude: int | None = None, member=Depends(auth.current_member)):
-    """Pick a random Plex film nobody in the club has put on the list yet.
+@app.get("/api/spin/pool")
+async def api_spin_pool(n: int = Query(24, ge=1, le=60),
+                        member=Depends(auth.current_member)):
+    """A random draw of spinnable Plex films, for the Spin page's reel.
 
     A GET on purpose: this changes nothing, and BroadcastMiddleware only pings
-    the SSE stream for state-changing verbs — one member spinning a wheel must
-    not repaint everybody else's page.
+    the SSE stream for state-changing verbs — one member spinning must not
+    repaint everybody else's page.
 
-    An unconfigured Plex and an exhausted pool are ordinary states of the page,
-    not errors, so they come back 200 with a discriminated `status` the client
-    can switch on. Only a genuine upstream failure raises.
+    Deliberately says nothing about how big the library is or how many films
+    were drawn: the page is meant to feel like it is reaching into the whole
+    shelf, and a count would just invite counting. An unconfigured Plex and an
+    exhausted pool are ordinary states of the page rather than errors, so they
+    come back 200 with a `status` the client can switch on.
     """
     if not plex.library_ok():
-        return {"status": "unavailable", "movie": None, "pool_size": 0}
+        return {"status": "unavailable", "items": []}
     conn = db.connect()
     try:
-        pool = service.spin_pool(conn, member["id"])
+        allowed = set(service.spin_pool(conn, member["id"]))
     finally:
         conn.close()
-    if not pool:
-        return {"status": "empty", "movie": None, "pool_size": 0}
+    items = plex.random_movies(n, allowed_tmdb=allowed) if allowed else []
+    if not items:
+        return {"status": "empty", "items": []}
+    return {"status": "ok", "items": items}
 
-    # Don't hand back the film they're already looking at — unless it's the only
-    # one left, where repeating it beats claiming the pool is empty.
-    candidates = [t for t in pool if t != exclude] or pool
-    # A Plex GUID can point at a TMDB entry that has since been deleted or
-    # merged; one dead id shouldn't make the wheel look broken, so try a few.
-    for tmdb_id in random.sample(candidates, min(3, len(candidates))):
-        try:
-            meta = await tmdb.details(tmdb_id)
-        except Exception as e:  # noqa: BLE001 — a stale GUID must not fail the spin
-            log.warning("Spin: TMDB details failed for %s: %s", tmdb_id, e)
-            continue
-        return {
-            "status": "ok",
-            "pool_size": len(pool),
-            # `library` inline, exactly as service._in_library shapes it on every
-            # other movie payload, so the client's Rotten Tomatoes and
-            # Watch-on-Plex helpers work on this unchanged.
-            "movie": {**meta, "library": plex.library_match(tmdb_id, meta.get("imdb_id"))},
-        }
-    raise HTTPException(status_code=502, detail="Couldn't fetch film details from TMDB")
+
+@app.get("/api/spin/thumb/{rating_key}")
+async def api_spin_thumb(rating_key: str, member=Depends(auth.current_member)):
+    """Proxy one library poster.
+
+    Plex lives on the LAN and its images need the server token, neither of
+    which the browser has, so the image has to come through us. Only rating
+    keys the library refresh actually recorded resolve to a path — see
+    `plex.thumb_path` — so this cannot be pointed at arbitrary Plex endpoints.
+    """
+    path = plex.thumb_path(rating_key)
+    if not path:
+        raise HTTPException(status_code=404, detail="Unknown poster")
+    try:
+        data, content_type = await plex.fetch_thumb(path)
+    except Exception:  # noqa: BLE001 — a missing poster is not a page error
+        raise HTTPException(status_code=502, detail="Poster unavailable")
+    return Response(content=data, media_type=content_type,
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.get("/api/saved")

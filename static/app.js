@@ -67,6 +67,9 @@
     // appbar, nav highlighting and badge updates without reimplementing them.
     paintView,
     paintError,
+    // Refreshing the nav badges after a feature page changes club state: the
+    // counts live in the shell, so the shell owns recomputing them.
+    refreshTodo,
     // Registered as `#/<view>`; the router dispatches to fn({ arg, preserve }).
     registerRoute(view, fn) { featureRoutes[view] = fn; },
     get me() { return state.me; },
@@ -272,7 +275,11 @@
     const main = preserve ? app.querySelector("main") : null;
     if (main) main.innerHTML = body;
     else app.innerHTML = shell(active, body);
-    app.querySelectorAll(".nav a").forEach(link =>
+    // In-app navigation preserves the shell (hashchange renders with
+    // preserve:true), so the app bar is not rebuilt and current-page marking
+    // has to be applied here. Menu links are included because Admin lives in
+    // the user menu rather than the nav.
+    app.querySelectorAll(".nav a, .me-menu-item[href]").forEach(link =>
       link.classList.toggle("active", !!active && link.getAttribute("href") === `#/${active}`));
     updateNavBadges();
   }
@@ -955,21 +962,22 @@
   // ---------- shared: seen/not-seen segmented control ----------
   const STATE_TO_SEEN = { seen: true, notseen: false, unknown: null };
 
-  // Two-segment control: tap "Seen it" or "Not seen" to set that state directly;
-  // tap the already-active one to clear back to unknown. Clearer than a cycle.
+  // Two-segment control: tap "Rewatch" or "First watch" to set that state
+  // directly; tap the already-active one to clear back to unknown. Clearer
+  // than a cycle.
   //
   // Once you've answered, the pair collapses (via CSS on `data-state`) to a
   // quiet statement of your answer — a list of 14 already-answered films
   // shouldn't be 28 live buttons shouting over the titles. That statement is
   // itself the undo: one click clears the answer and restores the chooser.
   function seenControl(id, myState) {
-    const label = myState === "seen" ? "Seen" : "Not seen";
+    const label = myState === "seen" ? "Rewatch" : "First watch";
     return `<div class="seen-seg" data-seen="${id}" data-state="${myState}">
       <button type="button" class="seen-resolved" title="Clear your answer" aria-label="You marked this “${label}” — clear your answer">
         <span class="sr-tick" aria-hidden="true">${myState === "seen" ? "✓" : "○"}</span><span class="sr-lbl">${label}</span>
       </button>
-      <button type="button" class="seg" data-set="seen">Seen it</button>
-      <button type="button" class="seg" data-set="notseen">Not seen</button>
+      <button type="button" class="seg" data-set="seen">Rewatch</button>
+      <button type="button" class="seg" data-set="notseen">First watch</button>
     </div>`;
   }
 
@@ -986,7 +994,7 @@
     const btn = $(".seen-resolved", seg);
     if (!btn) return;
     const seen = seg.dataset.state === "seen";
-    const label = seen ? "Seen" : "Not seen";
+    const label = seen ? "Rewatch" : "First watch";
     $(".sr-tick", btn).textContent = seen ? "✓" : "○";
     $(".sr-lbl", btn).textContent = label;
     btn.setAttribute("aria-label", `You marked this “${label}” — clear your answer`);
@@ -1091,49 +1099,31 @@
     </article>`;
   }
 
-  // Two real usability fixes here, not just wording/visuals:
-  //
-  // 1. The rating section only appears once there's something to rate — either
-  //    you've marked the film "seen" or you already have a rating. Someone who
-  //    hasn't watched it yet doesn't need five stars sitting there inviting a
-  //    tap they can't meaningfully make; a quiet one-line hint stands in until
-  //    then. Classic progressive disclosure: don't show a control before it's
-  //    actionable.
-  // 2. Picking a star rating implies you've watched it, so it auto-marks "seen"
-  //    too (see wireThisWeekRating) — one less required tap on the common path
-  //    of watch-then-rate. The "have you watched it?" toggle stays independently
-  //    editable for the (also common) case of checking in mid-week before
-  //    you're ready to rate.
-  //
-  // "First watch / Rewatch" replaced a checkbox+sentence with a segmented
-  // toggle in the same visual language as the seen/not-seen control above it —
-  // pre-selected by the smart default, so it's a glance, not a read.
+  // "Had you seen this before?" is the same question as the backlog's
+  // first-watch/rewatch control — one shared toggle, asked once, no separate
+  // pill duplicating it inside the rating. The rating reads its seen_before
+  // straight from this toggle's current answer at save time (falling back to
+  // the pick-time default if you haven't touched it — see
+  // default_seen_before in service.py, which that default is always sourced
+  // from the frozen snapshot, never the live value, so it can't drift out of
+  // sync with the historical fact stats.py actually reads).
   function thisWeekYouSection(m, myState) {
     const r = m.my_rating;
     const startScore = r ? r.score : 0;
-    const seenBefore = r ? r.seen_before : m.my_rating_default.seen_before;
-    const showRating = myState === "seen" || !!r;
     return `<div class="tw-you-section" data-rate-box="${m.id}">
       <div class="tw-you-row">
-        <span class="tw-you-label">Have you watched it?</span>
+        <span class="tw-you-label">Had you seen this before?</span>
         ${seenControl(m.id, myState)}
       </div>
-      <div class="tw-rate-hint" data-rate-hint="${m.id}"${showRating ? " hidden" : ""}>Rating opens once you've watched it.</div>
-      <div class="tw-rate-block" data-rate-block="${m.id}"${showRating ? "" : " hidden"}>
-        <div class="rating-group-label tw-rate-label-row">
-          <span data-rate-title="${m.id}">${r ? "Your rating" : "Rate it"}</span>
-          <span class="tw-rate-privacy">Private until the group meets</span>
-        </div>
-        <div class="star-input" data-star-input="${m.id}" data-score="${startScore}">
-          ${[1,2,3,4,5].map(i => `<span class="star-slot" data-i="${i}">${oneStar(startScore - (i - 1))}</span>`).join("")}
-          <span class="val">${startScore ? startScore.toFixed(1) : "—"}</span>
-        </div>
-        <div class="rewatch-seg" data-rewatch="${m.id}" data-state="${seenBefore ? "rewatch" : "first"}">
-          <button type="button" class="seg" data-set="first">First watch</button>
-          <button type="button" class="seg" data-set="rewatch">Rewatch</button>
-        </div>
-        <textarea class="rate-note" data-rate-note="${m.id}" placeholder="Optional note…">${esc(r ? (r.note || "") : "")}</textarea>
+      <div class="rating-group-label tw-rate-label-row">
+        <span data-rate-title="${m.id}">${r ? "Your rating" : "Rate it"}</span>
+        <span class="tw-rate-privacy">Private until the group meets</span>
       </div>
+      <div class="star-input" data-star-input="${m.id}" data-score="${startScore}">
+        ${[1,2,3,4,5].map(i => `<span class="star-slot" data-i="${i}">${oneStar(startScore - (i - 1))}</span>`).join("")}
+        <span class="val">${startScore ? startScore.toFixed(1) : "—"}</span>
+      </div>
+      <textarea class="rate-note" data-rate-note="${m.id}" placeholder="Optional note…">${esc(r ? (r.note || "") : "")}</textarea>
     </div>`;
   }
 
@@ -1151,34 +1141,21 @@
   }
 
   // No save button: a star pick commits and saves immediately (same
-  // instant-save pattern as the discussion-date picker and the seen-control
-  // toggle). Picking a star also marks "seen" up top if it isn't already —
-  // rating something implies you watched it, so that's one fewer required tap.
-  // This is safe for the historical first-watch/rewatch stat: that flag is
-  // read from `rewatchSeg`'s own state below (defaulted server-side from the
-  // frozen pick-time snapshot, see default_seen_before in service.py), never
-  // from the live seen/not-seen toggle this auto-marks — so "watched it fresh
-  // this week" can never get recorded as "had seen it before the pick."
-  // The rewatch toggle and note can't be saved on their own — the rating
-  // endpoint requires a score — so they just ride along with whatever the
-  // next star click saves; a change to an *already-saved* rating (score
-  // already picked) saves right away too.
+  // instant-save pattern as the discussion-date picker and the seen/not-seen
+  // toggle). "Had you seen this before?" isn't duplicated in here — the
+  // rating reads its seen_before straight off that toggle's current answer,
+  // falling back to the pick-time default only if it's never been touched.
+  // The note can't be saved on its own — the rating endpoint requires a score
+  // — so it just rides along with whatever the next star click saves; a
+  // change to an *already-saved* rating (score already picked) saves right
+  // away too.
   function wireThisWeekRating(m) {
     const box = app.querySelector(`[data-star-input="${m.id}"]`);
     if (!box) return;
     let current = parseFloat(box.dataset.score) || 0;
     const valEl = $(".val", box);
     const seenSeg = app.querySelector(`.tw-you-section[data-rate-box="${m.id}"] .seen-seg`);
-    const hint = app.querySelector(`[data-rate-hint="${m.id}"]`);
-    const block = app.querySelector(`[data-rate-block="${m.id}"]`);
-
-    // Rating opens once you've watched it — either you already have a score,
-    // or the seen/not-seen control above says "seen".
-    const syncVisibility = () => {
-      const show = current >= 0.5 || (seenSeg && seenSeg.dataset.state === "seen");
-      if (block) block.hidden = !show;
-      if (hint) hint.hidden = show;
-    };
+    const fallbackSeenBefore = !!(m.my_rating_default && m.my_rating_default.seen_before);
 
     const paint = (score) => {
       box.querySelectorAll(".star-slot").forEach((slot) => {
@@ -1189,12 +1166,14 @@
     };
 
     const save = async (score) => {
-      const rewatchSeg = app.querySelector(`[data-rewatch="${m.id}"]`);
       const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
+      const seenBefore = seenSeg && seenSeg.dataset.state !== "unknown"
+        ? seenSeg.dataset.state === "seen"
+        : fallbackSeenBefore;
       try {
         const result = await api(`/api/movies/${m.id}/rating`, {
           method: "POST",
-          body: { score, seen_before: rewatchSeg.dataset.state === "rewatch", note: noteEl.value },
+          body: { score, seen_before: seenBefore, note: noteEl.value },
         });
         const sync = result.plex && result.plex.status;
         const message = sync === "synced" ? "Rating saved to Film Club and Plex"
@@ -1226,17 +1205,8 @@
         current = i - 1 + half;
         box.dataset.score = current;
         paint(current);
-        syncVisibility();
         save(current);
-        if (seenSeg && seenSeg.dataset.state !== "seen") setSeen(seenSeg, "seen");
       };
-    });
-
-    const rewatchSeg = app.querySelector(`[data-rewatch="${m.id}"]`);
-    rewatchSeg.querySelectorAll(".seg").forEach(btn => btn.onclick = (e) => {
-      e.stopPropagation();
-      rewatchSeg.dataset.state = btn.dataset.set === "rewatch" ? "rewatch" : "first";
-      if (current >= 0.5) save(current);
     });
 
     const noteEl = app.querySelector(`[data-rate-note="${m.id}"]`);
@@ -1246,11 +1216,11 @@
 
     // The seen/not-seen control isn't part of this function's own markup (it's
     // shared with every other page via wireSeenControls), so hook its buttons
-    // separately — additively, not overwriting that wiring — just to keep the
-    // rating section's visibility in sync when it changes.
+    // separately — additively, not overwriting that wiring — just to re-save
+    // an already-existing rating if the answer changes after the fact.
     if (seenSeg) {
       seenSeg.querySelectorAll(".seg, .seen-resolved").forEach(btn =>
-        btn.addEventListener("click", syncVisibility));
+        btn.addEventListener("click", () => { if (current >= 0.5) save(current); }));
     }
   }
 
@@ -1594,7 +1564,7 @@
         width: "120px", render: m => coverageMeter(m.coverage) },
       { key: "keen", label: "Keen", sort: "seconds", dir: "desc", cls: "lr-keen",
         width: "148px", nav: false, render: m => keenStack(m) },
-      { key: "you", label: "You", cls: "lr-answer", width: "176px", nav: false,
+      { key: "you", label: "You", cls: "lr-answer", width: "228px", nav: false,
         render: m => seenControl(m.id, myCovState(m.coverage)) },
     ],
     // Deliberately NOT `.card`: that's a flex-column with its own gap, which
@@ -2506,246 +2476,6 @@
     }
   }
 
-  // ================= SPIN =================
-  // A random film from the Plex server — anything the club hasn't already put on
-  // the list, and nothing you've saved. The wheel is theatre; the pick is made
-  // server-side by GET /api/spin.
-
-  const SPIN_MS = 2600;
-  // Held across repaints. A remote SSE update calls render({preserve:true}) on
-  // whatever view is open, and re-rolling the wheel under someone mid-read
-  // because another member rated a film would be maddening — so the page paints
-  // from this, and only a deliberate tap changes it.
-  const spinState = { status: null, movie: null, poolSize: 0, saved: false, suggested: false, busy: false };
-  let spinAngle = 0;   // accumulates, so successive spins always rotate forwards
-
-  const reduceMotion = () =>
-    !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-
-  // Eight equal wedges, so the arc is always the short way round (large-arc 0).
-  // Fills are theme tokens, not literals: the wheel recolours with the theme and
-  // with any skin for free.
-  const SPIN_FILLS = ["--accent", "--good", "--warn", "--star", "--bad",
-                      "--accent", "--good", "--warn"];
-
-  function wheelSvg() {
-    const n = SPIN_FILLS.length, r = 100, c = 110;
-    const pt = (deg) => {
-      const rad = (deg - 90) * Math.PI / 180;
-      return [(c + r * Math.cos(rad)).toFixed(2), (c + r * Math.sin(rad)).toFixed(2)];
-    };
-    let wedges = "";
-    for (let i = 0; i < n; i++) {
-      const [x0, y0] = pt(i * 360 / n), [x1, y1] = pt((i + 1) * 360 / n);
-      wedges += `<path d="M${c} ${c} L${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1} Z"`
-              + ` fill="var(${SPIN_FILLS[i]})" opacity=".85"/>`;
-    }
-    return `<svg class="spin-wheel-svg" viewBox="0 0 220 220" aria-hidden="true">
-      <g class="spin-wheel-rotor">${wedges}
-        <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--line)" stroke-width="3"/>
-      </g>
-      <circle cx="${c}" cy="${c}" r="21" fill="var(--bg-raise)" stroke="var(--line)" stroke-width="3"/>
-      <text x="${c}" y="${c + 7}" text-anchor="middle" font-size="20">🎬</text>
-    </svg>`;
-  }
-
-  function spinCard(m) {
-    const facts = [
-      m.year || "",
-      m.content_rating ? esc(m.content_rating) : "",
-      m.director ? esc(m.director) : "",
-      m.language ? esc(m.language) : "",
-      fmtRuntime(m.runtime),
-    ].filter(Boolean).join(" · ");
-    const plexLink = m.library && m.library.deep_link
-      ? `<a class="tw-plex-btn detail-plex" href="${esc(m.library.deep_link)}" target="_blank" rel="noopener">▶ Watch on Plex</a>`
-      : "";
-    // Ordered by how much they commit you: throw it back, keep it to yourself,
-    // or put it in front of the club.
-    const actions = `<div class="spin-actions">
-      <button type="button" class="btn" id="spin-again">↻ Spin again</button>
-      <button type="button" class="btn" id="spin-save"${spinState.saved ? " disabled" : ""}>${spinState.saved ? "♥ Saved" : "♡ Save"}</button>
-      <button type="button" class="btn btn-primary" id="spin-suggest"${spinState.suggested ? " disabled" : ""}>${spinState.suggested ? "✓ On the backlog" : "＋ Suggest this film"}</button>
-    </div>`;
-    return `<div class="detail-hero">
-      ${m.backdrop_url ? `<img class="backdrop" src="${esc(m.backdrop_url)}" alt="">` : ""}
-      <div class="scrim"></div>
-      <div class="detail-inner">
-        <div class="detail-poster">${posterEl(m)}</div>
-        <div class="detail-main">
-          <div class="detail-eyebrow">The wheel says</div>
-          <h1>${esc(m.title)}</h1>
-          <div class="detail-facts">${facts}</div>
-          ${rottenTomatoes(m, "detail-rt")}
-          ${(m.genres || []).length ? `<div class="genre-chips">${m.genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
-          ${m.overview ? `<p class="overview">${esc(m.overview)}</p>` : ""}
-          ${plexLink}
-          ${actions}
-        </div>
-      </div>
-    </div>`;
-  }
-
-  const spinCountText = () =>
-    spinState.poolSize ? `${spinState.poolSize} unexplored on Plex` : "";
-
-  function spinResultBody() {
-    if (spinState.status === "ok" && spinState.movie) return spinCard(spinState.movie);
-    if (spinState.status === "unavailable") {
-      const fix = state.me && state.me.is_admin
-        ? ` <a href="#/admin/settings">Connect one</a>.` : "";
-      return `<div class="spin-empty">Spin needs a connected Plex library.${fix}</div>`;
-    }
-    if (spinState.status === "empty") {
-      return `<div class="spin-empty">Every film on Plex is already on the list. Impressive.</div>`;
-    }
-    return "";
-  }
-
-  function spinBody() {
-    // Always emitted, empty until the first spin reports a pool size — the
-    // in-place repaint fills this node rather than rebuilding the header.
-    const count = `<span class="count">${spinCountText()}</span>`;
-    const cta = spinState.movie
-      ? "Not feeling it? Give it another spin."
-      : "Tap the wheel for a random film from the Plex library.";
-    return `<div class="page-head"><h1>Spin</h1>${count}</div>
-      <div class="spin-stage">
-        <button type="button" class="spin-wheel" id="spin-go"
-                aria-label="Spin the wheel for a random film">
-          <span class="spin-pointer" aria-hidden="true"></span>
-          ${wheelSvg()}
-        </button>
-        <div class="spin-cta" id="spin-cta">${cta}</div>
-      </div>
-      <div class="spin-result${spinState.status ? " revealed" : ""}" id="spin-result" aria-live="polite">${spinResultBody()}</div>`;
-  }
-
-  // Nothing is fetched on entry: a page load shouldn't burn a TMDB call on a
-  // film nobody asked for, and it means a preserved repaint costs no network.
-  function renderSpin(preserve = false) {
-    paintView("spin", spinBody(), preserve);
-    wireSpin();
-    if (spinState.status === "ok") sizeDetailPoster();
-  }
-
-  function turnWheel() {
-    const rotor = $(".spin-wheel-rotor");
-    if (!rotor || reduceMotion()) return Promise.resolve();
-    spinAngle += 1440 + Math.floor(Math.random() * 360);   // 4 turns + a random landing
-    rotor.style.transform = `rotate(${spinAngle}deg)`;
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        rotor.removeEventListener("transitionend", finish);
-        resolve();
-      };
-      rotor.addEventListener("transitionend", finish);
-      // transitionend never fires for a hidden tab or a node detached by a route
-      // change mid-spin. The timer guarantees the reveal still happens.
-      setTimeout(finish, SPIN_MS + 250);
-    });
-  }
-
-  function repaintSpinResult() {
-    const slot = $("#spin-result");
-    if (!slot) return;
-    slot.classList.remove("revealed");
-    void slot.offsetWidth;                 // reflow, so the reveal re-runs
-    slot.innerHTML = spinResultBody();
-    slot.classList.add("revealed");
-    const cta = $("#spin-cta");
-    if (cta) {
-      cta.textContent = spinState.movie
-        ? "Not feeling it? Give it another spin."
-        : "Tap the wheel for a random film from the Plex library.";
-    }
-    const count = $(".page-head .count");
-    if (count) count.textContent = spinCountText();
-    wireSpinActions();
-    if (spinState.status === "ok") sizeDetailPoster();
-  }
-
-  async function doSpin() {
-    if (spinState.busy) return;
-    spinState.busy = true;
-    const btn = $("#spin-go");
-    if (btn) btn.disabled = true;
-    const exclude = spinState.movie ? `?exclude=${spinState.movie.tmdb_id}` : "";
-    // Request and animation start together, so the wheel is a floor on the wait
-    // rather than an addition to it.
-    const [res] = await Promise.all([
-      api(`/api/spin${exclude}`).catch(e => e),
-      turnWheel(),
-    ]);
-    spinState.busy = false;
-    if (btn) btn.disabled = false;
-    if (res instanceof Error) {
-      if (res.message !== "unauth") toast(res.message, true);
-      return;
-    }
-    spinState.status = res.status;
-    spinState.movie = res.movie;
-    spinState.poolSize = res.pool_size;
-    spinState.saved = false;
-    spinState.suggested = false;
-    repaintSpinResult();
-  }
-
-  async function saveSpun(btn) {
-    const m = spinState.movie;
-    if (!m || spinState.saved) return;
-    btn.disabled = true;
-    btn.textContent = "Saving…";
-    try {
-      await api("/api/saved", { method: "POST", body: { tmdb_id: m.tmdb_id } });
-      spinState.saved = true;
-      btn.textContent = "♥ Saved";
-      toast("Saved to your list");
-    } catch (e) {
-      if (e.message !== "unauth") toast(e.message, true);
-      btn.disabled = false;
-      btn.textContent = "♡ Save";
-    }
-  }
-
-  // A sibling of addSuggestion rather than a call to it: that one closes the
-  // TMDB modal and repaints the backlog into <main>, which would destroy this
-  // page. Same endpoint, same toasts.
-  async function suggestSpun(btn) {
-    const m = spinState.movie;
-    if (!m || spinState.suggested) return;
-    btn.disabled = true;
-    btn.textContent = "Adding…";
-    try {
-      const res = await api("/api/movies", { method: "POST", body: { tmdb_id: m.tmdb_id } });
-      toast(SEERR_TOAST[res && res.seerr && res.seerr.status] || "Added to backlog");
-      spinState.suggested = true;
-      btn.textContent = "✓ On the backlog";
-      // The film is now tracked, so the server drops it from every later spin.
-      refreshTodo();
-    } catch (e) {
-      if (e.message !== "unauth") toast(e.message, true);
-      btn.disabled = false;
-      btn.textContent = "＋ Suggest this film";
-    }
-  }
-
-  function wireSpinActions() {
-    const again = $("#spin-again"), save = $("#spin-save"), suggest = $("#spin-suggest");
-    if (again) again.onclick = () => doSpin();
-    if (save) save.onclick = () => saveSpun(save);
-    if (suggest) suggest.onclick = () => suggestSpun(suggest);
-  }
-
-  function wireSpin() {
-    const wheel = $("#spin-go");
-    if (wheel) wheel.onclick = () => doSpin();
-    wireSpinActions();
-  }
-
   // ================= SAVED (private shortlist) =================
   // Held like backlogItems so a removal can repaint the count and the empty
   // state from one place, without a round trip to re-read what we just changed.
@@ -3488,7 +3218,6 @@
     // Feature modules first: they own their whole route, including the arg.
     if (featureRoutes[view]) return featureRoutes[view]({ arg, preserve });
     if (view === "backlog") return renderBacklog(preserve);
-    if (view === "spin") return renderSpin(preserve);
     if (view === "saved") return renderSaved(preserve);
     if (view === "watched") return renderWatched(preserve);
     if (view === "stats") return renderStats(preserve);

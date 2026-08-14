@@ -1,4 +1,5 @@
-"""Tests for the Spin wheel: which films can be picked, and how it degrades.
+"""Tests for Spin: which films can be picked, how it degrades, and the
+library sampling + poster proxy behind the reel.
 
 Plex is never contacted — the library cache is a module-level dict, so a fake
 snapshot is all the pool logic needs.
@@ -24,6 +25,7 @@ def fake_library(**overrides) -> dict:
         "tmdb": set(), "imdb": set(),
         "rk_tmdb": {}, "rk_imdb": {},
         "rt_tmdb": {}, "rt_imdb": {},
+        "movies": {},
         "machine_id": "server-uuid", "last_refresh": 0.0, "ok": True,
     }
     snapshot.update(overrides)
@@ -111,38 +113,145 @@ class SpinEndpointTests(unittest.TestCase):
 
     def test_unconfigured_plex_is_a_state_not_an_error(self):
         self._set_library(ok=False, tmdb={1})
-        res = self.client.get("/api/spin")
+        res = self.client.get("/api/spin/pool")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["status"], "unavailable")
-        self.assertIsNone(res.json()["movie"])
+        self.assertEqual(res.json()["items"], [])
 
     def test_exhausted_pool_reports_empty(self):
         self._set_library(tmdb=set())
-        res = self.client.get("/api/spin")
+        res = self.client.get("/api/spin/pool")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["status"], "empty")
+        self.assertEqual(res.json()["items"], [])
 
-    def test_a_dead_tmdb_id_is_retried_rather_than_failing_the_spin(self):
-        self._set_library(tmdb={11, 12}, rk_tmdb={11: "a", 12: "b"})
-        details = AsyncMock(side_effect=[
-            RuntimeError("404 from TMDB"),
-            {"tmdb_id": 12, "title": "Second Try", "imdb_id": "tt0002", "genres": []},
-        ])
-        with patch.object(main.tmdb, "details", new=details):
-            res = self.client.get("/api/spin")
-        body = res.json()
+    def test_draw_returns_library_films_the_reel_can_render(self):
+        self._set_library(
+            tmdb={11, 12},
+            movies={"a": dict(_movie("a", "First"), tmdb_id=11),
+                    "b": dict(_movie("b", "Second"), tmdb_id=12)})
+        body = self.client.get("/api/spin/pool?n=2").json()
         self.assertEqual(body["status"], "ok")
-        self.assertEqual(body["movie"]["title"], "Second Try")
-        # `library` rides along inline so the client's Plex/RT helpers work on
-        # this payload exactly as they do on every other movie.
-        self.assertTrue(body["movie"]["library"]["in_library"])
-        self.assertEqual(details.await_count, 2)
+        self.assertEqual({i["title"] for i in body["items"]}, {"First", "Second"})
+        # Everything the reel and the result panel read must be present.
+        for item in body["items"]:
+            for field in ("rating_key", "tmdb_id", "title", "thumb", "deep_link"):
+                self.assertIn(field, item)
+
+    def test_draw_excludes_films_the_club_already_tracks(self):
+        self.conn = db.connect()
+        try:
+            self.conn.execute(
+                "INSERT INTO movies (tmdb_id, title, status) VALUES (11, 'First', 'watched')")
+            self.conn.commit()
+        finally:
+            self.conn.close()
+        self._set_library(
+            tmdb={11, 12},
+            movies={"a": dict(_movie("a", "First"), tmdb_id=11),
+                    "b": dict(_movie("b", "Second"), tmdb_id=12)})
+        body = self.client.get("/api/spin/pool?n=5").json()
+        self.assertEqual([i["title"] for i in body["items"]], ["Second"])
 
     def test_spinning_does_not_notify_other_clients(self):
         self._set_library(tmdb=set())
         with patch.object(events, "broadcast") as broadcast:
-            self.client.get("/api/spin")
+            self.client.get("/api/spin/pool")
         broadcast.assert_not_called()
+
+
+def _movie(rk, title, thumb="/library/metadata/%s/thumb/1"):
+    return {
+        "rating_key": str(rk),
+        "title": title,
+        "year": 1999,
+        "thumb": thumb % rk if "%s" in thumb else thumb,
+        "summary": "A summary.",
+        "duration": 7_200_000,
+        "content_rating": "15",
+        "genres": ["Drama"],
+    }
+
+
+class SpinLibraryTests(unittest.TestCase):
+    def setUp(self):
+        self._old = dict(plex._library)
+        movies = {str(i): _movie(i, f"Film {i}") for i in range(1, 31)}
+        plex._library.update(movies=movies, machine_id="machine-1", ok=True)
+
+    def tearDown(self):
+        plex._library.clear()
+        plex._library.update(self._old)
+
+    # --- sampling ----------------------------------------------------------
+
+    def test_random_movies_returns_requested_count_without_repeats(self):
+        picks = plex.random_movies(10)
+        self.assertEqual(len(picks), 10)
+        keys = [p["rating_key"] for p in picks]
+        self.assertEqual(len(set(keys)), 10, "a single draw repeated a film")
+
+    def test_random_movies_caps_at_library_size(self):
+        plex._library["movies"] = {"1": _movie(1, "Only Film")}
+        self.assertEqual(len(plex.random_movies(10)), 1)
+
+    def test_random_movies_actually_varies(self):
+        # Twenty draws of ten from thirty films landing on one identical set
+        # would mean the sampling isn't random at all.
+        seen = {tuple(sorted(p["rating_key"] for p in plex.random_movies(10)))
+                for _ in range(20)}
+        self.assertGreater(len(seen), 1)
+
+    def test_random_movies_carries_a_deep_link(self):
+        pick = plex.random_movies(1)[0]
+        self.assertIn("machine-1", pick["deep_link"])
+        self.assertIn(pick["rating_key"], pick["deep_link"])
+
+    def test_random_movies_dedupes_a_film_stored_twice(self):
+        # Two editions of one film: different rating keys, same title+year. A
+        # draw must never carry both, or the reel shows identical posters.
+        plex._library["movies"] = {
+            "1": _movie(1, "Heat"),
+            "2": dict(_movie(2, "Heat")),      # second copy, different key
+            "3": _movie(3, "Other Film"),
+        }
+        for _ in range(20):
+            titles = [p["title"] for p in plex.random_movies(3)]
+            self.assertEqual(len(titles), len(set(titles)), f"duplicate in {titles}")
+
+    def test_random_movies_empty_when_library_never_loaded(self):
+        plex._library["ok"] = False
+        self.assertEqual(plex.random_movies(5), [])
+
+    def test_sampling_does_not_mutate_the_cache(self):
+        before = dict(plex._library["movies"]["1"])
+        plex.random_movies(10)
+        self.assertEqual(plex._library["movies"]["1"], before)
+        self.assertNotIn("deep_link", plex._library["movies"]["1"])
+
+    # --- proxy guard -------------------------------------------------------
+
+    def test_thumb_path_resolves_a_known_key(self):
+        self.assertEqual(plex.thumb_path("7"), "/library/metadata/7/thumb/1")
+
+    def test_thumb_path_rejects_unknown_key(self):
+        self.assertIsNone(plex.thumb_path("99999"))
+
+    def test_thumb_path_rejects_traversal_and_absolute_urls(self):
+        for bad in ("../../identity", "/../identity", "http://evil.test/x",
+                    "//evil.test/x", ""):
+            with self.subTest(bad=bad):
+                self.assertIsNone(plex.thumb_path(bad))
+
+    def test_thumb_path_rejects_entry_whose_thumb_is_not_a_path(self):
+        # A stored value that isn't a server-relative path must not be fetched,
+        # even though its key is legitimate.
+        plex._library["movies"]["500"] = _movie(500, "Odd", thumb="http://evil.test/x.jpg")
+        self.assertIsNone(plex.thumb_path("500"))
+
+    def test_thumb_path_rejects_entry_with_no_thumb(self):
+        plex._library["movies"]["501"] = _movie(501, "No Art", thumb="")
+        self.assertIsNone(plex.thumb_path("501"))
 
 
 if __name__ == "__main__":

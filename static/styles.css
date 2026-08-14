@@ -372,6 +372,9 @@ button { font: inherit; cursor: pointer; }
   color: var(--text-dim); font-size: .88rem; padding: .5rem .6rem; border-radius: 7px;
 }
 .me-menu-item:hover { background: var(--bg-raise-2); color: var(--text); text-decoration: none; }
+/* Admin lives in this menu rather than the nav (one admin, and it freed a tab
+   slot), so it needs the current-page marking the nav links get for free. */
+.me-menu-item.active { background: var(--bg-raise-2); color: var(--text); }
 
 /* profile page */
 .profile-hero { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
@@ -945,8 +948,8 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
 /* The answer control keeps its reserved width so expanding one row can't shove
    that row's own columns sideways. */
-.lr-answer .seen-seg { width: auto; min-width: 172px; justify-content: flex-end; }
-.lr-answer .seg { min-width: 82px; height: 30px; }
+.lr-answer .seen-seg { width: auto; min-width: 224px; justify-content: flex-end; }
+.lr-answer .seg { min-width: 108px; height: 30px; }
 /* Its content is right-anchored, so the header has to be too — otherwise the
    label floats over the empty left half of the cell. */
 .list-head .lr-answer { text-align: right; }
@@ -1092,30 +1095,10 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .tw-you-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem 1rem; flex-wrap: wrap; }
 .tw-you-label { color: var(--text-dim); font-size: .85rem; }
 .tw-you-row .seen-seg { width: auto; flex: 0 1 auto; }
-.tw-you-row .seg { min-width: 116px; }
+.tw-you-row .seg { min-width: 128px; }
 /* .rating-group-label supplies the uppercase style, its own hairline and spacing */
 .tw-rate-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; }
 .tw-rate-privacy { text-transform: none; letter-spacing: normal; font-size: .74rem; }
-/* Stands in for the rating block until there's something to rate — a single
-   quiet line rather than an interactive-looking control nobody can use yet. */
-.tw-rate-hint { color: var(--text-faint); font-size: .85rem; margin-top: .9rem; }
-
-/* First-watch/rewatch toggle: same segmented-button visual language as
-   .seen-seg above it, but its own class — it must NOT match .seen-seg's
-   selectors, since wireSeenControls() wires every ".seen-seg .seg" on the
-   page to the prior-view endpoint, which this isn't. */
-.rewatch-seg { display: flex; gap: .4rem; margin: .8rem 0; }
-.rewatch-seg .seg {
-  flex: 1 1 0; min-width: 0; height: 34px; padding: 0 .5rem;
-  border-radius: 8px; border: 1px solid var(--line); background: var(--bg-raise);
-  color: var(--text-dim); font-size: .8rem; font-weight: 600; white-space: nowrap;
-  cursor: pointer; transition: background .1s, color .1s, border-color .1s;
-}
-.rewatch-seg .seg:hover { color: var(--text); border-color: var(--text-faint); }
-.rewatch-seg[data-state="first"] .seg[data-set="first"],
-.rewatch-seg[data-state="rewatch"] .seg[data-set="rewatch"] {
-  background: var(--bg-raise-2); border-color: var(--text-faint); color: var(--text);
-}
 
 .tw-empty { text-align: center; padding: 4.5rem 1rem; color: var(--text-dim); }
 .tw-empty-emoji { font-size: 3rem; margin-bottom: .4rem; }
@@ -1144,34 +1127,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .star-input .val { font-weight: 700; color: var(--star); font-variant-numeric: tabular-nums; min-width: 2.2ch; }
 .rate-note { width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: .55rem .7rem; font-size: .9rem; resize: vertical; min-height: 2.4rem; }
 .rate-controls { display: flex; align-items: center; gap: 1rem; margin: .7rem 0; flex-wrap: wrap; }
-
-/* ---------- spin: a random pick from the Plex library ---------- */
-.spin-stage { display: grid; place-items: center; gap: .9rem; padding: 1rem 0 2rem; }
-/* Deliberately no border-radius or box-shadow: the wheel's roundness is SVG
-   geometry, so a skin that squares every corner can't square the wheel. */
-.spin-wheel {
-  position: relative; width: min(320px, 66vw); aspect-ratio: 1;
-  padding: 0; border: 0; background: none; cursor: pointer;
-}
-.spin-wheel:disabled { cursor: default; }
-.spin-wheel-svg { width: 100%; height: 100%; display: block; }
-/* view-box pins the origin to the SVG's own coordinate space, so the rotor
-   turns about the hub whatever size the element renders at. */
-.spin-wheel-rotor {
-  transform-box: view-box; transform-origin: 50% 50%;
-  transition: transform 2600ms cubic-bezier(.15, .85, .25, 1);
-}
-.spin-pointer {
-  position: absolute; top: -4px; left: 50%; translate: -50% 0; z-index: 1;
-  width: 0; height: 0;
-  border-left: 11px solid transparent; border-right: 11px solid transparent;
-  border-top: 18px solid var(--text);
-}
-.spin-cta { color: var(--text-dim); font-size: .9rem; text-align: center; }
-.spin-result.revealed { animation: spin-reveal .28s ease both; }
-.spin-actions { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1.1rem; }
-.spin-empty { text-align: center; color: var(--text-faint); padding: 3rem 1rem; }
-@keyframes spin-reveal { from { opacity: 0; transform: translateY(10px); } }
 
 /* ---------- saved: a member's private shortlist ---------- */
 .saved-actions { flex-wrap: wrap; align-items: center; margin-top: .1rem; }
@@ -2077,11 +2032,178 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 }
 
 /* ---------- motion preference ----------
-   Honour a reduced-motion setting: the wheel jumps straight to its result and
-   the reveal appears without a slide. Nothing here is load-bearing — the spin
+   Honour a reduced-motion setting. Nothing here is load-bearing — the spin
    outcome comes from the server either way. */
 @media (prefers-reduced-motion: reduce) {
-  .spin-wheel-rotor { transition: none; }
-  .spin-result.revealed { animation: none; }
   .tw-poster, .poster-wrap { transition: none; }
+}
+/* ---------- Spin: the random picker ----------
+   Deliberately NOT a filmstrip: no sprockets, no frame borders, no projector
+   metaphor. A quiet track, posters running through it, and the one it lands on
+   left standing while everything else recedes. The whole page is one object at
+   rest — a single card with a question mark — so there is exactly one thing to
+   press and no chrome around it to explain.
+
+   Track height is derived from the card width rather than the content, so the
+   idle card, the running strip and the enlarged winner all occupy the same box
+   and nothing below the track moves at any point in the sequence. */
+.spin-stage {
+  --spin-card-w: 164px;
+  --spin-track-pad: 46px;
+  --spin-win-scale: 1.3;
+  max-width: 940px; margin: 0 auto; text-align: center;
+}
+.spin-head h1 { font-size: 2rem; letter-spacing: -.02em; margin: .4rem 0 .3rem; }
+.spin-sub { color: var(--text-dim); font-size: .9rem; margin: 0 auto 1.8rem; max-width: 46ch; }
+
+.spin-track {
+  position: relative; overflow: hidden; border-radius: 16px;
+  background: var(--bg-raise); border: 1px solid var(--line);
+  height: calc(var(--spin-card-w) * 1.5 + var(--spin-track-pad) * 2 + 1.5rem);
+  -webkit-mask-image: linear-gradient(90deg, transparent, currentColor 16%, currentColor 84%, transparent);
+  mask-image: linear-gradient(90deg, transparent, currentColor 16%, currentColor 84%, transparent);
+}
+
+/* Centre marker: two small carets rather than a box, so nothing is drawn over
+   the poster it is pointing at. Hidden while the mystery card is up, since the
+   card is already dead centre and a marker would just crowd it. */
+.spin-marker {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 0; z-index: 4;
+  transform: translateX(-50%); opacity: 0; pointer-events: none;
+  transition: opacity .3s ease;
+}
+.spin-track.is-live .spin-marker, .spin-track.is-settled .spin-marker { opacity: 1; }
+.spin-marker::before, .spin-marker::after {
+  content: ""; position: absolute; left: 50%; transform: translateX(-50%);
+  border-left: 7px solid transparent; border-right: 7px solid transparent;
+}
+.spin-marker::before { top: 0; border-top: 9px solid var(--accent); }
+.spin-marker::after { bottom: 0; border-bottom: 9px solid var(--accent); }
+
+.spin-strip {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  gap: .7rem; padding: 0 .7rem; will-change: transform;
+}
+.spin-card { width: var(--spin-card-w); flex: 0 0 auto; transition: opacity .35s ease; }
+.spin-card-poster {
+  aspect-ratio: 2/3; border-radius: 10px; overflow: hidden;
+  background: var(--grad-poster); box-shadow: var(--shadow-sm);
+  transition: transform .4s cubic-bezier(.2,.9,.3,1), box-shadow .4s ease, outline-color .4s ease;
+  outline: 2px solid transparent; outline-offset: 3px;
+}
+.spin-card-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.spin-card-title {
+  margin-top: .45rem; font-size: .74rem; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: transform .4s cubic-bezier(.2,.9,.3,1), color .35s ease;
+}
+
+/* Everything that isn't the pick recedes, so the winner reads as chosen
+   without needing a frame drawn around it. */
+.spin-track.is-settled .spin-card { opacity: .32; }
+.spin-track.is-settled .spin-card.is-winner { opacity: 1; }
+
+/* transform doesn't affect layout, so without the stacking bump the next
+   card's box would paint over the enlarged poster's edge. */
+.spin-card.is-winner { position: relative; z-index: 5; }
+.spin-card.is-winner .spin-card-poster {
+  transform: scale(var(--spin-win-scale));
+  outline-color: var(--accent); box-shadow: var(--shadow);
+}
+/* Pushed clear of the poster's new bottom edge. The poster is 1.5x the card
+   width, so scaling by S grows it 0.75(S-1) x card-width on each side. */
+.spin-card.is-winner .spin-card-title {
+  color: var(--text); font-weight: 600;
+  transform: translateY(calc(var(--spin-card-w) * 0.75 * (var(--spin-win-scale) - 1)));
+}
+
+/* The idle state: one card, one question mark, one thing to press. Sized to
+   the winner's footprint so pressing it hands straight over to the result with
+   no jump in scale. */
+.spin-mystery {
+  position: absolute; left: 50%; top: 50%; z-index: 6;
+  transform: translate(-50%, -50%);
+  width: calc(var(--spin-card-w) * var(--spin-win-scale)); aspect-ratio: 2/3;
+  display: grid; place-items: center; cursor: pointer;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--bg-raise-2);
+  color: var(--text-faint); font: inherit; font-weight: 700;
+  font-size: calc(var(--spin-card-w) * .44); line-height: 1;
+  box-shadow: var(--shadow);
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, opacity .3s ease;
+}
+.spin-mystery:hover { transform: translate(-50%, -50%) scale(1.03); border-color: var(--accent); color: var(--accent-text); }
+.spin-mystery:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.spin-mystery:active { transform: translate(-50%, -50%) scale(.99); }
+.spin-mystery[hidden] { display: none; }
+
+.spin-result { margin-top: 1.6rem; animation: spin-result-in .45s ease both; }
+@keyframes spin-result-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.spin-result-eyebrow {
+  text-transform: uppercase; letter-spacing: .16em; font-size: .7rem; font-weight: 700;
+  color: var(--accent-text); margin-bottom: .5rem;
+}
+.spin-result-title { font-size: 2rem; line-height: 1.1; letter-spacing: -.02em; margin: 0 0 .45rem; }
+.spin-result-facts { color: var(--text-dim); font-size: .9rem; }
+.spin-result-sugg { color: var(--text-faint); font-size: .84rem; margin-top: .3rem; }
+.spin-result-genres { justify-content: center; margin: .9rem 0 0; }
+/* The heading block above is centred, but a paragraph of synopsis is not
+   readable centred — so it becomes a measured column that is itself centred. */
+.spin-result-synopsis {
+  max-width: 58ch; margin: 1rem auto 0; text-align: left;
+  color: var(--text); font-size: .95rem; line-height: 1.55;
+}
+.spin-result-pitch {
+  max-width: 58ch; margin: 1rem auto 0; text-align: left;
+  padding: .5rem 0 .5rem .9rem; border-left: 3px solid var(--accent);
+  color: var(--text); font-size: .93rem; line-height: 1.5;
+}
+.spin-result-pitch-label {
+  display: block; font-size: .68rem; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent-text); margin-bottom: .25rem;
+}
+.spin-result-actions {
+  display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; margin-top: 1.3rem;
+}
+/* Shown in place of the Plex button when the film hasn't landed on the server
+   yet — a fact, not a disabled control pretending to be one. */
+.spin-result-nolink { color: var(--text-faint); font-size: .86rem; }
+/* Spin again is a bare icon sat under the real action: it's the thing you press
+   to discard this result, so it shouldn't compete with the thing you press to
+   keep it. The arrow turns on hover, which is the whole affordance. */
+.spin-respin {
+  display: grid; place-items: center; width: 46px; height: 46px;
+  margin: 1.1rem auto 0; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg-raise); color: var(--text-dim);
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.spin-respin svg {
+  width: 22px; height: 22px;
+  transition: transform .45s cubic-bezier(.3,.8,.3,1);
+}
+.spin-respin:hover { color: var(--accent-text); border-color: var(--accent); background: var(--bg-raise-2); }
+.spin-respin:hover svg { transform: rotate(180deg); }
+.spin-respin:active svg { transform: rotate(360deg); }
+.spin-respin:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.spin-empty { text-align: center; padding: 4.5rem 1rem; color: var(--text-dim); }
+.spin-empty-glyph { font-size: 3rem; margin-bottom: .4rem; }
+.spin-empty h2 { margin: .3rem 0 .5rem; color: var(--text); font-size: 1.4rem; }
+.spin-empty p { max-width: 44ch; margin: 0 auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spin-result { animation: none; }
+  .spin-card-poster, .spin-card-title, .spin-card, .spin-marker, .spin-mystery { transition: none; }
+  .spin-respin svg { transition: none; }
+  .spin-respin:hover svg, .spin-respin:active svg { transform: none; }
+}
+
+@media (max-width: 720px) {
+  .spin-stage { --spin-card-w: 112px; --spin-track-pad: 34px; }
+  .spin-head h1 { font-size: 1.5rem; }
+  .spin-sub { font-size: .85rem; margin-bottom: 1.3rem; }
+  .spin-result-title { font-size: 1.55rem; }
+  .spin-result-actions .btn { flex: 1 1 auto; }
 }
