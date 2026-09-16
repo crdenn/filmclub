@@ -161,7 +161,7 @@ Important persistence semantics:
 - A movie is eligible when any `prior_views.seen` is false; it is ineligible only when every member has a true row.
 - Ratings and votes are unique per movie/member pair.
 - `ratings.seen_before` is independent of editable prior-view state.
-- Scheduling snapshots known prior-view answers into `movies.seen_before_snapshot` and sets `watched_at` to the next Tuesday.
+- Scheduling snapshots known prior-view answers into `movies.seen_before_snapshot` and sets `watched_at` to the next occurrence of the admin-configured meeting day (`config.MEETING_WEEKDAY`, default Tuesday).
 - Archiving retains the scheduled date and snapshot.
 - Lifecycle reversals retain ratings, notes, dates, snapshots, prior views, votes, and metadata; only status changes immediately. Re-picking from the backlog then refreshes the discussion date and snapshot.
 - Deleting a movie cascades to ratings, prior views, and votes. Deleting a member sets `movies.suggested_by` to null and cascades member-owned child rows.
@@ -210,7 +210,7 @@ The Plex token is encrypted before it is stored in the member row so the app can
 ```mermaid
 stateDiagram-v2
     [*] --> suggested: add suggestion
-    suggested --> scheduled: schedule; set next Tuesday; snapshot prior views
+    suggested --> scheduled: schedule; set next meeting day; snapshot prior views
     scheduled --> watched: archive after discussion
     scheduled --> suggested: unschedule; retain movie history
     watched --> suggested: unwatch; retain movie history

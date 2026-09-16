@@ -75,6 +75,15 @@ SEERR_URL = os.environ.get("SEERR_URL", "").rstrip("/")
 SEERR_API_KEY = os.environ.get("SEERR_API_KEY", "")
 SEERR_TIMEOUT = float(os.environ.get("SEERR_TIMEOUT", "10"))
 
+# --- Meeting schedule --------------------------------------------------------
+# Default day of week (0=Monday .. 6=Sunday) and hour of day (0-23), both
+# server-local time, that the club meets. The weekday drives which date gets
+# auto-selected when a backlog film is scheduled (service.schedule_movie); the
+# hour has no stored effect on that date but is surfaced alongside it in
+# Discord messages. Defaults to Tuesday at 8pm.
+MEETING_WEEKDAY = int(os.environ.get("MEETING_WEEKDAY", "1"))
+MEETING_HOUR = int(os.environ.get("MEETING_HOUR", "20"))
+
 # --- Discord weekly reminder digest -----------------------------------------
 # Optional. When set, a weekly Monday digest (this week's film, who still needs
 # to mark backlog films seen/unseen, who still needs to rate watched films) is

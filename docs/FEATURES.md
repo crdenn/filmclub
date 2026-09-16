@@ -166,8 +166,8 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 ### Schedule a movie
 
-- **Purpose:** Promote a backlog movie to the current selection and assign the next Tuesday discussion date.
-- **Main files:** `service._next_tuesday()`, `service.schedule_movie()`, `/api/movies/{id}/schedule`, detail UI.
+- **Purpose:** Promote a backlog movie to the current selection and assign the next discussion date on the admin-configured meeting day (default Tuesday).
+- **Main files:** `service._next_meeting_day()`, `service.schedule_movie()`, `/api/movies/{id}/schedule`, detail UI, `config.MEETING_WEEKDAY`/`MEETING_HOUR` (Admin Settings).
 - **Status:** Implemented.
 - **Dependencies:** Suggested movie and prior-view state.
 - **Limitations:** Any authenticated member may schedule. Eligibility is displayed but not enforced. Multiple movies can be scheduled.
@@ -184,7 +184,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 ### Edit discussion date
 
-- **Purpose:** Move the meeting away from the automatically selected Tuesday.
+- **Purpose:** Move the meeting away from the automatically selected default day.
 - **Main files:** `service.set_discuss_date()`, `/api/movies/{id}/discuss_date`, date input in the current view.
 - **Status:** Implemented.
 - **Dependencies:** Scheduled movie and browser date input.

@@ -460,7 +460,16 @@
     ["DISCORD_WEBHOOK_URL", "Discord webhook URL", "Posts the weekly reminder digest to this channel."],
     ["DISCORD_REMINDER_WEEKDAY", "Digest sends", "Which day and time of week the digest goes out (server's local time)."],
     ["DISCORD_REMINDER_HOUR", "Digest hour", "Hour of day (server's local time) it goes out on that day."],
+    ["MEETING_WEEKDAY", "Club meets", "Default day and time a new pick's discussion date is scheduled for."],
+    ["MEETING_HOUR", "Meeting hour", "Hour of day the club meets on that day."],
   ];
+
+  // Settings rendered as a paired weekday-select + hour-time-picker, keyed by
+  // the weekday field's name. The hour field renders nothing on its own.
+  const DAY_HOUR_PAIRS = {
+    DISCORD_REMINDER_WEEKDAY: { hourKey: "DISCORD_REMINDER_HOUR", dayDefault: 0, hourDefault: 9 },
+    MEETING_WEEKDAY: { hourKey: "MEETING_HOUR", dayDefault: 1, hourDefault: 20 },
+  };
 
   const SETTING_GROUPS = [
     {
@@ -485,6 +494,11 @@
       keys: ["SEERR_URL", "SEERR_API_KEY", "SEERR_TIMEOUT"], required: false,
     },
     {
+      id: "meeting", eyebrow: "Core", title: "Meeting schedule",
+      description: "Default day and time the club meets. Drives which date gets picked when a film is scheduled, and is shown alongside the discussion date in Discord messages.",
+      keys: ["MEETING_WEEKDAY", "MEETING_HOUR"], required: true,
+    },
+    {
       id: "discord", eyebrow: "Notifications", title: "Discord reminders",
       description: "Optional weekly digest of this week's film and outstanding backlog/rating gaps, posted to a Discord channel via webhook.",
       keys: ["DISCORD_WEBHOOK_URL", "DISCORD_REMINDER_WEEKDAY", "DISCORD_REMINDER_HOUR"], required: false,
@@ -498,10 +512,11 @@
       const meta = settings[key] || {};
       const locked = meta.locked ? "disabled" : "";
       const source = meta.locked ? (setup ? ` <small>environment override</small>` : ` <small class="setting-locked" title="Managed by an environment variable" aria-label="Managed by an environment variable">●</small>`) : "";
-      if (key === "DISCORD_REMINDER_WEEKDAY") {
-        const dayMeta = meta, hourMeta = settings.DISCORD_REMINDER_HOUR || {};
-        const currentDay = dayMeta.value !== "" && dayMeta.value != null ? parseInt(dayMeta.value, 10) : 0;
-        const currentHour = hourMeta.value !== "" && hourMeta.value != null ? parseInt(hourMeta.value, 10) : 9;
+      if (DAY_HOUR_PAIRS[key]) {
+        const { hourKey, dayDefault, hourDefault } = DAY_HOUR_PAIRS[key];
+        const dayMeta = meta, hourMeta = settings[hourKey] || {};
+        const currentDay = dayMeta.value !== "" && dayMeta.value != null ? parseInt(dayMeta.value, 10) : dayDefault;
+        const currentHour = hourMeta.value !== "" && hourMeta.value != null ? parseInt(hourMeta.value, 10) : hourDefault;
         const dayOptions = WEEKDAY_NAMES.map((day, i) =>
           `<option value="${i}" ${i === currentDay ? "selected" : ""}>${day}</option>`).join("");
         const timeValue = `${String(currentHour).padStart(2, "0")}:00`;
@@ -509,13 +524,13 @@
         return `<div class="setup-field schedule-field" data-setting="${key}">
           <span>${esc(label)}${source}</span>
           <div class="schedule-inputs">
-            <select class="search-input" name="DISCORD_REMINDER_WEEKDAY" ${locked}>${dayOptions}</select>
-            <input class="search-input" name="DISCORD_REMINDER_HOUR" type="time" step="3600" value="${timeValue}" ${hourLocked}>
+            <select class="search-input" name="${key}" ${locked}>${dayOptions}</select>
+            <input class="search-input" name="${hourKey}" type="time" step="3600" value="${timeValue}" ${hourLocked}>
           </div>
           ${setup ? `<span class="setup-hint">${esc(hint)}</span>` : ""}<span class="setup-error"></span>
         </div>`;
       }
-      if (key === "DISCORD_REMINDER_HOUR") return ""; // rendered together with the weekday, above
+      if (Object.values(DAY_HOUR_PAIRS).some(pair => pair.hourKey === key)) return ""; // rendered together with its weekday, above
       const isNumber = meta.secret ? false
         : key.includes("TIMEOUT") || key.includes("INTERVAL");
       const type = meta.secret ? "password" : isNumber ? "number" : "text";
@@ -559,11 +574,11 @@
       else values[key] = value;
     });
     if (clear.length) values.clear_secrets = clear;
-    // The time picker submits "HH:MM"; the backend only stores the hour.
-    if (values.DISCORD_REMINDER_HOUR) {
-      values.DISCORD_REMINDER_HOUR = parseInt(values.DISCORD_REMINDER_HOUR.split(":")[0], 10);
-    }
-    ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT", "DISCORD_REMINDER_WEEKDAY"].forEach(key => {
+    // The time pickers submit "HH:MM"; the backend only stores the hour.
+    ["DISCORD_REMINDER_HOUR", "MEETING_HOUR"].forEach(key => {
+      if (values[key]) values[key] = parseInt(values[key].split(":")[0], 10);
+    });
+    ["PLEX_REFRESH_INTERVAL", "SEERR_TIMEOUT", "DISCORD_REMINDER_WEEKDAY", "MEETING_WEEKDAY"].forEach(key => {
       if (values[key] === "") delete values[key];
       else values[key] = Number(values[key]);
     });

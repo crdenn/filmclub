@@ -138,7 +138,7 @@ def this_week(conn: sqlite3.Connection, member_id: int | None = None) -> list[di
     """Films picked as the current week's watch (status 'scheduled').
 
     Same shape as a backlog item plus the discussion date (watched_at, set to the
-    upcoming Tuesday at pick time). When called with a member_id (the normal,
+    upcoming meeting day at pick time). When called with a member_id (the normal,
     request-scoped case) each item also carries that member's own rating, so
     they can rate right here. Ratings stay private until the movie is moved to
     watched, so only the caller's own rating (never anyone else's) is included.
@@ -570,13 +570,13 @@ def set_seerr_status(conn: sqlite3.Connection, movie_id: int, status: str | None
     db.execute(conn, "UPDATE movies SET seerr_status = ? WHERE id = ?", (status, movie_id))
 
 
-def _next_tuesday(today: date | None = None) -> str:
-    """The upcoming Tuesday as an ISO date string (the club's discussion night).
+def _next_meeting_day(today: date | None = None) -> str:
+    """The upcoming meeting day (config.MEETING_WEEKDAY) as an ISO date string.
 
-    Picking always happens for the *next* meeting, so if today is already Tuesday
-    we roll forward a full week rather than returning today."""
+    Picking always happens for the *next* meeting, so if today is already the
+    meeting day we roll forward a full week rather than returning today."""
     today = today or date.today()
-    ahead = (1 - today.weekday()) % 7   # Monday=0 … Tuesday=1
+    ahead = (config.MEETING_WEEKDAY - today.weekday()) % 7   # Monday=0 … Sunday=6
     if ahead == 0:
         ahead = 7
     return (today + timedelta(days=ahead)).isoformat()
@@ -585,7 +585,7 @@ def _next_tuesday(today: date | None = None) -> str:
 def schedule_movie(conn: sqlite3.Connection, movie_id: int) -> bool:
     """Pick a backlog film as this week's movie (status 'suggested' -> 'scheduled').
 
-    Sets the discussion date to the upcoming Tuesday and freezes the prior-views
+    Sets the discussion date to the upcoming meeting day and freezes the prior-views
     snapshot *now* (at pick time): the snapshot captures who had already seen the
     film before the club picked it, which seeds each member's 'seen before?'
     default when they rate. Members watching it during the week (flipping their
@@ -601,14 +601,14 @@ def schedule_movie(conn: sqlite3.Connection, movie_id: int) -> bool:
         conn,
         "UPDATE movies SET status = 'scheduled', watched_at = ?, "
         "seen_before_snapshot = ? WHERE id = ?",
-        (_next_tuesday(), json.dumps(snapshot), movie_id),
+        (_next_meeting_day(), json.dumps(snapshot), movie_id),
     )
     return True
 
 
 def set_discuss_date(conn: sqlite3.Connection, movie_id: int, iso_date: str) -> bool:
     """Change the discussion date of this week's pick (e.g. the group moves the
-    meeting off Tuesday). Only valid while the film is scheduled. `iso_date` must
+    meeting off its default day). Only valid while the film is scheduled. `iso_date` must
     already be a validated 'YYYY-MM-DD' string. Returns False if not scheduled."""
     row = db.query_one(conn, "SELECT status FROM movies WHERE id = ?", (movie_id,))
     if not row or row["status"] != "scheduled":

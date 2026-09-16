@@ -28,6 +28,8 @@ FIELDS = {
     "DISCORD_WEBHOOK_URL": {"secret": True, "required": False},
     "DISCORD_REMINDER_WEEKDAY": {"secret": False, "required": False},
     "DISCORD_REMINDER_HOUR": {"secret": False, "required": False},
+    "MEETING_WEEKDAY": {"secret": False, "required": False},
+    "MEETING_HOUR": {"secret": False, "required": False},
     # Appearance rather than an integration credential, so it is set from the
     # user menu rather than the admin settings form.
     "DARK_PALETTE": {"secret": False, "required": False},
@@ -72,7 +74,8 @@ def load_into_config() -> None:
         if key not in FIELDS or os.environ.get(key, "").strip():
             continue
         value = _decrypt(stored) if encrypted else stored
-        if key in {"PLEX_REFRESH_INTERVAL", "DISCORD_REMINDER_WEEKDAY", "DISCORD_REMINDER_HOUR"}:
+        if key in {"PLEX_REFRESH_INTERVAL", "DISCORD_REMINDER_WEEKDAY", "DISCORD_REMINDER_HOUR",
+                   "MEETING_WEEKDAY", "MEETING_HOUR"}:
             value = int(value)
         elif key in {"SEERR_TIMEOUT"}:
             value = float(value)

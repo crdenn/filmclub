@@ -80,6 +80,15 @@ def _fmt_date(iso: str) -> str:
         return iso
 
 
+def _fmt_meeting_time() -> str:
+    """The admin-configured default meeting hour (config.MEETING_HOUR), e.g. '8 PM'.
+
+    There's no per-meeting time override — the club always meets at this hour,
+    even when a discussion date is moved to a different day — so every message
+    that shows a discussion date appends this."""
+    return datetime(2000, 1, 1, config.MEETING_HOUR).strftime("%-I %p")
+
+
 def _gap_line(entry: dict, bucket: str) -> str | None:
     detail = entry[bucket]
     if not detail["count"]:
@@ -97,7 +106,8 @@ def _format_message(digest: dict) -> dict:
     lines = ["**Film Club — this week**"]
     if digest["scheduled"]:
         for mv in digest["scheduled"]:
-            when = f" — discussing {_fmt_date(mv['watched_at'])}" if mv.get("watched_at") else ""
+            when = (f" — discussing {_fmt_date(mv['watched_at'])} at {_fmt_meeting_time()}"
+                     if mv.get("watched_at") else "")
             year = f" ({mv['year']})" if mv.get("year") else ""
             lines.append(f"\U0001F3AC *{mv['title']}*{year}{when}")
     else:
@@ -131,7 +141,7 @@ def _format_date_changed_message(title: str, year: int | None, iso_date: str) ->
     discussion date moved. No I/O."""
     year_str = f" ({year})" if year else ""
     content = (f"\U0001F4C5 **Discussion date changed** — we're meeting to discuss "
-               f"*{title}*{year_str} on **{_fmt_date(iso_date)}**.")
+               f"*{title}*{year_str} on **{_fmt_date(iso_date)} at {_fmt_meeting_time()}**.")
     return {"content": content, "allowed_mentions": {"parse": [], "users": []}}
 
 

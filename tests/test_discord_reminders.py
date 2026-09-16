@@ -234,7 +234,7 @@ class DiscordReminderTests(unittest.TestCase):
         self.assertEqual(
             payload["content"],
             "\U0001F4C5 **Discussion date changed** — we're meeting to discuss "
-            "*The Thing* (1982) on **Thursday, Aug 13**.",
+            "*The Thing* (1982) on **Thursday, Aug 13 at 8 PM**.",
         )
         self.assertEqual(payload["allowed_mentions"], {"parse": [], "users": []})
 
@@ -254,7 +254,7 @@ class DiscordReminderTests(unittest.TestCase):
         self.assertEqual(result["status"], "sent")
         url, kwargs = _Client.last_post
         self.assertIn("The Thing", kwargs["json"]["content"])
-        self.assertIn("Thursday, Aug 13", kwargs["json"]["content"])
+        self.assertIn("Thursday, Aug 13 at 8 PM", kwargs["json"]["content"])
 
     def test_notify_date_changed_missing_movie(self):
         result = asyncio.run(discord.notify_date_changed(999999))

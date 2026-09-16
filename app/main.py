@@ -305,6 +305,8 @@ class SettingsIn(BaseModel):
     DISCORD_WEBHOOK_URL: str | None = None
     DISCORD_REMINDER_WEEKDAY: int | None = Field(default=None, ge=0, le=6)
     DISCORD_REMINDER_HOUR: int | None = Field(default=None, ge=0, le=23)
+    MEETING_WEEKDAY: int | None = Field(default=None, ge=0, le=6)
+    MEETING_HOUR: int | None = Field(default=None, ge=0, le=23)
 
 
 class SetupOwnerIn(BaseModel):
