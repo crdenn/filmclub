@@ -73,7 +73,7 @@ async def _director(client: httpx.AsyncClient, tmdb_id: int) -> str | None:
     return None
 
 
-async def search(query: str, limit: int = 6) -> list[dict]:
+async def search(query: str, limit: int = 12) -> list[dict]:
     """Search-as-you-type. Results carry poster, title, year, and director.
 
     The search endpoint doesn't return crew, so we fetch directors in parallel
