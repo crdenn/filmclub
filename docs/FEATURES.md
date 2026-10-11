@@ -140,6 +140,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 
 - **Purpose:** Browse suggestions by poster/list view, coverage, suggester, year, runtime, title, date, unseen count, or seconds.
 - **Main files:** `service.backlog()`, `service._sort_backlog()`, `renderBacklog()` and related client functions.
+- **Behavior:** Within the chosen sort, films the signed-in member has not yet marked seen/not seen float to the top (client-side, `orderBacklog()`), and ineligible films sink to the bottom.
 - **Status:** Implemented.
 - **Dependencies:** Movie metadata, members, votes, prior views.
 - **Limitations:** Server `eligible_only` includes unconfirmed movies. Several filters are client-side after one API load.

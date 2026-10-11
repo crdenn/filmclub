@@ -1315,14 +1315,22 @@
       (a.coverage.eligibility === "ineligible" ? 1 : 0) - (b.coverage.eligibility === "ineligible" ? 1 : 0));
   }
 
+  // Films the signed-in member hasn't marked (first watch vs. rewatch) float to
+  // the top so they're easy to knock out; once marked they drop into the normal
+  // order. Stable sort keeps the chosen ordering within each group.
+  const needsMyMark = (m) => m.coverage.unknown_ids.includes(state.me.id);
+  function orderBacklog(items) {
+    return sinkIneligible(items).sort((a, b) => (needsMyMark(b) ? 1 : 0) - (needsMyMark(a) ? 1 : 0));
+  }
+
   function backlogGridHtml() {
     const filtered = filterBacklog(backlogItems);
     if (filtered.length) {
       if (getViewMode("backlog") === "list") {
-        return listTable(sinkIneligible(applySortDir(filtered, BACKLOG_TABLE, backlogState)),
+        return listTable(orderBacklog(applySortDir(filtered, BACKLOG_TABLE, backlogState)),
                          BACKLOG_TABLE, backlogState, "backlog");
       }
-      return `<div class="grid">${sinkIneligible(filtered).map(backlogCard).join("")}</div>`;
+      return `<div class="grid">${orderBacklog(filtered).map(backlogCard).join("")}</div>`;
     }
     return (backlogItems.length && isFilteringBacklog())
       ? `<div class="empty">No films match your filters. <button class="btn-link" id="clear-filters" type="button">Clear filters</button></div>`
