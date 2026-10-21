@@ -1038,6 +1038,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .icon-btn svg { width: 19px; height: 19px; }
 .overflow-menu { position: absolute; right: 0; top: calc(100% + .4rem); z-index: 30; width: max-content; min-width: 210px; padding: .3rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-raise); box-shadow: var(--shadow); }
 .overflow-menu[hidden] { display: none; }
+.overflow-menu.drop-up { top: auto; bottom: calc(100% + .4rem); }
 .overflow-menu-item { display: block; width: 100%; padding: .55rem .65rem; border: 0; border-radius: 7px; background: none; color: var(--text-dim); text-align: left; font-size: .86rem; }
 .overflow-menu-item:hover { color: var(--text); background: var(--bg-raise-2); }
 .overflow-menu-item.danger:hover { color: var(--bad-text); }
@@ -1494,6 +1495,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
   .admin-table thead { display: none; }
   .admin-table, .admin-table tbody, .admin-table tr, .admin-table td { display: block; width: auto; }
   .admin-table tr {
+    position: relative;
     border: 1px solid var(--line); border-radius: 10px;
     background: var(--bg-raise-2); padding: .7rem .85rem; margin-bottom: .7rem;
   }
@@ -1504,13 +1506,13 @@ select:focus-visible { outline: none; border-color: var(--accent); }
     color: var(--text-faint); font-size: .82rem;
   }
   .admin-table td.admin-member-cell {
-    font-weight: 600; padding-bottom: .5rem; margin-bottom: .35rem;
+    font-weight: 600; padding: 0 3rem .5rem 0; margin-bottom: .35rem;
     border-bottom: 1px solid var(--line);
   }
   .admin-table td.admin-type-cell { padding: .1rem 0 .3rem; }
-  .admin-table td.admin-actions-cell { margin-top: .5rem; }
-  .admin-table .admin-actions { width: 100%; }
-  .admin-table .admin-actions select { flex: 1 1 auto; min-width: 0; }
+  /* The overflow button sits in the card's top-right corner, so its
+     right-aligned menu drops down inside the card instead of off-screen. */
+  .admin-table td.admin-actions-cell { position: absolute; top: .55rem; right: .6rem; padding: 0; }
 
   /* --- modal fills more of the small screen --- */
   .modal-backdrop { padding: 3vh .7rem; }

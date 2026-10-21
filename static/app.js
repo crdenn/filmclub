@@ -2142,6 +2142,19 @@
   // an outside click or after any of its own items is clicked (an item's
   // action may itself just open a modal rather than re-rendering the page,
   // so the menu needs to close on its own rather than relying on that).
+  // Open upward when the menu would run past the bottom of the viewport or
+  // under the fixed phone nav bar.
+  function placeMenu(menu) {
+    menu.classList.remove("drop-up");
+    const nav = document.querySelector(".nav");
+    const navTop = nav && getComputedStyle(nav).position === "fixed"
+      ? nav.getBoundingClientRect().top : window.innerHeight;
+    const rect = menu.getBoundingClientRect();
+    if (rect.bottom > navTop - 8 && rect.height + 16 < menu.parentElement.getBoundingClientRect().top) {
+      menu.classList.add("drop-up");
+    }
+  }
+
   function wireRowMenus() {
     const closeAll = () => {
       app.querySelectorAll(".row-menu-items").forEach(m => { m.hidden = true; });
@@ -2155,6 +2168,7 @@
         closeAll();
         menu.hidden = !open;
         btn.setAttribute("aria-expanded", String(open));
+        if (open) placeMenu(menu);
       };
     });
     app.querySelectorAll(".row-menu-items").forEach(menu => {
