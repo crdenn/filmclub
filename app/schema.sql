@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS members (
     is_owner     INTEGER NOT NULL DEFAULT 0,  -- first setup owner; cannot be demoted
     theme        TEXT NOT NULL DEFAULT 'system', -- 'system' | 'dark' | 'light'
     discord_user_id TEXT,             -- admin-entered, for @mentions in reminder digests
+    deactivated_at TEXT,              -- set when an admin deactivates a member who left; NULL = active
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

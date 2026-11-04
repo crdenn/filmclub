@@ -66,6 +66,12 @@ PIN_COOKIE = "filmclub_pin"
 app = FastAPI(title="Film Club Tracker")
 
 
+@app.exception_handler(auth.MemberDeactivated)
+async def _member_deactivated(request: Request, exc: auth.MemberDeactivated):
+    """A deactivated member tried to sign in (local login, password reset)."""
+    return JSONResponse({"detail": auth.DEACTIVATED_MESSAGE}, status_code=403)
+
+
 class BroadcastMiddleware:
     """Pure-ASGI middleware: after any successful state-changing API request,
     notify live SSE clients that something changed.
@@ -273,6 +279,10 @@ class RatingIn(BaseModel):
 
 class AdminFlagIn(BaseModel):
     is_admin: bool
+
+
+class MemberActiveIn(BaseModel):
+    active: bool
 
 
 class AdminDisplayNameIn(BaseModel):
@@ -652,7 +662,10 @@ async def auth_callback(request: Request):
 
     resp = RedirectResponse("/")
     resp.delete_cookie(PIN_COOKIE)
-    _issue_session(resp, member["id"])
+    try:
+        _issue_session(resp, member["id"])
+    except auth.MemberDeactivated:
+        return _login_error(auth.DEACTIVATED_MESSAGE)
     return resp
 
 
@@ -1752,6 +1765,25 @@ async def api_admin_set_admin(member_id: int, body: AdminFlagIn, admin=Depends(a
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
+
+
+@app.post("/api/admin/members/{member_id}/active")
+async def api_admin_set_active(member_id: int, body: MemberActiveIn,
+                               admin=Depends(auth.require_admin)):
+    """Deactivate a member who has left the club, or reactivate them. Nothing is
+    deleted; see service.set_member_active."""
+    conn = db.connect()
+    try:
+        service.set_member_active(conn, member_id, body.active, admin["id"])
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Member not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+    log.info("Admin %s %s member %s", admin["id"],
+             "reactivated" if body.active else "deactivated", member_id)
+    return {"ok": True}
 
 
 @app.post("/api/admin/members/{member_id}/display-name")

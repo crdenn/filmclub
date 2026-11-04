@@ -265,6 +265,13 @@ def _m14_saved_films(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m15_member_deactivation(conn: sqlite3.Connection) -> None:
+    # A member who has left the club is deactivated rather than deleted, so
+    # their history (ratings, suggestions, votes) survives and reactivation is
+    # lossless. NULL = active.
+    _add_column_if_missing(conn, "members", "deactivated_at", "deactivated_at TEXT")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -281,6 +288,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (12, "collection-origin", _m12_collection_origin),
     (13, "collection-sort-order", _m13_collection_sort_order),
     (14, "saved-films", _m14_saved_films),
+    (15, "member-deactivation", _m15_member_deactivation),
 ]
 
 

@@ -89,7 +89,8 @@ scorecards, and genre/decade distributions.
   @mentioned when an admin has entered their Discord id in the Admin panel.
 
 **Admin** — member list, local-account invites and password resets,
-admin grants, movie deletion, manual Plex refresh, and diagnostics
+admin grants, member deactivation (for people who leave — history is kept,
+reminders stop), movie deletion, manual Plex refresh, and diagnostics
 (version, schema, DB health, backups, integration status).
 
 ## Stack

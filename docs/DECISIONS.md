@@ -146,6 +146,14 @@ This file records decisions visible in the current repository. “Confirmed” m
 - **Consequences:** Minimal tooling, but no version history, rollback, migration ordering record, or robust path for complex transformations.
 - **Status:** Inferred.
 
+## Deactivate departed members instead of deleting them
+
+- **Decision:** A member who leaves is soft-deactivated (`members.deactivated_at`). They stop counting toward the current club (eligibility, seconds, reminders, member-level stats) but their ratings stay part of each watched film's history.
+- **Evidence:** Migration v15, `service.set_member_active()`, `stats._load()`; owner confirmed the "split" treatment of past ratings.
+- **Likely reasoning:** Deleting a member cascades away ratings, votes, and prior views; hiding past ratings would retroactively shift film averages and divisiveness.
+- **Consequences:** Queries that count the club must use `service.all_members()` (active only); queries that attribute history must use the include-inactive variant. Fully reversible.
+- **Status:** Confirmed.
+
 ## Use Unraid as the authoritative deployment
 
 - **Decision:** Treat the Mac project as source of truth; package and orchestrate from `deploy-from-mac.sh`, then build and replace a named Docker container on Unraid with persistent data under appdata.

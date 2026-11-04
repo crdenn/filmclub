@@ -18,9 +18,21 @@ from datetime import date, timedelta
 from . import config, db, plex
 
 
-def all_members(conn: sqlite3.Connection) -> list[dict]:
-    rows = db.query_all(conn, "SELECT * FROM members ORDER BY username COLLATE NOCASE")
+def all_members(conn: sqlite3.Connection, include_inactive: bool = False) -> list[dict]:
+    """Current club members. Deactivated (former) members are left out unless
+    asked for: they no longer count toward coverage, eligibility, seconds,
+    reminders, or member-level statistics."""
+    sql = "SELECT * FROM members"
+    if not include_inactive:
+        sql += " WHERE deactivated_at IS NULL"
+    rows = db.query_all(conn, sql + " ORDER BY username COLLATE NOCASE")
     return [db.member_public(r) for r in rows]
+
+
+def _members_by_id(conn: sqlite3.Connection) -> dict[int, dict]:
+    """Every member, former ones included, for attributing history (who
+    suggested or rated a film) rather than for counting the current club."""
+    return {m["id"]: m for m in all_members(conn, include_inactive=True)}
 
 
 def _coverage(members: list[dict], prior_rows: list[sqlite3.Row]) -> dict:
@@ -88,7 +100,7 @@ def backlog(conn: sqlite3.Connection, member_id: int, sort: str = "seconds",
         prior_by_movie.setdefault(r["movie_id"], []).append(r)
 
     votes_by_movie = _votes_by_movie(conn)
-    suggesters = {m["id"]: m for m in members}
+    suggesters = _members_by_id(conn)
 
     out = []
     for mv in movies:
@@ -111,10 +123,18 @@ def backlog(conn: sqlite3.Connection, member_id: int, sort: str = "seconds",
     return out
 
 
+_ACTIVE_VOTES_SQL = (
+    "SELECT v.movie_id, v.member_id FROM votes v "
+    "JOIN members m ON m.id = v.member_id WHERE m.deactivated_at IS NULL"
+)
+
+
 def _votes_by_movie(conn: sqlite3.Connection) -> dict[int, set]:
-    """Map of movie_id -> set of member ids who have seconded it."""
+    """Map of movie_id -> set of current member ids who have seconded it.
+    A former member's seconds are kept (reactivation restores them) but don't
+    count."""
     by_movie: dict[int, set] = {}
-    for r in db.query_all(conn, "SELECT movie_id, member_id FROM votes"):
+    for r in db.query_all(conn, _ACTIVE_VOTES_SQL):
         by_movie.setdefault(r["movie_id"], set()).add(r["member_id"])
     return by_movie
 
@@ -160,7 +180,7 @@ def this_week(conn: sqlite3.Connection, member_id: int | None = None) -> list[di
                 conn, "SELECT * FROM ratings WHERE member_id = ?", (member_id,))
         }
 
-    suggesters = {m["id"]: m for m in members}
+    suggesters = _members_by_id(conn)
     out = []
     for mv in movies:
         cov = _coverage(members, prior_by_movie.get(mv["id"], []))
@@ -189,21 +209,25 @@ def watched(conn: sqlite3.Connection, member_id: int) -> list[dict]:
     `member_id` is the requesting member; each item carries `my_rated` so the
     page can flag films this member still needs to rate.
     """
-    members = all_members(conn)
-    total_members = len(members)
+    suggesters = _members_by_id(conn)
+    active_ids = {mid for mid, m in suggesters.items() if m["active"]}
     movies = [db.movie_base(r) for r in db.query_all(
         conn, "SELECT * FROM movies WHERE status = 'watched' "
               "ORDER BY watched_at DESC, id DESC")]
 
+    # A former member's ratings stay part of a watched film's history, so they
+    # count toward its average and its "N of M rated" denominator alike.
     ratings = db.query_all(conn, "SELECT movie_id, member_id, score FROM ratings")
     r_by_movie: dict[int, list[float]] = {}
+    former_raters: dict[int, int] = {}
     my_score: dict[int, float] = {}
     for r in ratings:
         r_by_movie.setdefault(r["movie_id"], []).append(r["score"])
+        if r["member_id"] not in active_ids:
+            former_raters[r["movie_id"]] = former_raters.get(r["movie_id"], 0) + 1
         if r["member_id"] == member_id:
             my_score[r["movie_id"]] = r["score"]
 
-    suggesters = {m["id"]: m for m in members}
     out = []
     for mv in movies:
         scores = r_by_movie.get(mv["id"], [])
@@ -212,7 +236,7 @@ def watched(conn: sqlite3.Connection, member_id: int) -> list[dict]:
             "suggester": suggesters.get(mv["suggested_by"]),
             "avg_rating": round(sum(scores) / len(scores), 2) if scores else None,
             "rating_count": len(scores),
-            "total_members": total_members,
+            "total_members": len(active_ids) + former_raters.get(mv["id"], 0),
             "my_rated": mv["id"] in my_score,
             "my_score": my_score.get(mv["id"]),
             "library": _in_library(mv),
@@ -306,13 +330,20 @@ def movie_detail(conn: sqlite3.Connection, movie_id: int, member_id: int) -> dic
     if not row:
         return None
     mv = db.movie_base(row)
-    members = all_members(conn)
-    members_by_id = {m["id"]: m for m in members}
+    members_by_id = _members_by_id(conn)
+    members = [m for m in members_by_id.values() if m["active"]]
+    if mv["status"] == "watched":
+        # History stays: a former member who rated this film is still part of
+        # who watched it.
+        raters = {r["member_id"] for r in db.query_all(
+            conn, "SELECT member_id FROM ratings WHERE movie_id = ?", (movie_id,))}
+        members += [m for m in members_by_id.values()
+                    if not m["active"] and m["id"] in raters]
+    members.sort(key=lambda m: m["username"].lower())
 
     # Seconding is only meaningful on backlog films; a suggester can't second
-    # their own. Voters is a set of member ids who've +1'd it.
-    voters = {r["member_id"] for r in db.query_all(
-        conn, "SELECT member_id FROM votes WHERE movie_id = ?", (movie_id,))}
+    # their own. Voters is a set of current member ids who've +1'd it.
+    voters = _votes_by_movie(conn).get(movie_id, set())
 
     # Coverage source depends on status.
     #   * Suggested film: the live, editable prior_views.
@@ -465,10 +496,7 @@ def set_vote(conn: sqlite3.Connection, movie_id: int, member_id: int, voted: boo
     else:
         db.execute(conn, "DELETE FROM votes WHERE movie_id = ? AND member_id = ?",
                    (movie_id, member_id))
-    rows = db.query_all(
-        conn, "SELECT member_id FROM votes WHERE movie_id = ? ORDER BY member_id",
-        (movie_id,))
-    return [r["member_id"] for r in rows]
+    return sorted(_votes_by_movie(conn).get(movie_id, set()))
 
 
 def todo_counts(conn: sqlite3.Connection, member_id: int) -> dict:
@@ -790,6 +818,8 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
             "is_owner": owner,
             "identity_providers": providers,
             "created_at": m.get("created_at"),
+            "active": not m.get("deactivated_at"),
+            "deactivated_at": m.get("deactivated_at"),
             "counts": {"suggested": suggested, "suggested_watched": watched_sug, "ratings": ratings},
         })
     return out
@@ -805,6 +835,35 @@ def set_member_admin(conn: sqlite3.Connection, member_id: int, value: bool) -> N
         raise ValueError("Can't remove admin from the owner account")
     db.execute(conn, "UPDATE members SET is_admin = ? WHERE id = ?",
                (1 if value else 0, member_id))
+
+
+def set_member_active(conn: sqlite3.Connection, member_id: int, active: bool,
+                      acting_member_id: int) -> None:
+    """Deactivate a member who has left the club, or reactivate them.
+
+    Nothing is deleted: their ratings, suggestions, seconds and prior views are
+    kept, so reactivating restores everything. Deactivating also revokes their
+    sessions so they're signed out immediately. Owners and the acting admin
+    themselves can't be deactivated.
+    """
+    row = db.query_one(
+        conn, "SELECT plex_id, is_owner, deactivated_at FROM members WHERE id = ?",
+        (member_id,))
+    if not row:
+        raise LookupError("Member not found")
+    if active:
+        db.execute(conn, "UPDATE members SET deactivated_at = NULL WHERE id = ?", (member_id,))
+        return
+    if member_id == acting_member_id:
+        raise ValueError("You can't deactivate yourself")
+    if row["is_owner"] or row["plex_id"] in config.ADMIN_PLEX_IDS:
+        raise ValueError("The owner account can't be deactivated")
+    if row["deactivated_at"]:
+        return
+    conn.execute("UPDATE members SET deactivated_at = datetime('now') WHERE id = ?",
+                 (member_id,))
+    conn.execute("DELETE FROM sessions WHERE member_id = ?", (member_id,))
+    conn.commit()
 
 
 def delete_movie(conn: sqlite3.Connection, movie_id: int) -> bool:

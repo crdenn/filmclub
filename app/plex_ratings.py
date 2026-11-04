@@ -64,19 +64,22 @@ async def push_rating(movie: sqlite3.Row | dict, member_id: int, score: float) -
 
 
 def _member_for_webhook(conn: sqlite3.Connection, account: dict) -> sqlite3.Row | None:
+    """The current member a Plex webhook account refers to. A deactivated
+    (former) member never matches, so their Plex activity is ignored."""
     account_id = account.get("id")
     if account_id is not None:
         row = db.query_one(
             conn, "SELECT * FROM members WHERE plex_account_id = ?", (str(account_id),))
         if row:
-            return row
+            return None if row["deactivated_at"] else row
     title = (account.get("title") or "").strip()
     if not title:
         return None
     rows = db.query_all(
         conn,
         """SELECT * FROM members WHERE username = ? COLLATE NOCASE
-           AND plex_id NOT LIKE 'dev:%' AND plex_id NOT LIKE 'seed:%'""",
+           AND plex_id NOT LIKE 'dev:%' AND plex_id NOT LIKE 'seed:%'
+           AND deactivated_at IS NULL""",
         (title,),
     )
     return rows[0] if len(rows) == 1 else None

@@ -23,6 +23,15 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Limitations:** Members are authorized through server access rather than an explicit club roster. Plex thumbnails are stored but intentionally not displayed.
 - **Follow-up:** Clarify whether an explicit membership approval layer will ever be needed for public distribution.
 
+### Deactivate a former member
+
+- **Purpose:** Retire someone who has left the club without losing the club's history, and stop reminders (including the Discord digest) nagging them.
+- **Main files:** `service.set_member_active()`, `service.all_members()`, `stats._load()`, `auth.create_session()`/`resolve_session()`, `plex_ratings._member_for_webhook()`, `POST /api/admin/members/{id}/active`, Admin Users table (`static/app.js`), migration v15 (`members.deactivated_at`).
+- **Status:** Implemented.
+- **Dependencies:** Admin status. Owners and the acting admin cannot be deactivated.
+- **Behavior:** Nothing is deleted, and reactivation restores everything. A deactivated member is signed out and refused at every sign-in path. They leave the current club: coverage/eligibility denominators, seconds counts, reminder badges, the Discord digest, the members list, and member-level statistics (rater profiles, agreement matrix, rewatch bias, suggester scorecard, suggestions per member). Their history stays: backlog films they suggested remain pickable and credited to them, and their ratings remain on watched films — counting toward each film's average, the "N of M rated" denominator, film-level statistics, and the group mean. Former members are labelled "former member" wherever they're attributed and listed under "Former members" in Admin. Inbound Plex rating webhooks for them are ignored.
+- **Limitations:** If a former member was the only confirmed-unseen answer on a backlog film, that film drops back to unconfirmed until someone else answers.
+
 ### Development bypass
 
 - **Purpose:** Allow local work without Plex OAuth.

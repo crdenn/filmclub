@@ -81,6 +81,9 @@ def member_public(row: sqlite3.Row | dict) -> dict | None:
         "color": d["color"],
         "is_admin": bool(d.get("is_admin")),
         "is_owner": bool(d.get("is_owner")),
+        # False for a member who has left the club (admin-deactivated). Their
+        # history still renders, labelled as a former member.
+        "active": not d.get("deactivated_at"),
     }
 
 

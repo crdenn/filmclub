@@ -24,11 +24,27 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+class MemberDeactivated(Exception):
+    """Sign-in refused: an admin has deactivated this member."""
+
+
+DEACTIVATED_MESSAGE = ("This account has been deactivated. Ask a Film Club admin "
+                       "if you'd like it restored.")
+
+
 def create_session(member_id: int) -> str:
-    """Create a server-side session and return its opaque cookie token."""
+    """Create a server-side session and return its opaque cookie token.
+
+    Raises MemberDeactivated for a deactivated member — every sign-in path
+    funnels through here, so this is the one place the rule is enforced.
+    """
     token = secrets.token_urlsafe(32)
     conn = db.connect()
     try:
+        row = db.query_one(conn, "SELECT deactivated_at FROM members WHERE id = ?",
+                           (member_id,))
+        if row and row["deactivated_at"]:
+            raise MemberDeactivated()
         conn.execute(
             "INSERT INTO sessions (token_hash, member_id, expires_at) "
             "VALUES (?, ?, datetime('now', ?))",
@@ -53,7 +69,8 @@ def resolve_session(token: str | None) -> sqlite3.Row | None:
             conn,
             "SELECT s.id AS session_id, m.* FROM sessions s "
             "JOIN members m ON m.id = s.member_id "
-            "WHERE s.token_hash = ? AND s.expires_at > datetime('now')",
+            "WHERE s.token_hash = ? AND s.expires_at > datetime('now') "
+            "AND m.deactivated_at IS NULL",
             (_hash_token(token),),
         )
         if row is not None:

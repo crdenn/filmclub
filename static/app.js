@@ -927,6 +927,7 @@
     const s = p.stats;
     const isMe = m.id === state.me.id;
     const meta = [
+      m.active === false ? "Former member" : "",
       p.created_at ? `Member since ${fmtDate(p.created_at)}` : "",
       m.is_admin ? "Admin" : "",
     ].filter(Boolean).join("  ·  ");
@@ -961,17 +962,22 @@
     paintView(null, body, preserve);
   }
 
+  // Marks a deactivated member wherever their history is still attributed.
+  function formerTag(m) {
+    return m && m.active === false ? ` <span class="former-tag">former member</span>` : "";
+  }
+
   // A clickable member chip (avatar + name) that links to the public profile.
   function memberLink(m, extra = "") {
     if (!m) return `<span class="member-cell">${avatar(null, "sm")}—</span>`;
-    return `<a class="member-cell member-link" href="#/member/${m.id}">${avatar(m, "sm")}${esc(m.username)}${extra}</a>`;
+    return `<a class="member-cell member-link" href="#/member/${m.id}">${avatar(m, "sm")}${esc(m.username)}${formerTag(m)}${extra}</a>`;
   }
 
   // Compact suggester treatment used on movie cards and the This week hero.
   function suggesterLink(m, prefix = "") {
     const label = prefix ? `<span class="suggester-prefix">${esc(prefix)}</span>` : "";
     if (!m) return `${label}<span class="suggester-person">${avatar(null, "sm")}<span class="who">—</span></span>`;
-    return `${label}<span class="suggester-person">${avatar(m, "sm")}<a class="member-link who" href="#/member/${m.id}">${esc(m.username)}</a></span>`;
+    return `${label}<span class="suggester-person">${avatar(m, "sm")}<a class="member-link who" href="#/member/${m.id}">${esc(m.username)}</a>${formerTag(m)}</span>`;
   }
 
   // ---------- shared: seen/not-seen segmented control ----------
@@ -2811,12 +2817,15 @@
       try { data = await api("/api/admin/members"); }
       catch (error) { adminError(error, preserve); return; }
       const members = data.members;
-      const typeBadge = (m) => m.is_owner ? `<span class="elig-tag elig-eligible">Owner</span>`
+      const typeBadge = (m) => !m.active ? `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Former</span>`
+        : m.is_owner ? `<span class="elig-tag elig-eligible">Owner</span>`
         : m.is_admin ? `<span class="elig-tag" style="color:var(--accent);background:var(--accent-soft)">Admin</span>`
         : `<span class="elig-tag" style="color:var(--text-dim);background:var(--bg-raise-2)">Member</span>`;
       const rowActions = (member) => {
         const items = [];
-        if (!member.is_owner) {
+        if (!member.active) {
+          items.push(`<button type="button" class="overflow-menu-item active-toggle" data-id="${member.id}" data-val="1">Reactivate</button>`);
+        } else if (!member.is_owner) {
           items.push(member.is_admin
             ? `<button type="button" class="overflow-menu-item admin-toggle" data-id="${member.id}" data-val="0">Remove admin</button>`
             : `<button type="button" class="overflow-menu-item admin-toggle" data-id="${member.id}" data-val="1">Make admin</button>`);
@@ -2826,6 +2835,9 @@
         }
         items.push(`<button type="button" class="overflow-menu-item display-name-btn" data-id="${member.id}">${member.display_name ? "Edit display name" : "Set display name"}</button>`);
         items.push(`<button type="button" class="overflow-menu-item discord-id-btn" data-id="${member.id}">${member.discord_user_id ? "Edit Discord ID" : "Set Discord ID"}</button>`);
+        if (member.active && !member.is_owner && member.id !== data.me.id) {
+          items.push(`<button type="button" class="overflow-menu-item active-toggle" data-id="${member.id}" data-val="0">Deactivate…</button>`);
+        }
         return `<div class="admin-actions"><div class="overflow-anchor row-menu">
           <button type="button" class="btn icon-btn row-menu-toggle" data-id="${member.id}" aria-haspopup="true" aria-expanded="false" aria-label="More actions">${ICON_MORE}</button>
           <div class="overflow-menu row-menu-items" hidden>${items.join("")}</div>
@@ -2848,11 +2860,17 @@
           <td class="num" data-label="Ratings">${member.counts.ratings}</td>
           <td class="admin-actions-cell">${rowActions(member)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty admin-empty">${emptyMessage}</div>`;
+      const current = members.filter(member => member.active);
+      const former = members.filter(member => !member.active);
       const content = `<section class="admin-card"><h3>Accounts</h3>
-          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(members, "No one has signed in yet.")}</section>`;
+          <div class="sub">Local and Plex identities resolve to these records. Grant admin to give someone access to this area.</div>${table(current, "No one has signed in yet.")}</section>
+        ${former.length ? `<section class="admin-card"><h3>Former members</h3>
+          <div class="sub">Deactivated members can't sign in and don't count toward the club. Their past ratings stay on the films they watched with you; reactivating restores everything.</div>${table(former, "")}</section>` : ""}`;
       paintView("admin", adminLayout("users", content), preserve);
       app.querySelectorAll(".admin-toggle").forEach(button => button.onclick = () =>
         setAdmin(parseInt(button.dataset.id, 10), button.dataset.val === "1"));
+      app.querySelectorAll(".active-toggle").forEach(button => button.onclick = () =>
+        setActive(members.find(member => member.id === parseInt(button.dataset.id, 10)), button.dataset.val === "1"));
       app.querySelectorAll(".password-reset-btn").forEach(button => button.onclick = () =>
         createPasswordReset(parseInt(button.dataset.id, 10), members.find(member => member.id === parseInt(button.dataset.id, 10))?.username));
       app.querySelectorAll(".display-name-btn").forEach(button => button.onclick = () =>
@@ -3146,6 +3164,20 @@
     try {
       await api(`/api/admin/members/${id}/admin`, { method: "POST", body: { is_admin: value } });
       toast(value ? "Admin granted" : "Admin removed");
+      renderAdmin("users", true);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function setActive(member, value) {
+    if (!member) return;
+    if (!value && !confirm(`Deactivate ${member.username}?\n\n`
+        + "They'll be signed out and can't sign back in. They stop counting toward "
+        + "eligibility, seconds, reminders (including Discord), and member stats.\n\n"
+        + "Nothing is deleted: films they suggested stay on the backlog, and their "
+        + "ratings stay on films they already watched with the club. You can reactivate them any time.")) return;
+    try {
+      await api(`/api/admin/members/${member.id}/active`, { method: "POST", body: { active: value } });
+      toast(value ? `${member.username} reactivated` : `${member.username} deactivated`);
       renderAdmin("users", true);
     } catch (e) { toast(e.message, true); }
   }

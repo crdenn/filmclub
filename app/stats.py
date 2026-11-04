@@ -59,8 +59,13 @@ def _round(v: float | None, ndigits: int = 2) -> float | None:
 # --- data loading ----------------------------------------------------------
 
 def _load(conn: sqlite3.Connection):
+    # Member-level stats (rater profiles, agreement, suggester scorecard...)
+    # cover current members only. Ratings are deliberately NOT filtered: a
+    # former member's scores remain part of each watched film's history, so
+    # film-level figures and the group mean don't shift when someone leaves.
     members = [db.member_public(r) for r in db.query_all(
-        conn, "SELECT * FROM members ORDER BY username COLLATE NOCASE")]
+        conn, "SELECT * FROM members WHERE deactivated_at IS NULL "
+              "ORDER BY username COLLATE NOCASE")]
     movies = [db.movie_base(r) for r in db.query_all(
         conn, "SELECT * FROM movies WHERE status = 'watched'")]
     # Scheduled-film scores are private until archive. Filtering here prevents

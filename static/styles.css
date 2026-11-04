@@ -449,6 +449,7 @@ button { font: inherit; cursor: pointer; }
 .member-link { text-decoration: none; color: inherit; cursor: pointer; }
 .member-link:hover { text-decoration: none; color: var(--accent-text); }
 .member-link.plain { color: inherit; }
+.former-tag { font-size: .72em; font-weight: 500; color: var(--text-dim); white-space: nowrap; }
 .member-link.plain:hover { color: var(--accent-text); }
 .member-link.inline { display: inline-flex; align-items: center; gap: .4rem; vertical-align: middle; }
 .member-link.inline .who { min-width: 0; }
