@@ -248,38 +248,57 @@ def watched(conn: sqlite3.Connection, member_id: int) -> list[dict]:
 
 def member_profile(conn: sqlite3.Connection, member_id: int,
                    viewer_id: int) -> dict | None:
-    """A member's public film-club activity: their suggestions, their ratings,
-    and a few aggregate stats. Scheduled ratings are included only when a member
-    views their own profile. Returns None if the member doesn't exist."""
+    """A member's public film-club activity: the films they picked, where they
+    stand in the pick rotation, their suggestions, and their ratings. Scheduled
+    ratings are included only when a member views their own profile. Returns
+    None if the member doesn't exist.
+
+    Deliberately carries no group score for anything they picked or suggested:
+    the profile is a record of someone's picks, not a ranking of how they
+    landed."""
     row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member_id,))
     if not row:
         return None
+    members_by_id = _members_by_id(conn)
 
-    # Films this member suggested (any status). Group rating summaries remain
-    # private until the film is watched.
+    def film(d: dict) -> dict:
+        return {"id": d["id"], "title": d["title"], "year": d["year"],
+                "poster_url": d["poster_url"], "status": d["status"],
+                "language": d.get("language"), "library": _in_library(d)}
+
+    # Films this member picked for a week, newest first. A film sent back to
+    # the backlog keeps its picked_by but isn't a pick, matching pick_order().
+    pick_rows = db.query_all(
+        conn,
+        """SELECT * FROM movies
+           WHERE picked_by = ? AND status IN ('scheduled', 'watched')
+           ORDER BY CASE status WHEN 'scheduled' THEN 0 ELSE 1 END,
+                    COALESCE(watched_at, picked_at) DESC, id DESC""",
+        (member_id,))
+    picks = []
+    for r in pick_rows:
+        d = db.movie_base(r)
+        sid = d.get("suggested_by")
+        picks.append({
+            **film(d),
+            "date": (d.get("watched_at") or d.get("picked_at") or "")[:10] or None,
+            "director": d.get("director"),
+            "genres": d["genres"],
+            "suggester": members_by_id.get(sid) if sid and sid != member_id else None,
+        })
+
+    # Films this member suggested (any status), with whoever picked them.
     sug_rows = db.query_all(
         conn,
-        """SELECT m.*,
-                  CASE WHEN m.status = 'watched' THEN
-                    (SELECT AVG(score) FROM ratings r WHERE r.movie_id = m.id)
-                  END AS avg_rating,
-                  CASE WHEN m.status = 'watched' THEN
-                    (SELECT COUNT(*) FROM ratings r WHERE r.movie_id = m.id)
-                  ELSE 0 END AS rating_count
-           FROM movies m WHERE m.suggested_by = ?
-           ORDER BY CASE m.status WHEN 'scheduled' THEN 0 WHEN 'suggested' THEN 1 ELSE 2 END,
-                    COALESCE(m.watched_at, m.suggested_at) DESC""",
+        """SELECT * FROM movies WHERE suggested_by = ?
+           ORDER BY CASE status WHEN 'scheduled' THEN 0 WHEN 'suggested' THEN 1 ELSE 2 END,
+                    COALESCE(watched_at, suggested_at) DESC""",
         (member_id,))
     suggestions = []
     for r in sug_rows:
         d = dict(r)
-        suggestions.append({
-            "id": d["id"], "title": d["title"], "year": d["year"],
-            "poster_url": d["poster_url"], "status": d["status"],
-            "language": d.get("language"), "library": _in_library(d),
-            "avg_rating": round(d["avg_rating"], 2) if d["avg_rating"] is not None else None,
-            "rating_count": d["rating_count"] or 0,
-        })
+        pid = d.get("picked_by") if d["status"] != "suggested" else None
+        suggestions.append({**film(d), "picker": members_by_id.get(pid) if pid else None})
 
     # Ratings this member has given.
     rat_rows = db.query_all(
@@ -300,12 +319,10 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
         "note": r["note"], "created_at": r["created_at"],
     } for r in rat_rows]
 
-    # Mean of every rating given to this member's picks (how their taste lands).
-    picks_scores = [x["score"] for x in db.query_all(
-        conn,
-        """SELECT r.score FROM ratings r JOIN movies m ON m.id = r.movie_id
-           WHERE m.suggested_by = ? AND m.status = 'watched'""",
-        (member_id,))]
+    # Place in the pick rotation: 1 = picks next. None for a former member.
+    order = pick_order(conn)
+    position = next((i + 1 for i, e in enumerate(order) if e["member"]["id"] == member_id), None)
+    turn = {"position": position, "of": len(order)} if position else None
 
     def mean(xs):
         return round(sum(xs) / len(xs), 2) if xs else None
@@ -314,17 +331,16 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
         "suggested": len(suggestions),
         "suggested_watched": sum(1 for s in suggestions if s["status"] == "watched"),
         "suggested_backlog": sum(1 for s in suggestions if s["status"] == "suggested"),
-        "picked": db.query_one(
-            conn, "SELECT COUNT(*) c FROM movies WHERE picked_by = ? "
-                  "AND status IN ('scheduled', 'watched')", (member_id,))["c"],
+        "picked": len(picks),
         "ratings_count": len(ratings),
         "mean_score_given": mean([r["score"] for r in ratings]),
-        "picks_mean_received": mean(picks_scores),
     }
     return {
         "member": db.member_public(row),
         "created_at": dict(row).get("created_at"),
         "stats": stats,
+        "turn": turn,
+        "picks": picks,
         "suggestions": suggestions,
         "ratings": ratings,
     }

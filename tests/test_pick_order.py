@@ -141,6 +141,22 @@ class PickOrderTests(unittest.TestCase):
         self.assertEqual(service.movie_detail(self.conn, film, self.bob)["picker"]["id"], self.alice)
         self.assertEqual(service.member_profile(self.conn, self.alice, self.alice)["stats"]["picked"], 1)
 
+    def test_profile_lists_picks_and_turn_without_scores(self):
+        mine = self._watched("Alice Picked", self.bob, self.alice, "2026-03-01")
+        self._watched("Bob Picked", self.alice, self.bob, "2026-03-08")
+        service.upsert_rating(self.conn, mine, self.bob, 2.0, False, None)
+        prof = service.member_profile(self.conn, self.alice, self.bob)
+        self.assertEqual([p["id"] for p in prof["picks"]], [mine])
+        self.assertEqual(prof["picks"][0]["suggester"]["id"], self.bob)
+        self.assertEqual(prof["picks"][0]["date"], "2026-03-01")
+        # Carl and Dana have never picked, so they go first; Alice picked first.
+        self.assertEqual(prof["turn"], {"position": 3, "of": 4})
+        suggested = next(s for s in prof["suggestions"] if s["title"] == "Bob Picked")
+        self.assertEqual(suggested["picker"]["id"], self.bob)
+        # No group score on anything they picked or suggested.
+        self.assertNotIn("2.0", repr(prof["picks"]) + repr(prof["suggestions"]))
+        self.assertNotIn("picks_mean_received", prof["stats"])
+
 
 if __name__ == "__main__":
     unittest.main()

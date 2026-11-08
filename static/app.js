@@ -795,7 +795,7 @@
       : m.plex_available ? "Plex account not linked"
       : "Plex is not configured";
     const recentRatings = p.ratings.slice(0, 4);
-    const recentSuggestions = p.suggestions.slice(0, 4);
+    const recentPicks = p.picks.slice(0, 4);
     const avg = s.mean_score_given != null ? s.mean_score_given.toFixed(2) : "—";
     const body = `
       <header class="profile-hero">
@@ -808,8 +808,8 @@
         <a class="btn profile-public" href="#/member/${m.id}">View public profile</a>
       </header>
       <div class="profile-kpis" aria-label="Your Film Club activity">
+        <div><strong>${s.picked}</strong><span>Picks</span></div>
         <div><strong>${s.suggested}</strong><span>Suggested</span></div>
-        <div><strong>${s.suggested_watched}</strong><span>Picked & watched</span></div>
         <div><strong>${s.ratings_count}</strong><span>Ratings given</span></div>
         <div><strong>${avg}</strong><span>Average score</span></div>
       </div>
@@ -838,11 +838,11 @@
           </div>
         </section>
         <section class="profile-section">
-          <div class="section-heading"><div><h2>Recent activity</h2><p>Your latest ratings and suggestions.</p></div></div>
+          <div class="section-heading"><div><h2>Recent activity</h2><p>Your latest picks and ratings.</p></div></div>
           <div class="profile-activity">
+            ${recentPicks.length ? `<div><h3>Picks</h3>${recentPicks.map(pfPickRow).join("")}</div>` : ""}
             ${recentRatings.length ? `<div><h3>Ratings</h3>${recentRatings.map(pfRatingRow).join("")}</div>` : ""}
-            ${recentSuggestions.length ? `<div><h3>Suggestions</h3>${recentSuggestions.map(pfSuggestionRow).join("")}</div>` : ""}
-            ${!recentRatings.length && !recentSuggestions.length ? `<div class="empty">Your activity will appear here.</div>` : ""}
+            ${!recentRatings.length && !recentPicks.length ? `<div class="empty">Your activity will appear here.</div>` : ""}
           </div>
         </section>
       </div>`;
@@ -890,13 +890,22 @@
     return `<span class="pf-poster">${mv.poster_url ? `<img src="${esc(mv.poster_url)}" alt="" loading="lazy">` : ""}</span>`;
   }
 
-  function pfSuggestionRow(mv) {
-    const rating = mv.avg_rating != null ? `<span class="pf-rate">★ ${mv.avg_rating.toFixed(1)}</span>` : "";
+  function pfSuggestionRow(mv, ownerId) {
+    const picker = mv.picker && mv.picker.id !== ownerId ? `<span>picked by ${esc(mv.picker.username)}</span>` : "";
     return `<a class="pf-film" href="#/movie/${mv.id}">${pfPoster(mv)}
       <span class="pf-film-body">
         <span class="pf-film-title">${esc(mv.title)} <span class="yr">${mv.year || ""}</span></span>
-        <span class="pf-film-sub">${PF_STATUS[mv.status] || ""}${rating}</span>
+        <span class="pf-film-sub">${PF_STATUS[mv.status] || ""}${picker}</span>
         ${profileFilmMetadata(mv)}
+      </span></a>`;
+  }
+
+  function pfPickRow(mv) {
+    const when = mv.status === "scheduled" ? PF_STATUS.scheduled : mv.date ? `<span>${fmtDate(mv.date)}</span>` : "";
+    return `<a class="pf-film" href="#/movie/${mv.id}">${pfPoster(mv)}
+      <span class="pf-film-body">
+        <span class="pf-film-title">${esc(mv.title)} <span class="yr">${mv.year || ""}</span></span>
+        <span class="pf-film-sub">${when}</span>
       </span></a>`;
   }
 
@@ -917,6 +926,50 @@
       </span></a>`;
   }
 
+  function ordinal(n) {
+    const s = ["th", "st", "nd", "rd"], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  // Where a member stands in the pick rotation, in words. Empty for a former member.
+  function pfTurnLine(p, isMe) {
+    const current = p.picks.find(mv => mv.status === "scheduled");
+    if (current) return `${isMe ? "You picked" : "Picked"} this week's film, <a href="#/movie/${current.id}">${esc(current.title)}</a>`;
+    if (!p.turn) return "";
+    if (p.turn.position === 1) return isMe ? "You pick next" : "Picks next";
+    return `${ordinal(p.turn.position)} in line to pick`;
+  }
+
+  // A descriptive (never evaluative) one-liner about the range of someone's picks.
+  function pfPicksSummary(picks) {
+    if (picks.length < 2) return "";
+    const years = picks.map(mv => mv.year).filter(Boolean);
+    const langs = new Set(picks.map(mv => mv.language).filter(Boolean));
+    const genreCount = {};
+    picks.forEach(mv => (mv.genres || []).forEach(g => { genreCount[g] = (genreCount[g] || 0) + 1; }));
+    const [topGenre, topN] = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0] || [];
+    const lo = Math.min(...years), hi = Math.max(...years);
+    return [
+      years.length >= 2 && lo !== hi ? `From ${lo} to ${hi}` : "",
+      langs.size > 1 ? `${langs.size} languages` : "",
+      picks.length >= 3 && topN >= 2 ? `often ${esc(topGenre.toLowerCase())}` : "",
+    ].filter(Boolean).join(" · ");
+  }
+
+  function pfPickTile(mv) {
+    const when = mv.status === "scheduled"
+      ? `<span class="pf-status sched">This week</span>`
+      : mv.date ? `<span>${fmtDate(mv.date)}</span>` : "";
+    const from = mv.suggester ? `<span class="pf-pick-from">suggested by ${esc(mv.suggester.username)}</span>` : "";
+    return `<a class="pf-pick" href="#/movie/${mv.id}">
+      <span class="poster-wrap">${posterEl(mv)}</span>
+      <span class="pf-film-title">${esc(mv.title)} <span class="yr">${mv.year || ""}</span></span>
+      <span class="pf-film-sub">${when}</span>${from}
+    </a>`;
+  }
+
+  const PF_RECENT_RATINGS = 6;
+
   async function renderMemberProfile(id, preserve = false) {
     if (!preserve) paintView(null, `<div class="empty">Loading…</div>`);
     let p;
@@ -931,15 +984,17 @@
       p.created_at ? `Member since ${fmtDate(p.created_at)}` : "",
       m.is_admin ? "Admin" : "",
     ].filter(Boolean).join("  ·  ");
-    const fx = (v) => v != null ? v.toFixed(2) : "—";
+    const turn = pfTurnLine(p, isMe);
     const kpis = [
-      ["Suggested", s.suggested],
-      ["Suggestions watched", s.suggested_watched],
-      ["Picked", s.picked],
+      ["Picks", s.picked],
+      ["Suggestions", s.suggested],
       ["Ratings given", s.ratings_count],
-      ["Avg score they give", fx(s.mean_score_given)],
-      ["Their suggestions' avg", fx(s.picks_mean_received)],
     ];
+    const backlog = p.suggestions.filter(mv => mv.status === "suggested");
+    const pickedByOthers = p.suggestions.filter(mv => mv.picker && mv.picker.id !== m.id);
+    const summary = pfPicksSummary(p.picks);
+    const allRatings = state.pfAllRatings === m.id;
+    const ratings = allRatings ? p.ratings : p.ratings.slice(0, PF_RECENT_RATINGS);
 
     const body = `
       <div class="detail-topbar">
@@ -947,20 +1002,32 @@
         ${isMe ? `<a class="btn" href="#/profile">Edit profile</a>` : ""}
       </div>
       <div class="pf-head">${avatar(m, "xl")}
-        <div><h1>${esc(m.username)}</h1>${meta ? `<div class="pf-sub">${meta}</div>` : ""}</div>
+        <div><h1>${esc(m.username)}</h1>${meta ? `<div class="pf-sub">${meta}</div>` : ""}
+          ${turn ? `<div class="pf-turn">${turn}</div>` : ""}</div>
       </div>
       <div class="stat-card wide" style="margin-bottom:1.3rem"><div class="kpi-row">
         ${kpis.map(k => `<div class="kpi"><div class="n">${k[1]}</div><div class="l">${k[0]}</div></div>`).join("")}
       </div></div>
+      <div class="stat-card wide pf-picks-card">
+        <h3>${isMe ? "Your picks" : "Picks"} <span class="pf-h-count">${p.picks.length}</span></h3>
+        ${summary ? `<div class="sub">${summary}</div>` : ""}
+        ${p.picks.length ? `<div class="pf-picks">${p.picks.map(pfPickTile).join("")}</div>`
+          : `<div class="empty" style="padding:1.5rem">${isMe ? "You haven't" : "Hasn't"} picked a film yet.</div>`}
+      </div>
       <div class="stats-grid">
-        <div class="stat-card"><h3>Suggestions <span class="pf-h-count">${p.suggestions.length}</span></h3>
-          ${p.suggestions.length ? p.suggestions.map(pfSuggestionRow).join("") : `<div class="empty" style="padding:1.5rem">No suggestions yet.</div>`}
+        <div class="stat-card"><h3>${allRatings ? "Ratings" : "Recent ratings"} <span class="pf-h-count">${p.ratings.length}</span></h3>
+          ${ratings.length ? ratings.map(pfRatingRow).join("") : `<div class="empty" style="padding:1.5rem">No ratings yet.</div>`}
+          ${p.ratings.length > PF_RECENT_RATINGS ? `<button class="btn pf-more" id="pf-ratings-toggle">${allRatings ? "Show recent only" : `Show all ${p.ratings.length}`}</button>` : ""}
         </div>
-        <div class="stat-card"><h3>Ratings <span class="pf-h-count">${p.ratings.length}</span></h3>
-          ${p.ratings.length ? p.ratings.map(pfRatingRow).join("") : `<div class="empty" style="padding:1.5rem">No ratings yet.</div>`}
+        <div class="stat-card"><h3>In the backlog <span class="pf-h-count">${backlog.length}</span></h3>
+          ${backlog.length ? backlog.map(mv => pfSuggestionRow(mv, m.id)).join("") : `<div class="empty" style="padding:1.5rem">Nothing waiting in the backlog.</div>`}
+          ${pickedByOthers.length ? `<h4 class="pf-subhead">Suggested, picked by others</h4>
+            ${pickedByOthers.map(mv => pfSuggestionRow(mv, m.id)).join("")}` : ""}
         </div>
       </div>`;
     paintView(null, body, preserve);
+    const toggle = $("#pf-ratings-toggle");
+    if (toggle) toggle.onclick = () => { state.pfAllRatings = allRatings ? null : m.id; renderMemberProfile(id, true); };
   }
 
   // Marks a deactivated member wherever their history is still attributed.

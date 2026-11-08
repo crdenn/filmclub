@@ -438,7 +438,17 @@ button { font: inherit; cursor: pointer; }
 .pf-film-metadata { color: var(--text-faint); font-size: .72rem; display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
 .pf-film-metadata .rt-scores { gap: .35rem; }
 .pf-score { color: var(--star); }
-.pf-rate { color: var(--star); }
+.pf-turn { margin-top: .45rem; font-size: .88rem; color: var(--accent-text); font-weight: 600; }
+.pf-turn a { color: inherit; }
+.pf-picks-card { margin-bottom: 1.3rem; }
+.pf-picks { display: grid; gap: 1.1rem .9rem; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); margin-top: .9rem; }
+.pf-pick { display: flex; flex-direction: column; gap: .3rem; min-width: 0; text-decoration: none; color: inherit; }
+.pf-pick:hover { text-decoration: none; }
+.pf-pick:hover .pf-film-title { color: var(--accent-text); }
+.pf-pick .poster-wrap { display: block; margin-bottom: .15rem; }
+.pf-pick-from { font-size: .72rem; color: var(--text-faint); }
+.pf-subhead { margin: 1.1rem 0 .1rem; font-size: .8rem; font-weight: 600; color: var(--text-dim); }
+.pf-more { margin-top: .6rem; }
 .pf-note { font-size: .8rem; color: var(--text-dim); }
 .pf-status { font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: .1rem .35rem; border-radius: 4px; }
 .pf-status.watched { color: var(--good-text); background: var(--good-soft); }
