@@ -180,8 +180,16 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 - **Main files:** `service._next_meeting_day()`, `service.schedule_movie()`, `/api/movies/{id}/schedule`, detail UI, `config.MEETING_WEEKDAY`/`MEETING_HOUR` (Admin Settings).
 - **Status:** Implemented.
 - **Dependencies:** Suggested movie and prior-view state.
-- **Limitations:** Any authenticated member may schedule. Eligibility is displayed but not enforced. Multiple movies can be scheduled.
+- **Limitations:** Any authenticated member may schedule (and records whose pick it is — see "Who picked it"). Eligibility is displayed but not enforced. Multiple movies can be scheduled.
 - **Follow-up:** Confirm desired authorization, multiplicity, and whether eligibility should ever block scheduling.
+
+### Who picked it, and whose turn is next
+
+- **Purpose:** Record who chose each film for its week (often not the person who suggested it) so the club can tell whose turn it is to pick.
+- **Main files:** `service.pick_order()`, `service.schedule_movie()`, `service.set_picker()`, `service.pick_history()`, `service.set_next_picker_override()`, `GET /api/pick-order`, `GET /api/admin/picks`, `POST /api/admin/movies/{id}/picker`, `POST /api/admin/next-picker`, pick dialog / This week "Up next" panel / Admin → Picks (`static/app.js`), migration v16 (`movies.picked_by`, `movies.picked_at`).
+- **Status:** Implemented.
+- **Behavior:** Picking a film asks "whose pick is this?", defaulting to whoever is up next; any member may pick and choose. The order is derived, not stored: the active member whose latest pick (by discussion date) is oldest goes next, members who have never picked go first, ties break by join order. A skipped turn is therefore never forfeited. Only scheduled/watched films count; a film sent back to the backlog keeps its `picked_by` but stops counting. `picked_by` NULL means unknown (pre-tracking history), never "nobody". Admins can correct any scheduled/watched film's picker (from the film page or Admin → Picks, which also lists films still missing one) and can name the next picker once — e.g. so a brand-new member doesn't go first — an override that the next pick consumes. This week and Watched show the picker, with the suggester alongside when different; profiles and Admin Users show a picked count.
+- **Limitations:** Watched grid cards fall back to the suggester while a film's picker is unrecorded. A new member still goes to the front of the order after any one-off override is used.
 
 ### This week view
 

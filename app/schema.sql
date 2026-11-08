@@ -51,7 +51,12 @@ CREATE TABLE IF NOT EXISTS movies (
     -- Outcome of the Seerr auto-request at add time, if that feature is enabled.
     -- One of: 'in_library' | 'available' | 'requested' | 'failed'. NULL = the
     -- feature was off (or the film predates it).
-    seerr_status  TEXT
+    seerr_status  TEXT,
+    -- Who picked this film for its week — often not the suggester. Drives the
+    -- "up next to pick" order. NULL = unknown (films from before this was
+    -- tracked, until an admin fills them in), never "nobody".
+    picked_by     INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    picked_at     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ratings (

@@ -154,6 +154,14 @@ This file records decisions visible in the current repository. “Confirmed” m
 - **Consequences:** Queries that count the club must use `service.all_members()` (active only); queries that attribute history must use the include-inactive variant. Fully reversible.
 - **Status:** Confirmed.
 
+## Derive whose turn it is from pick history
+
+- **Decision:** Track the picker separately from the suggester (`movies.picked_by`) and compute the pick order on read — longest since last pick goes next, never-picked first — rather than storing a queue. The only stored state is a one-shot admin override for the next picker.
+- **Evidence:** Migration v16, `service.pick_order()`; owner confirmed "longest since their last pick", that skipping a turn doesn't lose it, that there are no group picks, that only admins correct past pickers, and that admins may override the next picker.
+- **Likely reasoning:** A derived order can't drift out of sync with history: correcting a past picker corrects the order, and skips/absences need no bookkeeping.
+- **Consequences:** Pre-tracking films have an unknown picker until an admin fills them in; unknown picks don't count toward the order.
+- **Status:** Confirmed.
+
 ## Use Unraid as the authoritative deployment
 
 - **Decision:** Treat the Mac project as source of truth; package and orchestrate from `deploy-from-mac.sh`, then build and replace a named Docker container on Unraid with persistent data under appdata.

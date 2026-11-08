@@ -934,10 +934,11 @@
     const fx = (v) => v != null ? v.toFixed(2) : "—";
     const kpis = [
       ["Suggested", s.suggested],
-      ["Picked & watched", s.suggested_watched],
+      ["Suggestions watched", s.suggested_watched],
+      ["Picked", s.picked],
       ["Ratings given", s.ratings_count],
       ["Avg score they give", fx(s.mean_score_given)],
-      ["Their picks' avg", fx(s.picks_mean_received)],
+      ["Their suggestions' avg", fx(s.picks_mean_received)],
     ];
 
     const body = `
@@ -1063,15 +1064,64 @@
     catch (e) { if (e.message !== "unauth") paintError("thisweek", e, preserve); return; }
 
     const items = data.items;
-    const body = items.length
+    const body = (items.length
       ? items.map(thisWeekHero).join("")
       : `<div class="tw-empty">
            <div class="tw-empty-emoji">🍿</div>
            <h2>Nothing picked for this week yet</h2>
            <p>Open a film in the <a href="#/backlog">Backlog</a> and choose “Pick as this week’s movie.”</p>
-         </div>`;
+         </div>`) + upNextPanel(data.pick_order || []);
     paintView("thisweek", body, preserve);
     wireThisWeekCards(items);
+    wireNextPickerSelect(() => renderThisWeek(true));
+  }
+
+  // "Picked by" is who chose the film for its week; the suggester only put it
+  // on the backlog. Shown together when they differ, since the picker is what
+  // the rotation runs on. Films from before pickers were tracked fall back to
+  // the suggester line until an admin fills them in.
+  function pickerLine(m) {
+    if (!m.picker) return suggesterLink(m.suggester, "Suggested by ");
+    const also = m.suggester && m.suggester.id !== m.picker.id
+      ? `<span class="picker-also">· suggested by <a class="member-link" href="#/member/${m.suggester.id}">${esc(m.suggester.username)}</a></span>` : "";
+    return `${suggesterLink(m.picker, "Picked by ")}${also}`;
+  }
+
+  // Whose turn it is. The order is derived server-side (longest since their
+  // last pick goes next; a skipped turn is kept), so the only control is the
+  // admin's one-off override for the next pick.
+  function upNextPanel(order) {
+    if (!order.length) return "";
+    const [next, ...rest] = order;
+    const when = next.last_picked_on ? `Last picked ${esc(fmtDate(next.last_picked_on))}` : "Hasn't picked yet";
+    return `<section class="up-next">
+      <div class="up-next-main">
+        <span class="up-next-label">Up next to pick</span>
+        ${suggesterLink(next.member)}
+        <span class="up-next-meta">${next.override ? "Chosen by an admin" : when}</span>
+      </div>
+      ${rest.length ? `<div class="up-next-then">Then ${rest.map(e => esc(e.member.username)).join(" · ")}</div>` : ""}
+      ${state.me.is_admin ? nextPickerSelect(order) : ""}
+    </section>`;
+  }
+
+  function nextPickerSelect(order) {
+    const overridden = order.some(e => e.override);
+    const opts = [`<option value="" ${overridden ? "" : "selected"}>Automatic (longest since last pick)</option>`]
+      .concat(order.map(e => `<option value="${e.member.id}" ${e.override ? "selected" : ""}>${esc(e.member.username)}</option>`));
+    return `<label class="up-next-admin"><span class="ctl-label">Next picker</span>
+      <select class="next-picker-sel" aria-label="Override who picks next">${opts.join("")}</select></label>`;
+  }
+
+  function wireNextPickerSelect(rerender) {
+    app.querySelectorAll(".next-picker-sel").forEach(sel => sel.onchange = async () => {
+      try {
+        await api("/api/admin/next-picker", { method: "POST",
+          body: { member_id: sel.value ? parseInt(sel.value, 10) : null } });
+        toast(sel.value ? "Next picker set" : "Back to the automatic order");
+        rerender();
+      } catch (e) { toast("Couldn't change the next picker: " + e.message, true); }
+    });
   }
 
   // Full-bleed single-film hero for the current pick (usually one): backdrop
@@ -1108,7 +1158,7 @@
           <p class="tw-synopsis">${esc(m.overview || "No synopsis available.")}</p>
           ${m.library && m.library.deep_link ? `<div class="tw-actions"><a class="tw-plex-btn" href="${esc(m.library.deep_link)}" target="_blank" rel="noopener">▶ Watch on Plex</a></div>` : ""}
           <div class="tw-hero-foot" data-id="${m.id}" data-cov-mode="thisweek">
-            <div class="tw-suggester">${suggesterLink(m.suggester, "Suggested by ")}</div>
+            <div class="tw-suggester">${pickerLine(m)}</div>
             <div class="tw-watchers">
               <span class="coverage-line tw-watchers-label">${coverageLineHtml(c, "thisweek")}</span>
               <div class="cov-avatars">${coverageAvatars(c)}</div>
@@ -1578,6 +1628,10 @@
     key: "suggester", label: "Suggested by", cls: "lr-sugg", width: "140px", nav: false,
     render: m => suggesterLink(m.suggester),
   };
+  const COL_PICKER = {
+    key: "picker", label: "Picked by", cls: "lr-sugg", width: "140px", nav: false,
+    render: m => m.picker ? suggesterLink(m.picker) : `<span class="lr-dash">—</span>`,
+  };
 
   const BACKLOG_TABLE = {
     columns: [
@@ -1609,7 +1663,8 @@
       { key: "film", label: "Film", sort: "title", dir: "asc", cls: "lr-film",
         width: "minmax(200px,1fr)", render: cellFilm },
       COL_RUNTIME,
-      COL_SUGGESTER,
+      COL_PICKER,
+      { ...COL_SUGGESTER, desktopOnly: true },
       { key: "discussed", label: "Discussed", sort: "date", dir: "desc", cls: "lr-disc",
         width: "120px",
         render: m => esc(fmtDate(m.watched_at)) || `<span class="lr-dash">—</span>` },
@@ -1992,9 +2047,9 @@
         <div class="badges">${club}${mine}</div>
         ${posterEl(m)}
       </div>
-      <div class="accent-bar" style="background:${m.suggester ? m.suggester.color : "var(--line)"}"></div>
+      <div class="accent-bar" style="background:${(m.picker || m.suggester) ? (m.picker || m.suggester).color : "var(--line)"}"></div>
       <div class="card-title" title="${esc(titleHint)}"><span class="ct-name">${esc(m.title)}</span>${m.year ? `<span class="yr">${m.year}</span>` : ""}</div>
-      <div class="card-meta">${suggesterLink(m.suggester)}
+      <div class="card-meta" title="${m.picker ? "Picked by" : "Suggested by"}">${suggesterLink(m.picker || m.suggester)}
         <span class="rated-count">${m.rating_count}/${m.total_members} rated</span>
       </div>
     </div>`;
@@ -2063,6 +2118,7 @@
             <div class="detail-facts">${facts}</div>
             ${rottenTomatoes(m, "detail-rt")}
             <div class="card-meta detail-suggester">Suggested by ${m.suggester ? `<a class="member-link inline" href="#/member/${m.suggester.id}">${avatar(m.suggester, "sm")}${esc(m.suggester.username)}</a>` : "—"}</div>
+            ${canRate ? detailPickerLine(m) : ""}
             ${m.pitch ? `<blockquote class="detail-pitch"><span class="detail-pitch-label">${m.suggester ? esc(m.suggester.username) + "’s pitch" : "The pitch"}</span>${esc(m.pitch)}</blockquote>` : ""}
             ${detailVoteBlock(m)}
             ${(m.genres || []).length ? `<div class="genre-chips">${m.genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
@@ -2081,6 +2137,8 @@
     wireDetailMenu();
     const pickBtn = $("#detail-pick");
     if (pickBtn) pickBtn.onclick = () => scheduleMovie(m.id);
+    const pickerSel = $("#detail-picker-sel");
+    if (pickerSel) pickerSel.onchange = () => setPicker(m.id, pickerSel.value, () => renderDetail(m.id, true));
     const archiveBtn = $("#detail-archive");
     if (archiveBtn) archiveBtn.onclick = () => archiveMovie(m.id);
     const delBtn = $("#detail-del");
@@ -2188,13 +2246,68 @@
     }
   }
 
-  async function scheduleMovie(id) {
+  // Correcting who picked a film is admin-only; everyone else just sees it.
+  function detailPickerLine(m) {
+    const who = m.picker
+      ? `<a class="member-link inline" href="#/member/${m.picker.id}">${avatar(m.picker, "sm")}${esc(m.picker.username)}</a>`
+      : `<span class="picker-unknown">Not recorded</span>`;
+    if (!state.me.is_admin) return `<div class="card-meta detail-suggester">Picked by ${who}</div>`;
+    const opts = [`<option value="">Not recorded</option>`].concat(m.members
+      .concat(m.picker && !m.members.some(x => x.id === m.picker.id) ? [m.picker] : [])
+      .map(x => `<option value="${x.id}" ${m.picker && m.picker.id === x.id ? "selected" : ""}>${esc(x.username)}</option>`));
+    return `<label class="card-meta detail-suggester detail-picker">Picked by
+      <select id="detail-picker-sel" aria-label="Who picked this film">${opts.join("")}</select></label>`;
+  }
+
+  async function setPicker(movieId, value, rerender) {
     try {
-      await api(`/api/movies/${id}/schedule`, { method: "POST" });
-      toast("Picked as this week’s movie");
-      refreshTodo();
-      location.hash = "#/thisweek";
-    } catch (e) { toast("Couldn't pick it: " + e.message, true); }
+      await api(`/api/admin/movies/${movieId}/picker`, { method: "POST",
+        body: { member_id: value ? parseInt(value, 10) : null } });
+      toast("Picker saved");
+      if (rerender) rerender();
+    } catch (e) { toast("Couldn't save the picker: " + e.message, true); }
+  }
+
+  // Picking asks whose pick it is, defaulting to whoever is up next: the person
+  // pressing the button is often picking on someone else's behalf.
+  async function scheduleMovie(id) {
+    let order;
+    try { order = (await api("/api/pick-order")).pick_order; }
+    catch (e) { toast("Couldn't load the pick order: " + e.message, true); return; }
+    const root = $("#modal-root");
+    const opts = order.map((e, i) =>
+      `<option value="${e.member.id}" ${i === 0 ? "selected" : ""}>${esc(e.member.username)}${i === 0 ? " — up next" : ""}</option>`);
+    root.innerHTML = `<div class="modal-backdrop" id="pick-backdrop"><div class="modal">
+      <div class="modal-head"><h2>Pick for this week</h2><button class="modal-close" id="pick-close" type="button">×</button></div>
+      <form class="modal-body" id="pick-form">
+        <label><span>Whose pick is this?</span>
+          <select id="pick-who">${opts.join("")}</select>
+        </label>
+        <p class="profile-hint">Whoever's turn it is. If someone picks out of turn, the person they swapped with keeps their place and goes next.</p>
+        <div class="setup-actions"><span id="pick-message"></span><button class="btn btn-primary" type="submit">▶ Pick for this week</button></div>
+      </form>
+    </div></div>`;
+    const close = () => { root.innerHTML = ""; };
+    $("#pick-close").onclick = close;
+    $("#pick-backdrop").onclick = (event) => { if (event.target.id === "pick-backdrop") close(); };
+    const form = $("#pick-form");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button[type=submit]");
+      const who = $("#pick-who").value;
+      button.disabled = true;
+      try {
+        await api(`/api/movies/${id}/schedule`, { method: "POST",
+          body: { picked_by: who ? parseInt(who, 10) : null } });
+        close();
+        toast("Picked as this week’s movie");
+        refreshTodo();
+        location.hash = "#/thisweek";
+      } catch (e) {
+        $("#pick-message").textContent = e.message;
+        button.disabled = false;
+      }
+    };
   }
 
   async function archiveMovie(id) {
@@ -2781,6 +2894,7 @@
   // ================= ADMIN =================
   const ADMIN_SECTIONS = {
     users: { label: "Users" },
+    picks: { label: "Picks" },
     invites: { label: "Invites" },
     settings: { label: "Application settings" },
     backups: { label: "Backup & restore" },
@@ -2852,11 +2966,12 @@
         return labels.join(" + ") || "record only";
       };
       const table = (list, emptyMessage) => list.length ? `<table class="stat-table admin-table"><thead><tr>
-          <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Ratings</th><th>Actions</th>
+          <th>Member</th><th></th><th class="num">Suggested</th><th class="num">Picked</th><th class="num">Ratings</th><th>Actions</th>
         </tr></thead><tbody>${list.map(member => `<tr>
           <td class="admin-member-cell"><div class="member-cell">${avatar(member, "sm")}<span>${esc(member.username)}<small class="identity-label">${esc(identityLabel(member))}</small></span></div></td>
           <td class="admin-type-cell">${typeBadge(member)}</td>
           <td class="num" data-label="Suggested">${member.counts.suggested}${member.counts.suggested_watched ? ` <span class="admin-count-note">(${member.counts.suggested_watched} watched)</span>` : ""}</td>
+          <td class="num" data-label="Picked">${member.counts.picked}</td>
           <td class="num" data-label="Ratings">${member.counts.ratings}</td>
           <td class="admin-actions-cell">${rowActions(member)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty admin-empty">${emptyMessage}</div>`;
@@ -2878,6 +2993,36 @@
       app.querySelectorAll(".discord-id-btn").forEach(button => button.onclick = () =>
         showDiscordIdModal(members.find(member => member.id === parseInt(button.dataset.id, 10))));
       wireRowMenus();
+      return;
+    }
+
+    if (section === "picks") {
+      let data;
+      try { data = await api("/api/admin/picks"); }
+      catch (error) { adminError(error, preserve); return; }
+      const missing = data.films.filter(f => !f.picker).length;
+      const memberOpts = (picker) => [`<option value="">Not recorded</option>`].concat(data.members.map(x =>
+        `<option value="${x.id}" ${picker && picker.id === x.id ? "selected" : ""}>${esc(x.username)}${x.active ? "" : " (former)"}</option>`)).join("");
+      const rows = data.films.map(f => `<tr class="${f.picker ? "" : "pick-missing"}">
+          <td><a href="#/movie/${f.id}">${esc(f.title)}</a>${f.year ? ` <span class="admin-count-note">${f.year}</span>` : ""}${f.status === "scheduled" ? ` <span class="admin-count-note">· this week</span>` : ""}</td>
+          <td data-label="Discussed">${esc(fmtDate(f.watched_at)) || "—"}</td>
+          <td data-label="Suggested by">${f.suggester ? esc(f.suggester.username) : "—"}</td>
+          <td data-label="Picked by"><select class="admin-picker-sel" data-id="${f.id}" aria-label="Who picked ${esc(f.title)}">${memberOpts(f.picker)}</select></td>
+        </tr>`).join("");
+      const order = data.pick_order;
+      const content = `<section class="admin-card"><h3>Up next</h3>
+          <div class="sub">Whoever has gone longest since their last pick is next; anyone who hasn't picked yet goes first. Skipping a week keeps your place. Choosing someone here overrides the order for the next pick only.</div>
+          <ol class="pick-order-list">${order.map(e => `<li>${suggesterLink(e.member)}<span class="admin-count-note">${e.override ? "chosen by an admin" : e.last_picked_on ? "last picked " + esc(fmtDate(e.last_picked_on)) : "hasn't picked yet"}</span></li>`).join("")}</ol>
+          ${order.length ? nextPickerSelect(order) : ""}</section>
+        <section class="admin-card"><h3>Who picked what</h3>
+          <div class="sub">${missing ? `${missing} film${missing === 1 ? "" : "s"} still need a picker. ` : ""}Picks only count toward the order once recorded here; the suggester is shown for reference, not assumed.</div>
+          ${data.films.length ? `<table class="stat-table admin-table pick-table"><thead><tr>
+            <th>Film</th><th>Discussed</th><th>Suggested by</th><th>Picked by</th>
+          </tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty admin-empty">No films picked yet.</div>`}</section>`;
+      paintView("admin", adminLayout("picks", content), preserve);
+      wireNextPickerSelect(() => renderAdmin("picks", true));
+      app.querySelectorAll(".admin-picker-sel").forEach(sel => sel.onchange = () =>
+        setPicker(sel.dataset.id, sel.value, () => renderAdmin("picks", true)));
       return;
     }
 

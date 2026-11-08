@@ -299,6 +299,15 @@ class DiscussDate(BaseModel):
     date: str  # ISO 'YYYY-MM-DD'
 
 
+class ScheduleIn(BaseModel):
+    # Whose pick this is. Omitted, it defaults to whoever is up next.
+    picked_by: int | None = None
+
+
+class PickerIn(BaseModel):
+    member_id: int | None = None  # None = unknown / clear
+
+
 class SettingsIn(BaseModel):
     setup_code: str | None = None
     clear_secrets: list[str] = Field(default_factory=list)
@@ -941,7 +950,18 @@ async def api_backlog(
 async def api_thisweek(member=Depends(auth.current_member)):
     conn = db.connect()
     try:
-        return {"items": service.this_week(conn, member["id"]), "me": member}
+        return {"items": service.this_week(conn, member["id"]),
+                "pick_order": service.pick_order(conn), "me": member}
+    finally:
+        conn.close()
+
+
+@app.get("/api/pick-order")
+async def api_pick_order(member=Depends(auth.current_member)):
+    """Current members in the order they're due to pick, next first."""
+    conn = db.connect()
+    try:
+        return {"pick_order": service.pick_order(conn)}
     finally:
         conn.close()
 
@@ -1351,13 +1371,22 @@ async def _maybe_request_from_seerr(conn, movie_id: int, meta: dict) -> dict:
 
 
 @app.post("/api/movies/{movie_id}/schedule")
-async def api_schedule(movie_id: int, member=Depends(auth.current_member)):
-    """Pick a backlog film as this week's movie (suggested -> scheduled)."""
+async def api_schedule(movie_id: int, body: ScheduleIn | None = None,
+                       member=Depends(auth.current_member)):
+    """Pick a backlog film as this week's movie (suggested -> scheduled).
+
+    Any member may schedule and say whose pick it is (the admin isn't always
+    there to do it); correcting the picker afterwards is admin-only."""
+    picked_by = body.picked_by if body else None
     conn = db.connect()
     try:
         if not db.query_one(conn, "SELECT id FROM movies WHERE id = ?", (movie_id,)):
             raise HTTPException(status_code=404, detail="Movie not found")
-        changed = service.schedule_movie(conn, movie_id)
+        if picked_by is not None and not db.query_one(
+                conn, "SELECT id FROM members WHERE id = ? AND deactivated_at IS NULL",
+                (picked_by,)):
+            raise HTTPException(status_code=400, detail="Picker must be a current member")
+        changed = service.schedule_movie(conn, movie_id, picked_by)
         return {"ok": True, "changed": changed}
     finally:
         conn.close()
@@ -1784,6 +1813,52 @@ async def api_admin_set_active(member_id: int, body: MemberActiveIn,
     log.info("Admin %s %s member %s", admin["id"],
              "reactivated" if body.active else "deactivated", member_id)
     return {"ok": True}
+
+
+@app.get("/api/admin/picks")
+async def api_admin_picks(admin=Depends(auth.require_admin)):
+    """Who picked each scheduled/watched film, plus the derived pick order."""
+    conn = db.connect()
+    try:
+        return {"films": service.pick_history(conn),
+                "pick_order": service.pick_order(conn),
+                "members": service.all_members(conn, include_inactive=True)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/movies/{movie_id}/picker")
+async def api_admin_set_picker(movie_id: int, body: PickerIn,
+                               admin=Depends(auth.require_admin)):
+    """Record or correct who picked a past or current film. Former members are
+    allowed: history is about who picked it then."""
+    conn = db.connect()
+    try:
+        if body.member_id is not None and not db.query_one(
+                conn, "SELECT id FROM members WHERE id = ?", (body.member_id,)):
+            raise HTTPException(status_code=400, detail="Member not found")
+        if not service.set_picker(conn, movie_id, body.member_id):
+            raise HTTPException(status_code=400,
+                                detail="Only scheduled or watched films have a picker")
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/admin/next-picker")
+async def api_admin_next_picker(body: PickerIn, admin=Depends(auth.require_admin)):
+    """Override who picks next (e.g. a new member who shouldn't go first).
+    Consumed by the next pick; member_id None returns to the derived order."""
+    conn = db.connect()
+    try:
+        if body.member_id is not None and not db.query_one(
+                conn, "SELECT id FROM members WHERE id = ? AND deactivated_at IS NULL",
+                (body.member_id,)):
+            raise HTTPException(status_code=400, detail="Next picker must be a current member")
+        service.set_next_picker_override(conn, body.member_id)
+        return {"ok": True, "pick_order": service.pick_order(conn)}
+    finally:
+        conn.close()
 
 
 @app.post("/api/admin/members/{member_id}/display-name")

@@ -85,11 +85,13 @@ class MigrationRunnerTests(unittest.TestCase):
                                 (12, "collection-origin"),
                                 (13, "collection-sort-order"),
                                 (14, "saved-films"),
-                                (15, "member-deactivation")])
+                                (15, "member-deactivation"),
+                                (16, "movie-picker")])
         self.assertIn("sort_order", _columns(self.db_path, "collections"))
         self.assertIn("tmdb_id", _columns(self.db_path, "saved_films"))
         self.assertIn("key", _columns(self.db_path, "app_settings"))
         self.assertIn("pitch", _columns(self.db_path, "movies"))
+        self.assertIn("picked_by", _columns(self.db_path, "movies"))
         self.assertIn("token_hash", _columns(self.db_path, "sessions"))
         self.assertIn("provider_uid", _columns(self.db_path, "identities"))
         self.assertIn("token_hash", _columns(self.db_path, "password_resets"))

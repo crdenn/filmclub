@@ -272,6 +272,15 @@ def _m15_member_deactivation(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "members", "deactivated_at", "deactivated_at TEXT")
 
 
+def _m16_movie_picker(conn: sqlite3.Connection) -> None:
+    # Who picked a film for its week, distinct from who suggested it. Existing
+    # films get NULL (unknown) — the club fills history in from Admin → Picks.
+    _add_column_if_missing(
+        conn, "movies", "picked_by",
+        "picked_by INTEGER REFERENCES members(id) ON DELETE SET NULL")
+    _add_column_if_missing(conn, "movies", "picked_at", "picked_at TEXT")
+
+
 # Ordered list of migrations. Append new ones with the next integer version.
 MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (1, "baseline", _m1_baseline),
@@ -289,6 +298,7 @@ MIGRATIONS: list[tuple[int, str, "callable"]] = [
     (13, "collection-sort-order", _m13_collection_sort_order),
     (14, "saved-films", _m14_saved_films),
     (15, "member-deactivation", _m15_member_deactivation),
+    (16, "movie-picker", _m16_movie_picker),
 ]
 
 

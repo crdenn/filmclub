@@ -1102,6 +1102,23 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .tw-rate-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; }
 .tw-rate-privacy { text-transform: none; letter-spacing: normal; font-size: .74rem; }
 
+/* who picked it (vs. who suggested it), and whose turn is next */
+.picker-also { color: var(--text-faint); font-size: .8rem; }
+.picker-also .member-link { color: var(--text-dim); }
+.picker-unknown { color: var(--text-faint); font-style: italic; }
+.detail-picker { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.detail-picker select { padding: .25rem .5rem; font-size: .85rem; }
+.up-next { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem 1.4rem; margin-top: 1.2rem; padding: .9rem 1.1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-raise); }
+.up-next-main { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .7rem; }
+.up-next-label { text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; font-weight: 700; color: var(--text-dim); }
+.up-next-meta { color: var(--text-faint); font-size: .8rem; }
+.up-next-then { color: var(--text-dim); font-size: .82rem; flex: 1 1 auto; }
+.up-next-admin { display: flex; align-items: center; gap: .5rem; font-size: .82rem; color: var(--text-dim); }
+.pick-order-list { margin: .6rem 0 1rem; padding-left: 1.4rem; display: grid; gap: .45rem; }
+.pick-order-list li { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.pick-table select { max-width: 100%; }
+.pick-table tr.pick-missing td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
 .tw-empty { text-align: center; padding: 4.5rem 1rem; color: var(--text-dim); }
 .tw-empty-emoji { font-size: 3rem; margin-bottom: .4rem; }
 .tw-empty h2 { margin: .3rem 0 .4rem; color: var(--text); font-size: 1.4rem; }

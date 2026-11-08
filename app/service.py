@@ -188,6 +188,7 @@ def this_week(conn: sqlite3.Connection, member_id: int | None = None) -> list[di
             **mv,
             "coverage": cov,
             "suggester": suggesters.get(mv["suggested_by"]),
+            "picker": suggesters.get(mv["picked_by"]),
             "library": _in_library(mv),
             "total_members": len(members),
         }
@@ -234,6 +235,7 @@ def watched(conn: sqlite3.Connection, member_id: int) -> list[dict]:
         out.append({
             **mv,
             "suggester": suggesters.get(mv["suggested_by"]),
+            "picker": suggesters.get(mv["picked_by"]),
             "avg_rating": round(sum(scores) / len(scores), 2) if scores else None,
             "rating_count": len(scores),
             "total_members": len(active_ids) + former_raters.get(mv["id"], 0),
@@ -312,6 +314,9 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
         "suggested": len(suggestions),
         "suggested_watched": sum(1 for s in suggestions if s["status"] == "watched"),
         "suggested_backlog": sum(1 for s in suggestions if s["status"] == "suggested"),
+        "picked": db.query_one(
+            conn, "SELECT COUNT(*) c FROM movies WHERE picked_by = ? "
+                  "AND status IN ('scheduled', 'watched')", (member_id,))["c"],
         "ratings_count": len(ratings),
         "mean_score_given": mean([r["score"] for r in ratings]),
         "picks_mean_received": mean(picks_scores),
@@ -400,6 +405,7 @@ def movie_detail(conn: sqlite3.Connection, movie_id: int, member_id: int) -> dic
     return {
         **mv,
         "suggester": members_by_id.get(mv["suggested_by"]),
+        "picker": members_by_id.get(mv["picked_by"]),
         "coverage": cov,
         "members": members,
         "ratings": ratings,
@@ -610,8 +616,13 @@ def _next_meeting_day(today: date | None = None) -> str:
     return (today + timedelta(days=ahead)).isoformat()
 
 
-def schedule_movie(conn: sqlite3.Connection, movie_id: int) -> bool:
+def schedule_movie(conn: sqlite3.Connection, movie_id: int,
+                   picked_by: int | None = None) -> bool:
     """Pick a backlog film as this week's movie (status 'suggested' -> 'scheduled').
+
+    `picked_by` is the member whose pick this is — not necessarily whoever
+    pressed the button, nor the suggester. Omitted, it defaults to whoever is
+    up next. Any admin "next picker" override is consumed by this pick.
 
     Sets the discussion date to the upcoming meeting day and freezes the prior-views
     snapshot *now* (at pick time): the snapshot captures who had already seen the
@@ -625,12 +636,17 @@ def schedule_movie(conn: sqlite3.Connection, movie_id: int) -> bool:
     prior = db.query_all(
         conn, "SELECT member_id, seen FROM prior_views WHERE movie_id = ?", (movie_id,))
     snapshot = {str(r["member_id"]): bool(r["seen"]) for r in prior}
-    db.execute(
-        conn,
+    if picked_by is None:
+        order = pick_order(conn)
+        picked_by = order[0]["member"]["id"] if order else None
+    conn.execute(
         "UPDATE movies SET status = 'scheduled', watched_at = ?, "
-        "seen_before_snapshot = ? WHERE id = ?",
-        (_next_meeting_day(), json.dumps(snapshot), movie_id),
+        "seen_before_snapshot = ?, picked_by = ?, picked_at = datetime('now') "
+        "WHERE id = ?",
+        (_next_meeting_day(), json.dumps(snapshot), picked_by, movie_id),
     )
+    conn.execute("DELETE FROM app_settings WHERE key = ?", (NEXT_PICKER_KEY,))
+    conn.commit()
     return True
 
 
@@ -694,6 +710,119 @@ def unmark_watched(conn: sqlite3.Connection, movie_id: int) -> bool:
         return False
     db.execute(conn, "UPDATE movies SET status = 'suggested' WHERE id = ?", (movie_id,))
     return True
+
+
+# --- pick rotation ---------------------------------------------------------
+#
+# There is no stored queue. Whose turn it is derives from history alone: the
+# active member whose most recent pick is oldest goes next, and members who
+# have never picked go first (ties broken by join order). So a member who
+# can't make their week simply stays at the front until they do pick — a skip
+# never forfeits a turn — and correcting a past film's picker corrects the
+# order with it. The one piece of state is an optional admin override naming
+# who picks next, consumed by the next pick.
+
+NEXT_PICKER_KEY = "_next_picker_override"
+
+
+def next_picker_override(conn: sqlite3.Connection) -> int | None:
+    """The admin-chosen next picker's member id, if one is set and still active."""
+    row = db.query_one(
+        conn,
+        """SELECT m.id FROM app_settings s JOIN members m ON m.id = CAST(s.value AS INTEGER)
+           WHERE s.key = ? AND m.deactivated_at IS NULL""",
+        (NEXT_PICKER_KEY,))
+    return row["id"] if row else None
+
+
+def set_next_picker_override(conn: sqlite3.Connection, member_id: int | None) -> None:
+    """Name who picks next, overriding the derived order once; None clears it."""
+    if member_id is None:
+        db.execute(conn, "DELETE FROM app_settings WHERE key = ?", (NEXT_PICKER_KEY,))
+        return
+    db.execute(
+        conn,
+        """INSERT INTO app_settings (key, value, encrypted, updated_at)
+           VALUES (?, ?, 0, datetime('now'))
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at""",
+        (NEXT_PICKER_KEY, str(member_id)),
+    )
+
+
+def pick_order(conn: sqlite3.Connection) -> list[dict]:
+    """Active members in the order they're due to pick, next first.
+
+    Each entry: {"member", "last_picked_on" (ISO date or None), "last_movie"
+    ({id, title} or None), "override" (bool)}. A pick counts only once the
+    film is scheduled or watched; a film sent back to the backlog keeps its
+    picked_by but no longer counts. The pick's date is its discussion date,
+    which history filled in after the fact also has."""
+    rows = db.query_all(
+        conn,
+        """SELECT mem.*,
+                  (SELECT mv.id FROM movies mv
+                    WHERE mv.picked_by = mem.id AND mv.status IN ('scheduled', 'watched')
+                    ORDER BY COALESCE(mv.watched_at, mv.picked_at) DESC, mv.id DESC
+                    LIMIT 1) AS last_movie_id
+           FROM members mem WHERE mem.deactivated_at IS NULL""")
+    last_ids = [r["last_movie_id"] for r in rows if r["last_movie_id"] is not None]
+    movies = {}
+    if last_ids:
+        marks = ",".join("?" * len(last_ids))
+        movies = {r["id"]: r for r in db.query_all(
+            conn, f"SELECT id, title, watched_at, picked_at FROM movies WHERE id IN ({marks})",
+            last_ids)}
+
+    out = []
+    for r in rows:
+        mv = movies.get(r["last_movie_id"])
+        when = (mv["watched_at"] or mv["picked_at"]) if mv else None
+        out.append({
+            "member": db.member_public(r),
+            "last_picked_on": when[:10] if when else None,
+            "last_movie": {"id": mv["id"], "title": mv["title"]} if mv else None,
+            "override": False,
+            "_sort": (when is not None, when or "", r["created_at"] or "", r["id"]),
+        })
+    out.sort(key=lambda e: e["_sort"])
+    for e in out:
+        del e["_sort"]
+
+    override = next_picker_override(conn)
+    if override is not None:
+        idx = next((i for i, e in enumerate(out) if e["member"]["id"] == override), None)
+        if idx is not None:
+            entry = out.pop(idx)
+            entry["override"] = True
+            out.insert(0, entry)
+    return out
+
+
+def set_picker(conn: sqlite3.Connection, movie_id: int, member_id: int | None) -> bool:
+    """Record or correct who picked a scheduled/watched film (None = unknown).
+    Returns False if the film isn't scheduled or watched."""
+    row = db.query_one(conn, "SELECT status FROM movies WHERE id = ?", (movie_id,))
+    if not row or row["status"] not in ("scheduled", "watched"):
+        return False
+    db.execute(conn, "UPDATE movies SET picked_by = ? WHERE id = ?", (member_id, movie_id))
+    return True
+
+
+def pick_history(conn: sqlite3.Connection) -> list[dict]:
+    """Every scheduled/watched film with its picker and suggester, newest first —
+    the admin screen for filling in and correcting who picked what."""
+    members_by_id = _members_by_id(conn)
+    rows = db.query_all(
+        conn,
+        """SELECT id, title, year, poster_url, status, watched_at, suggested_by, picked_by
+           FROM movies WHERE status IN ('scheduled', 'watched')
+           ORDER BY watched_at DESC, id DESC""")
+    return [{
+        "id": r["id"], "title": r["title"], "year": r["year"],
+        "poster_url": r["poster_url"], "status": r["status"], "watched_at": r["watched_at"],
+        "suggester": members_by_id.get(r["suggested_by"]),
+        "picker": members_by_id.get(r["picked_by"]),
+    } for r in rows]
 
 
 def default_seen_before(conn: sqlite3.Connection, movie_id: int, member_id: int) -> bool:
@@ -793,6 +922,9 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
         suggested = count("SELECT COUNT(*) c FROM movies WHERE suggested_by = ?", (m["id"],))
         watched_sug = count(
             "SELECT COUNT(*) c FROM movies WHERE suggested_by = ? AND status='watched'", (m["id"],))
+        picked = count(
+            "SELECT COUNT(*) c FROM movies WHERE picked_by = ? "
+            "AND status IN ('scheduled', 'watched')", (m["id"],))
         ratings = count("SELECT COUNT(*) c FROM ratings WHERE member_id = ?", (m["id"],))
         providers = [
             r["provider"] for r in db.query_all(
@@ -820,7 +952,8 @@ def admin_members(conn: sqlite3.Connection) -> list[dict]:
             "created_at": m.get("created_at"),
             "active": not m.get("deactivated_at"),
             "deactivated_at": m.get("deactivated_at"),
-            "counts": {"suggested": suggested, "suggested_watched": watched_sug, "ratings": ratings},
+            "counts": {"suggested": suggested, "suggested_watched": watched_sug,
+                       "picked": picked, "ratings": ratings},
         })
     return out
 

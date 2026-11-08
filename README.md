@@ -30,6 +30,9 @@ The app never blocks a pick, but it keeps the signal honest:
 **This week**
 - A full-bleed hero for the current pick: backdrop, poster, synopsis, discussion
   date (editable), who's watched it, and your own seen control.
+- Who picked the film (separately from who suggested it) and who's up next to
+  pick: whoever has gone longest since their last pick, so a skipped turn keeps
+  its place. Admins can override the next picker once.
 
 **Backlog**
 - Poster grid or list of suggestions with condensed coverage, eligibility state,
@@ -89,7 +92,7 @@ scorecards, and genre/decade distributions.
   @mentioned when an admin has entered their Discord id in the Admin panel.
 
 **Admin** — member list, local-account invites and password resets,
-admin grants, member deactivation (for people who leave — history is kept,
+admin grants, recording/correcting who picked each film, member deactivation (for people who leave — history is kept,
 reminders stop), movie deletion, manual Plex refresh, and diagnostics
 (version, schema, DB health, backups, integration status).
 
