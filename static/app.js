@@ -991,10 +991,14 @@
       m.is_admin ? "Admin" : "",
     ].filter(Boolean).join("  ·  ");
     const turn = pfTurnLine(p, isMe);
+    const fx = (v) => v != null ? v.toFixed(2) : "—";
     const kpis = [
-      ["Picks", s.picked],
-      ["Suggestions", s.suggested],
+      ["Suggested", s.suggested],
+      ["Suggestions watched", s.suggested_watched],
+      ["Picked", s.picked],
       ["Ratings given", s.ratings_count],
+      ["Avg score they give", fx(s.mean_score_given)],
+      ["Their suggestions' avg", fx(s.picks_mean_received)],
     ];
     const backlog = p.suggestions.filter(mv => mv.status === "suggested");
     const pickedByOthers = p.suggestions.filter(mv => mv.picker && mv.picker.id !== m.id);

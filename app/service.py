@@ -254,9 +254,7 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
     None if the member doesn't exist.
 
     Each watched film carries its own group average, as it does everywhere
-    else. Deliberately absent is any per-member aggregate of those (an average
-    across their picks, a best/worst, a comparison with the club): the profile
-    is a record of someone's picks, not a ranking of how they landed."""
+    else."""
     row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member_id,))
     if not row:
         return None
@@ -337,6 +335,13 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
     position = next((i + 1 for i, e in enumerate(order) if e["member"]["id"] == member_id), None)
     turn = {"position": position, "of": len(order)} if position else None
 
+    # Mean of every rating given to this member's picks (how their taste lands).
+    picks_scores = [x["score"] for x in db.query_all(
+        conn,
+        """SELECT r.score FROM ratings r JOIN movies m ON m.id = r.movie_id
+           WHERE m.suggested_by = ? AND m.status = 'watched'""",
+        (member_id,))]
+
     def mean(xs):
         return round(sum(xs) / len(xs), 2) if xs else None
 
@@ -347,6 +352,7 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
         "picked": len(picks),
         "ratings_count": len(ratings),
         "mean_score_given": mean([r["score"] for r in ratings]),
+        "picks_mean_received": mean(picks_scores),
     }
     return {
         "member": db.member_public(row),
