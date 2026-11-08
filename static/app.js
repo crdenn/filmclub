@@ -1630,7 +1630,7 @@
   };
   const COL_PICKER = {
     key: "picker", label: "Picked by", cls: "lr-sugg", width: "140px", nav: false,
-    render: m => watchedPicker(m),
+    render: m => suggesterLink(m.picker),
   };
 
   const BACKLOG_TABLE = {
@@ -1664,7 +1664,6 @@
         width: "minmax(200px,1fr)", render: cellFilm },
       COL_RUNTIME,
       COL_PICKER,
-      { ...COL_SUGGESTER, desktopOnly: true },
       { key: "discussed", label: "Discussed", sort: "date", dir: "desc", cls: "lr-disc",
         width: "120px",
         render: m => esc(fmtDate(m.watched_at)) || `<span class="lr-dash">—</span>` },
@@ -1999,7 +1998,6 @@
 
   // ================= WATCHED =================
   let watchedItems = [];   // kept module-level so headers can re-sort without refetching
-  let watchedMembers = [];
   const watchedState = { sort: "date", dir: "desc" };
 
   async function renderWatched(preserve = false) {
@@ -2008,7 +2006,6 @@
     try { data = await api("/api/watched"); }
     catch (e) { if (e.message !== "unauth") paintError("watched", e, preserve); return; }
     watchedItems = data.items;
-    watchedMembers = data.members || [];
     paintWatched(preserve);
   }
 
@@ -2031,35 +2028,6 @@
         if (e.target.closest && e.target.closest(".member-link")) return;
         location.hash = `#/movie/${el.dataset.nav}`;
       });
-    app.querySelectorAll(".watched-picker-sel").forEach(sel => {
-      sel.onclick = (e) => e.stopPropagation();
-      sel.onchange = async () => {
-        const id = parseInt(sel.dataset.id, 10);
-        const value = sel.value ? parseInt(sel.value, 10) : null;
-        sel.disabled = true;
-        try {
-          await api(`/api/admin/movies/${id}/picker`, { method: "POST", body: { member_id: value } });
-          const item = watchedItems.find(x => x.id === id);
-          if (item) item.picker = watchedMembers.find(x => x.id === value) || null;
-          toast("Picker saved");
-          paintWatched(true);
-        } catch (e) {
-          toast("Couldn't save the picker: " + e.message, true);
-          sel.disabled = false;
-        }
-      };
-    });
-  }
-
-  // Who picked a watched film. Admins set or correct it in place; everyone
-  // else just sees it. Unrecorded is shown as such, never as the suggester.
-  function watchedPicker(m) {
-    if (state.me.is_admin) {
-      const opts = [`<option value="">Not recorded</option>`].concat(watchedMembers.map(x =>
-        `<option value="${x.id}" ${m.picker && m.picker.id === x.id ? "selected" : ""}>${esc(x.username)}${x.active ? "" : " (former)"}</option>`));
-      return `<select class="watched-picker-sel${m.picker ? "" : " unset"}" data-id="${m.id}" aria-label="Who picked ${esc(m.title)}">${opts.join("")}</select>`;
-    }
-    return m.picker ? suggesterLink(m.picker) : `<span class="picker-unknown">Not recorded</span>`;
   }
 
   // The club average, and — held separately so it's easy to distinguish — the
@@ -2080,7 +2048,7 @@
       </div>
       <div class="accent-bar" style="background:${m.picker ? m.picker.color : "var(--line)"}"></div>
       <div class="card-title" title="${esc(titleHint)}"><span class="ct-name">${esc(m.title)}</span>${m.year ? `<span class="yr">${m.year}</span>` : ""}</div>
-      <div class="card-meta card-picker"><span class="suggester-prefix">Picked by</span>${watchedPicker(m)}
+      <div class="card-meta">${suggesterLink(m.picker)}
         <span class="rated-count">${m.rating_count}/${m.total_members} rated</span>
       </div>
     </div>`;

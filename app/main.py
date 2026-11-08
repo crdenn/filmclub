@@ -970,10 +970,7 @@ async def api_pick_order(member=Depends(auth.current_member)):
 async def api_watched(member=Depends(auth.current_member)):
     conn = db.connect()
     try:
-        # Members (former ones too — history) feed the admin's inline
-        # "Picked by" control on each film.
-        return {"items": service.watched(conn, member["id"]),
-                "members": service.all_members(conn, include_inactive=True)}
+        return {"items": service.watched(conn, member["id"])}
     finally:
         conn.close()
 

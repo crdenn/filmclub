@@ -1106,9 +1106,6 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .picker-also { color: var(--text-faint); font-size: .8rem; }
 .picker-also .member-link { color: var(--text-dim); }
 .picker-unknown { color: var(--text-faint); font-style: italic; }
-.card-picker .suggester-prefix { color: var(--text-faint); white-space: nowrap; }
-.watched-picker-sel { min-width: 0; max-width: 9.5rem; padding: .15rem 1.4rem .15rem .4rem; font-size: .78rem; }
-.watched-picker-sel.unset { border-color: var(--accent); color: var(--accent-text); }
 .detail-picker { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .detail-picker select { padding: .25rem .5rem; font-size: .85rem; }
 .up-next { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem 1.4rem; margin-top: 1.2rem; padding: .9rem 1.1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-raise); }
