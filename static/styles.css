@@ -1106,8 +1106,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 .picker-also { color: var(--text-faint); font-size: .8rem; }
 .picker-also .member-link { color: var(--text-dim); }
 .picker-unknown { color: var(--text-faint); font-style: italic; }
-.detail-picker { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.detail-picker select { padding: .25rem .5rem; font-size: .85rem; }
+.detail-credit { flex-wrap: wrap; row-gap: .3rem; }
 .up-next { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem 1.4rem; margin-top: 1.2rem; padding: .9rem 1.1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-raise); }
 .up-next-main { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .7rem; }
 .up-next-label { text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; font-weight: 700; color: var(--text-dim); }

@@ -1080,7 +1080,7 @@
   // on the backlog. Both are always named, merged into one credit when they're
   // the same person. A film scheduled before pickers were tracked says so
   // rather than passing the suggester off as the picker; admins get a link to
-  // the film page, where they can set it.
+  // Admin → Picks, where it can be set. Shared by This week and the film page.
   function pickerLine(m) {
     const p = m.picker, s = m.suggester;
     if (p && s && p.id === s.id) return suggesterLink(p, "Suggested and picked by ");
@@ -1088,7 +1088,7 @@
       ? `<span class="picker-also">· suggested by <a class="member-link" href="#/member/${s.id}">${esc(s.username)}</a></span>` : "";
     if (p) return `${suggesterLink(p, "Picked by ")}${sugg}`;
     const unknown = state.me.is_admin
-      ? `<a class="picker-unknown" href="#/movie/${m.id}">Picker not recorded — set it</a>`
+      ? `<a class="picker-unknown" href="#/admin/picks">Picker not recorded — set it</a>`
       : `<span class="picker-unknown">Picker not recorded</span>`;
     return `${suggesterLink(s, "Suggested by ")}<span class="picker-also">· ${unknown}</span>`;
   }
@@ -2122,8 +2122,7 @@
             <h1>${esc(m.title)}</h1>
             <div class="detail-facts">${facts}</div>
             ${rottenTomatoes(m, "detail-rt")}
-            <div class="card-meta detail-suggester">Suggested by ${m.suggester ? `<a class="member-link inline" href="#/member/${m.suggester.id}">${avatar(m.suggester, "sm")}${esc(m.suggester.username)}</a>` : "—"}</div>
-            ${canRate ? detailPickerLine(m) : ""}
+            <div class="card-meta detail-suggester detail-credit">${canRate ? pickerLine(m) : suggesterLink(m.suggester, "Suggested by ")}</div>
             ${m.pitch ? `<blockquote class="detail-pitch"><span class="detail-pitch-label">${m.suggester ? esc(m.suggester.username) + "’s pitch" : "The pitch"}</span>${esc(m.pitch)}</blockquote>` : ""}
             ${detailVoteBlock(m)}
             ${(m.genres || []).length ? `<div class="genre-chips">${m.genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
@@ -2142,8 +2141,6 @@
     wireDetailMenu();
     const pickBtn = $("#detail-pick");
     if (pickBtn) pickBtn.onclick = () => scheduleMovie(m.id);
-    const pickerSel = $("#detail-picker-sel");
-    if (pickerSel) pickerSel.onchange = () => setPicker(m.id, pickerSel.value, () => renderDetail(m.id, true));
     const archiveBtn = $("#detail-archive");
     if (archiveBtn) archiveBtn.onclick = () => archiveMovie(m.id);
     const delBtn = $("#detail-del");
@@ -2249,19 +2246,6 @@
       wireRowMenus._doc = true;
       document.addEventListener("click", closeAll);
     }
-  }
-
-  // Correcting who picked a film is admin-only; everyone else just sees it.
-  function detailPickerLine(m) {
-    const who = m.picker
-      ? `<a class="member-link inline" href="#/member/${m.picker.id}">${avatar(m.picker, "sm")}${esc(m.picker.username)}</a>`
-      : `<span class="picker-unknown">Not recorded</span>`;
-    if (!state.me.is_admin) return `<div class="card-meta detail-suggester">Picked by ${who}</div>`;
-    const opts = [`<option value="">Not recorded</option>`].concat(m.members
-      .concat(m.picker && !m.members.some(x => x.id === m.picker.id) ? [m.picker] : [])
-      .map(x => `<option value="${x.id}" ${m.picker && m.picker.id === x.id ? "selected" : ""}>${esc(x.username)}</option>`));
-    return `<label class="card-meta detail-suggester detail-picker">Picked by
-      <select id="detail-picker-sel" aria-label="Who picked this film">${opts.join("")}</select></label>`;
   }
 
   async function setPicker(movieId, value, rerender) {
