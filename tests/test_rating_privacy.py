@@ -126,7 +126,8 @@ class RatingPrivacyTests(unittest.TestCase):
                          {scheduled_id, watched_id})
         self.assertEqual(public["stats"]["ratings_count"], 1)
         self.assertEqual(owner["stats"]["ratings_count"], 2)
-        self.assertNotIn("avg_rating", scheduled_suggestion)
+        self.assertIsNone(scheduled_suggestion["avg_rating"])
+        self.assertEqual(scheduled_suggestion["rating_count"], 0)
         self.assertNotIn("private", repr(public))
 
     def test_shared_overviews_and_stats_do_not_leak_scheduled_scores(self):

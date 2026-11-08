@@ -253,18 +253,31 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
     ratings are included only when a member views their own profile. Returns
     None if the member doesn't exist.
 
-    Deliberately carries no group score for anything they picked or suggested:
-    the profile is a record of someone's picks, not a ranking of how they
-    landed."""
+    Each watched film carries its own group average, as it does everywhere
+    else. Deliberately absent is any per-member aggregate of those (an average
+    across their picks, a best/worst, a comparison with the club): the profile
+    is a record of someone's picks, not a ranking of how they landed."""
     row = db.query_one(conn, "SELECT * FROM members WHERE id = ?", (member_id,))
     if not row:
         return None
     members_by_id = _members_by_id(conn)
 
+    # Group averages stay private until a film is watched.
+    avg_by_movie = {r["movie_id"]: (r["avg"], r["n"]) for r in db.query_all(
+        conn,
+        """SELECT r.movie_id, AVG(r.score) avg, COUNT(*) n
+           FROM ratings r JOIN movies m ON m.id = r.movie_id
+           WHERE m.status = 'watched' AND (m.picked_by = ? OR m.suggested_by = ?)
+           GROUP BY r.movie_id""",
+        (member_id, member_id))}
+
     def film(d: dict) -> dict:
+        avg, n = avg_by_movie.get(d["id"], (None, 0))
         return {"id": d["id"], "title": d["title"], "year": d["year"],
                 "poster_url": d["poster_url"], "status": d["status"],
-                "language": d.get("language"), "library": _in_library(d)}
+                "language": d.get("language"), "library": _in_library(d),
+                "avg_rating": round(avg, 2) if avg is not None else None,
+                "rating_count": n}
 
     # Films this member picked for a week, newest first. A film sent back to
     # the backlog keeps its picked_by but isn't a pick, matching pick_order().

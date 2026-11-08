@@ -153,8 +153,8 @@ class PickOrderTests(unittest.TestCase):
         self.assertEqual(prof["turn"], {"position": 3, "of": 4})
         suggested = next(s for s in prof["suggestions"] if s["title"] == "Bob Picked")
         self.assertEqual(suggested["picker"]["id"], self.bob)
-        # No group score on anything they picked or suggested.
-        self.assertNotIn("2.0", repr(prof["picks"]) + repr(prof["suggestions"]))
+        # Each film keeps its own group average, but nothing aggregates them per member.
+        self.assertEqual(prof["picks"][0]["avg_rating"], 2.0)
         self.assertNotIn("picks_mean_received", prof["stats"])
 
 

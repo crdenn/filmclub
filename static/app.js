@@ -890,12 +890,18 @@
     return `<span class="pf-poster">${mv.poster_url ? `<img src="${esc(mv.poster_url)}" alt="" loading="lazy">` : ""}</span>`;
   }
 
+  // A watched film's own group average, as shown on its card elsewhere.
+  function pfGroupRating(mv) {
+    return mv.avg_rating != null ? `<span class="pf-rate" title="Group average from ${mv.rating_count} rating${mv.rating_count === 1 ? "" : "s"}">★ ${mv.avg_rating.toFixed(1)}</span>` : "";
+  }
+
   function pfSuggestionRow(mv, ownerId) {
     const picker = mv.picker && mv.picker.id !== ownerId ? `<span>picked by ${esc(mv.picker.username)}</span>` : "";
+    const rating = pfGroupRating(mv);
     return `<a class="pf-film" href="#/movie/${mv.id}">${pfPoster(mv)}
       <span class="pf-film-body">
         <span class="pf-film-title">${esc(mv.title)} <span class="yr">${mv.year || ""}</span></span>
-        <span class="pf-film-sub">${PF_STATUS[mv.status] || ""}${picker}</span>
+        <span class="pf-film-sub">${PF_STATUS[mv.status] || ""}${picker}${rating}</span>
         ${profileFilmMetadata(mv)}
       </span></a>`;
   }
@@ -905,7 +911,7 @@
     return `<a class="pf-film" href="#/movie/${mv.id}">${pfPoster(mv)}
       <span class="pf-film-body">
         <span class="pf-film-title">${esc(mv.title)} <span class="yr">${mv.year || ""}</span></span>
-        <span class="pf-film-sub">${when}</span>
+        <span class="pf-film-sub">${when}${pfGroupRating(mv)}</span>
       </span></a>`;
   }
 
@@ -964,7 +970,7 @@
     return `<a class="pf-pick" href="#/movie/${mv.id}">
       <span class="poster-wrap">${posterEl(mv)}</span>
       <span class="pf-film-title">${esc(mv.title)} <span class="yr">${mv.year || ""}</span></span>
-      <span class="pf-film-sub">${when}</span>${from}
+      <span class="pf-film-sub">${when}${pfGroupRating(mv)}</span>${from}
     </a>`;
   }
 

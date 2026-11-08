@@ -55,7 +55,7 @@ Statuses describe visible implementation. Focused automated coverage exists for 
 ### Public member profile
 
 - **Purpose:** Show the films a member picked, where they stand in the pick rotation, their backlog suggestions (and their suggestions others picked), and their recent ratings and notes.
-- **Behavior:** Picks lead the page as a poster grid (discussion date, "suggested by" when someone else suggested it) with a descriptive summary line (year span, languages, a recurring genre). The page deliberately shows **no group score for anything a member picked or suggested**, and no comparison with other members, so it reads as a record of someone's picks rather than a ranking of how they landed. The payload carries no such score either. Ratings show the six most recent with a "Show all" toggle.
+- **Behavior:** Picks lead the page as a poster grid (discussion date, "suggested by" when someone else suggested it) with a descriptive summary line (year span, languages, a recurring genre). Each watched film shows its own group average, as it does elsewhere, but the page deliberately has **no per-member aggregate of those scores** (no average across someone's picks, no best/worst, no comparison with the club or other members), so it reads as a record of someone's picks rather than a ranking of how they landed. Ratings show the six most recent with a "Show all" toggle.
 - **Main files:** `service.member_profile()`, `/api/members/{id}/profile`, `renderMemberProfile()`.
 - **Status:** Implemented.
 - **Dependencies:** Movies and ratings attributed to a member.

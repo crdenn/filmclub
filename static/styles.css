@@ -438,6 +438,7 @@ button { font: inherit; cursor: pointer; }
 .pf-film-metadata { color: var(--text-faint); font-size: .72rem; display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
 .pf-film-metadata .rt-scores { gap: .35rem; }
 .pf-score { color: var(--star); }
+.pf-rate { color: var(--star); }
 .pf-turn { margin-top: .45rem; font-size: .88rem; color: var(--accent-text); font-weight: 600; }
 .pf-turn a { color: inherit; }
 .pf-picks-card { margin-bottom: 1.3rem; }
