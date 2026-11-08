@@ -353,6 +353,12 @@ def member_profile(conn: sqlite3.Connection, member_id: int,
         "ratings_count": len(ratings),
         "mean_score_given": mean([r["score"] for r in ratings]),
         "picks_mean_received": mean(picks_scores),
+        # Mean of every rating given to films this member picked for a week.
+        "picked_mean_received": mean([x["score"] for x in db.query_all(
+            conn,
+            """SELECT r.score FROM ratings r JOIN movies m ON m.id = r.movie_id
+               WHERE m.picked_by = ? AND m.status = 'watched'""",
+            (member_id,))]),
     }
     return {
         "member": db.member_public(row),

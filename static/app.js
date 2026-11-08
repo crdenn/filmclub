@@ -999,6 +999,7 @@
       ["Ratings given", s.ratings_count],
       ["Avg score they give", fx(s.mean_score_given)],
       ["Their suggestions' avg", fx(s.picks_mean_received)],
+      ["Their picks' avg", fx(s.picked_mean_received)],
     ];
     const backlog = p.suggestions.filter(mv => mv.status === "suggested");
     const pickedByOthers = p.suggestions.filter(mv => mv.picker && mv.picker.id !== m.id);

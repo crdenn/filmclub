@@ -154,6 +154,7 @@ class PickOrderTests(unittest.TestCase):
         suggested = next(s for s in prof["suggestions"] if s["title"] == "Bob Picked")
         self.assertEqual(suggested["picker"]["id"], self.bob)
         self.assertEqual(prof["picks"][0]["avg_rating"], 2.0)
+        self.assertEqual(prof["stats"]["picked_mean_received"], 2.0)
 
 
 if __name__ == "__main__":
