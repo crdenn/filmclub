@@ -1077,14 +1077,20 @@
   }
 
   // "Picked by" is who chose the film for its week; the suggester only put it
-  // on the backlog. Shown together when they differ, since the picker is what
-  // the rotation runs on. Films from before pickers were tracked fall back to
-  // the suggester line until an admin fills them in.
+  // on the backlog. Both are always named, merged into one credit when they're
+  // the same person. A film scheduled before pickers were tracked says so
+  // rather than passing the suggester off as the picker; admins get a link to
+  // the film page, where they can set it.
   function pickerLine(m) {
-    if (!m.picker) return suggesterLink(m.suggester, "Suggested by ");
-    const also = m.suggester && m.suggester.id !== m.picker.id
-      ? `<span class="picker-also">· suggested by <a class="member-link" href="#/member/${m.suggester.id}">${esc(m.suggester.username)}</a></span>` : "";
-    return `${suggesterLink(m.picker, "Picked by ")}${also}`;
+    const p = m.picker, s = m.suggester;
+    if (p && s && p.id === s.id) return suggesterLink(p, "Suggested and picked by ");
+    const sugg = s
+      ? `<span class="picker-also">· suggested by <a class="member-link" href="#/member/${s.id}">${esc(s.username)}</a></span>` : "";
+    if (p) return `${suggesterLink(p, "Picked by ")}${sugg}`;
+    const unknown = state.me.is_admin
+      ? `<a class="picker-unknown" href="#/movie/${m.id}">Picker not recorded — set it</a>`
+      : `<span class="picker-unknown">Picker not recorded</span>`;
+    return `${suggesterLink(s, "Suggested by ")}<span class="picker-also">· ${unknown}</span>`;
   }
 
   // Whose turn it is. The order is derived server-side (longest since their

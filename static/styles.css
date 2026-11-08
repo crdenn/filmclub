@@ -1085,7 +1085,7 @@ select:focus-visible { outline: none; border-color: var(--accent); }
 
 /* bottom of the hero: suggester + who's-watched avatars, then your card */
 .tw-hero-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem 1.5rem; flex-wrap: wrap; margin-top: auto; padding-top: 1.7rem; }
-.tw-suggester { display: flex; align-items: center; gap: .45rem; color: var(--text-dim); font-size: .85rem; }
+.tw-suggester { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .45rem; color: var(--text-dim); font-size: .85rem; }
 .tw-watchers { display: flex; align-items: center; gap: .7rem; }
 .tw-watchers-label { color: var(--text-dim); font-size: .82rem; white-space: nowrap; }
 .tw-watchers-label b { color: var(--text); }
